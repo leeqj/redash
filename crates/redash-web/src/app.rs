@@ -1,4 +1,6 @@
-pub use redash_ui_core::state::{ActiveView, AppStateMachine, UiEffect, UserAction};
+pub use redash_ui_core::state::{
+    ActiveView, AppStateMachine, ProcessSortField, UiEffect, UserAction, WorkbenchTab,
+};
 
 pub type AppState = AppStateMachine;
 

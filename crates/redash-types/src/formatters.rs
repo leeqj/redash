@@ -24,6 +24,11 @@ pub fn format_speed(bytes_per_sec: u64) -> String {
     format!("{}/s", format_bytes(bytes_per_sec))
 }
 
+/// Formats a transfer rate (bytes per second) into human-readable throughput (alias for format_speed).
+pub fn format_bytes_rate(bytes_per_sec: u64) -> String {
+    format_speed(bytes_per_sec)
+}
+
 /// Formats a floating-point percentage (0.0 to 100.0) with 1 decimal place.
 pub fn format_percent(pct: f32) -> String {
     format!("{:.1}%", pct.clamp(0.0, 100.0))

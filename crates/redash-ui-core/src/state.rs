@@ -13,6 +13,23 @@ pub enum ActiveView {
     Settings,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkbenchTab {
+    Terminal,
+    Docker,
+    Processes,
+    Network,
+    Tunnels,
+    Snippets,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProcessSortField {
+    CpuDesc,
+    MemDesc,
+    PidAsc,
+}
+
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum UserAction {
@@ -29,6 +46,12 @@ pub enum UserAction {
     UpdateMetrics { host_id: String, metrics: NodeMetrics },
     SetLocale(String),
     SetTheme(String),
+    SwitchWorkbenchTab(WorkbenchTab),
+    SetProcessSort(ProcessSortField),
+    SetSnippetCategory(String),
+    OpenDockerLogs { id: String, name: String },
+    CloseDockerLogs,
+    SetSnippetOutput(Option<(String, String)>),
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -61,6 +84,11 @@ pub struct AppStateMachine {
     pub modal_field_idx: usize,
     pub is_connected: bool,
     pub scroll_y: f64,
+    pub active_workbench_tab: WorkbenchTab,
+    pub process_sort_by: ProcessSortField,
+    pub selected_snippet_category: String,
+    pub docker_log_modal: Option<(String, String)>,
+    pub snippet_output: Option<(String, String)>,
 }
 
 impl Default for AppStateMachine {
@@ -97,6 +125,11 @@ impl AppStateMachine {
             modal_field_idx: 0,
             is_connected: true,
             scroll_y: 0.0,
+            active_workbench_tab: WorkbenchTab::Terminal,
+            process_sort_by: ProcessSortField::CpuDesc,
+            selected_snippet_category: "All".to_string(),
+            docker_log_modal: None,
+            snippet_output: None,
         }
     }
 
@@ -180,6 +213,24 @@ impl AppStateMachine {
                 self.settings.theme_name = theme_name;
                 effects.push(UiEffect::SaveSettings);
             }
+            UserAction::SwitchWorkbenchTab(tab) => {
+                self.active_workbench_tab = tab;
+            }
+            UserAction::SetProcessSort(sort) => {
+                self.process_sort_by = sort;
+            }
+            UserAction::SetSnippetCategory(cat) => {
+                self.selected_snippet_category = cat;
+            }
+            UserAction::OpenDockerLogs { id, name } => {
+                self.docker_log_modal = Some((id, name));
+            }
+            UserAction::CloseDockerLogs => {
+                self.docker_log_modal = None;
+            }
+            UserAction::SetSnippetOutput(output) => {
+                self.snippet_output = output;
+            }
         }
 
         effects
@@ -187,6 +238,30 @@ impl AppStateMachine {
 
     pub fn switch_view(&mut self, view: ActiveView) {
         self.handle_action(UserAction::SwitchView(view));
+    }
+
+    pub fn switch_workbench_tab(&mut self, tab: WorkbenchTab) {
+        self.handle_action(UserAction::SwitchWorkbenchTab(tab));
+    }
+
+    pub fn set_process_sort(&mut self, sort: ProcessSortField) {
+        self.handle_action(UserAction::SetProcessSort(sort));
+    }
+
+    pub fn set_snippet_category(&mut self, cat: &str) {
+        self.handle_action(UserAction::SetSnippetCategory(cat.to_string()));
+    }
+
+    pub fn open_docker_logs(&mut self, id: String, name: String) {
+        self.handle_action(UserAction::OpenDockerLogs { id, name });
+    }
+
+    pub fn close_docker_logs(&mut self) {
+        self.handle_action(UserAction::CloseDockerLogs);
+    }
+
+    pub fn set_snippet_output(&mut self, output: Option<(String, String)>) {
+        self.handle_action(UserAction::SetSnippetOutput(output));
     }
 
     pub fn update_metrics(&mut self, host_id: String, metrics: NodeMetrics) {
@@ -269,5 +344,70 @@ mod tests {
         } else {
             panic!("Expected SaveHost effect");
         }
+    }
+
+    #[test]
+    fn test_workbench_state_and_actions() {
+        let mut sm = AppStateMachine::new();
+        // Check defaults
+        assert_eq!(sm.active_workbench_tab, WorkbenchTab::Terminal);
+        assert_eq!(sm.process_sort_by, ProcessSortField::CpuDesc);
+        assert_eq!(sm.selected_snippet_category, "All");
+        assert_eq!(sm.docker_log_modal, None);
+        assert_eq!(sm.snippet_output, None);
+
+        // Switch workbench tabs
+        let effects = sm.handle_action(UserAction::SwitchWorkbenchTab(WorkbenchTab::Docker));
+        assert!(effects.is_empty());
+        assert_eq!(sm.active_workbench_tab, WorkbenchTab::Docker);
+
+        sm.switch_workbench_tab(WorkbenchTab::Processes);
+        assert_eq!(sm.active_workbench_tab, WorkbenchTab::Processes);
+
+        sm.switch_workbench_tab(WorkbenchTab::Network);
+        assert_eq!(sm.active_workbench_tab, WorkbenchTab::Network);
+
+        sm.switch_workbench_tab(WorkbenchTab::Tunnels);
+        assert_eq!(sm.active_workbench_tab, WorkbenchTab::Tunnels);
+
+        sm.switch_workbench_tab(WorkbenchTab::Snippets);
+        assert_eq!(sm.active_workbench_tab, WorkbenchTab::Snippets);
+
+        // Process sort fields
+        sm.handle_action(UserAction::SetProcessSort(ProcessSortField::MemDesc));
+        assert_eq!(sm.process_sort_by, ProcessSortField::MemDesc);
+
+        sm.set_process_sort(ProcessSortField::PidAsc);
+        assert_eq!(sm.process_sort_by, ProcessSortField::PidAsc);
+
+        // Snippet category
+        sm.handle_action(UserAction::SetSnippetCategory("Docker".to_string()));
+        assert_eq!(sm.selected_snippet_category, "Docker");
+
+        sm.set_snippet_category("Network");
+        assert_eq!(sm.selected_snippet_category, "Network");
+
+        // Docker log modal
+        sm.handle_action(UserAction::OpenDockerLogs {
+            id: "c-1234567890".to_string(),
+            name: "nginx-proxy".to_string(),
+        });
+        assert_eq!(
+            sm.docker_log_modal,
+            Some(("c-1234567890".to_string(), "nginx-proxy".to_string()))
+        );
+
+        sm.close_docker_logs();
+        assert_eq!(sm.docker_log_modal, None);
+
+        // Snippet output
+        sm.set_snippet_output(Some(("Test Title".to_string(), "Success output".to_string())));
+        assert_eq!(
+            sm.snippet_output,
+            Some(("Test Title".to_string(), "Success output".to_string()))
+        );
+
+        sm.set_snippet_output(None);
+        assert_eq!(sm.snippet_output, None);
     }
 }
