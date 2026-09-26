@@ -120,6 +120,56 @@ pub fn start_web_app(canvas_id: &str) -> Result<(), JsValue> {
                             }),
                         );
                     }
+                    UiAction::OpenSftp(host_id) => {
+                        let app_state_sftp = app_state_clone.clone();
+                        let path = app_state_sftp.borrow().sftp_current_path.clone();
+                        app_state_sftp.borrow_mut().set_sftp_loading(true);
+                        let on_done = Rc::new(RefCell::new(move |res: Result<Vec<redash_types::sftp::RemoteFileItem>, String>| {
+                            let mut sm = app_state_sftp.borrow_mut();
+                            match res {
+                                Ok(files) => sm.set_sftp_files(files),
+                                Err(err) => sm.set_sftp_error(Some(err)),
+                            }
+                        }));
+                        gateway::async_fetch_sftp_list(host_id, path, on_done);
+                    }
+                    UiAction::FetchSftpList { host_id, path } => {
+                        let app_state_sftp = app_state_clone.clone();
+                        let on_done = Rc::new(RefCell::new(move |res: Result<Vec<redash_types::sftp::RemoteFileItem>, String>| {
+                            let mut sm = app_state_sftp.borrow_mut();
+                            match res {
+                                Ok(files) => sm.set_sftp_files(files),
+                                Err(err) => sm.set_sftp_error(Some(err)),
+                            }
+                        }));
+                        gateway::async_fetch_sftp_list(host_id, path, on_done);
+                    }
+                    UiAction::ReadSftpFile { host_id, path } => {
+                        let app_state_sftp = app_state_clone.clone();
+                        let read_path = path.clone();
+                        let on_done = Rc::new(RefCell::new(move |res: Result<String, String>| {
+                            let mut sm = app_state_sftp.borrow_mut();
+                            match res {
+                                Ok(content) => sm.open_sftp_editor(read_path.clone(), content),
+                                Err(err) => sm.set_sftp_error(Some(err)),
+                            }
+                        }));
+                        gateway::async_read_sftp_file(host_id, path, on_done);
+                    }
+                    UiAction::SaveSftpFile { host_id, path, content } => {
+                        let app_state_sftp = app_state_clone.clone();
+                        let on_done = Rc::new(RefCell::new(move |res: Result<(), String>| {
+                            let mut sm = app_state_sftp.borrow_mut();
+                            match res {
+                                Ok(()) => {
+                                    sm.sftp_editor_modified = false;
+                                    sm.set_sftp_loading(false);
+                                }
+                                Err(err) => sm.set_sftp_error(Some(err)),
+                            }
+                        }));
+                        gateway::async_write_sftp_file(host_id, path, content, on_done);
+                    }
                     UiAction::SaveNewHost => {
                         if let Some(new_host) = state.build_new_host() {
                             state.hosts.push(new_host);
@@ -148,6 +198,20 @@ pub fn start_web_app(canvas_id: &str) -> Result<(), JsValue> {
                 match action {
                     UiAction::SendTerminalInput(input) => {
                         gateway_clone.borrow().send_terminal_input(&input);
+                    }
+                    UiAction::SaveSftpFile { host_id, path, content } => {
+                        let app_state_sftp = app_state_clone.clone();
+                        let on_done = Rc::new(RefCell::new(move |res: Result<(), String>| {
+                            let mut sm = app_state_sftp.borrow_mut();
+                            match res {
+                                Ok(()) => {
+                                    sm.sftp_editor_modified = false;
+                                    sm.set_sftp_loading(false);
+                                }
+                                Err(err) => sm.set_sftp_error(Some(err)),
+                            }
+                        }));
+                        gateway::async_write_sftp_file(host_id, path, content, on_done);
                     }
                     UiAction::SaveNewHost => {
                         if let Some(new_host) = state.build_new_host() {

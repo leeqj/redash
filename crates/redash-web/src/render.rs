@@ -59,6 +59,11 @@ pub fn render_frame(
         render_docker_log_modal(ctx, &theme, id, name, width, height);
     }
 
+    // 7. Draw SFTP Editor Modal if active
+    if state.sftp_editor.is_some() {
+        render_sftp_editor_modal(ctx, state, &theme, width, height);
+    }
+
     Ok(())
 }
 
@@ -1612,6 +1617,142 @@ fn render_snippets_panel(
     }
 }
 
+pub fn parse_breadcrumbs(path: &str) -> Vec<(String, String)> {
+    let clean = path.trim();
+    if clean.is_empty() || clean == "/" {
+        return vec![("/".to_string(), "/".to_string())];
+    }
+
+    let mut result = vec![("/".to_string(), "/".to_string())];
+    let segments: Vec<&str> = clean.split('/').filter(|s| !s.is_empty()).collect();
+    let mut current_acc = String::new();
+
+    for seg in segments {
+        current_acc.push('/');
+        current_acc.push_str(seg);
+        result.push((seg.to_string(), current_acc.clone()));
+    }
+
+    result
+}
+
+pub fn get_parent_dir(path: &str) -> String {
+    let clean = path.trim().trim_end_matches('/');
+    if clean.is_empty() || clean == "/" {
+        return "/".to_string();
+    }
+    match clean.rfind('/') {
+        Some(0) => "/".to_string(),
+        Some(idx) => clean[..idx].to_string(),
+        None => "/".to_string(),
+    }
+}
+
+pub fn get_sftp_refresh_btn_rect(content_x: f64, content_y: f64, content_w: f64) -> (f64, f64, f64, f64) {
+    let btn_w = 88.0;
+    let btn_h = 28.0;
+    let btn_x = content_x + content_w - 24.0 - btn_w;
+    let btn_y = content_y + 14.0;
+    (btn_x, btn_y, btn_w, btn_h)
+}
+
+pub fn get_sftp_parent_dir_btn_rect(content_x: f64, content_y: f64) -> (f64, f64, f64, f64) {
+    (content_x + 24.0, content_y + 54.0, 94.0, 26.0)
+}
+
+pub fn get_sftp_breadcrumb_rects(content_x: f64, content_y: f64, path: &str) -> Vec<(String, f64, f64, f64, f64)> {
+    let breadcrumbs = parse_breadcrumbs(path);
+    let mut rects = Vec::new();
+    let is_root = path.trim() == "/" || path.trim().is_empty();
+    let mut curr_x = if is_root {
+        content_x + 24.0
+    } else {
+        content_x + 24.0 + 94.0 + 12.0
+    };
+    let seg_y = content_y + 54.0;
+    let seg_h = 26.0;
+
+    for (name, target) in breadcrumbs {
+        let seg_w = (name.chars().count() as f64 * 8.0 + 16.0).max(28.0);
+        rects.push((target, curr_x, seg_y, seg_w, seg_h));
+        curr_x += seg_w + 12.0;
+    }
+
+    rects
+}
+
+pub fn get_sftp_file_row_rect(idx: usize, content_x: f64, content_y: f64, content_w: f64) -> (f64, f64, f64, f64) {
+    let row_y = content_y + 130.0 + (idx as f64) * 36.0;
+    let row_x = content_x + 24.0;
+    let row_w = content_w - 48.0;
+    let row_h = 32.0;
+    (row_x, row_y, row_w, row_h)
+}
+
+pub fn get_sftp_editor_modal_rect(width: f64, height: f64) -> (f64, f64, f64, f64) {
+    let mw = (width * 0.82).clamp(640.0, 1100.0);
+    let mh = (height * 0.78).clamp(420.0, 760.0);
+    let mx = (width - mw) / 2.0;
+    let my = (height - mh) / 2.0;
+    (mx, my, mw, mh)
+}
+
+pub fn get_sftp_editor_save_btn_rect(width: f64, height: f64) -> (f64, f64, f64, f64) {
+    let (mx, my, mw, _) = get_sftp_editor_modal_rect(width, height);
+    let btn_w = 80.0;
+    let btn_h = 28.0;
+    let btn_x = mx + mw - 176.0;
+    let btn_y = my + 7.0;
+    (btn_x, btn_y, btn_w, btn_h)
+}
+
+pub fn get_sftp_editor_close_btn_rect(width: f64, height: f64) -> (f64, f64, f64, f64) {
+    let (mx, my, mw, _) = get_sftp_editor_modal_rect(width, height);
+    let btn_w = 76.0;
+    let btn_h = 28.0;
+    let btn_x = mx + mw - 88.0;
+    let btn_y = my + 7.0;
+    (btn_x, btn_y, btn_w, btn_h)
+}
+
+pub fn format_modified_time(ts: Option<u64>) -> String {
+    if let Some(secs) = ts {
+        let days = secs / 86400;
+        let time_of_day = secs % 86400;
+        let hour = time_of_day / 3600;
+        let min = (time_of_day % 3600) / 60;
+        let mut y = 1970;
+        let mut d = days;
+        loop {
+            let leap = (y % 4 == 0 && y % 100 != 0) || (y % 400 == 0);
+            let days_in_year = if leap { 366 } else { 365 };
+            if d >= days_in_year {
+                d -= days_in_year;
+                y += 1;
+            } else {
+                break;
+            }
+        }
+        let leap = (y % 4 == 0 && y % 100 != 0) || (y % 400 == 0);
+        let days_in_months = [
+            31, if leap { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31,
+        ];
+        let mut m = 12;
+        for (idx, &dim) in days_in_months.iter().enumerate() {
+            if d < dim {
+                m = idx + 1;
+                break;
+            }
+            d -= dim;
+        }
+        let day = d + 1;
+        format!("{:04}-{:02}-{:02} {:02}:{:02}", y, m, day, hour, min)
+    } else {
+        "-".to_string()
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 fn render_sftp_view(
     ctx: &CanvasRenderingContext2d,
     state: &AppState,
@@ -1619,44 +1760,336 @@ fn render_sftp_view(
     x: f64,
     y: f64,
     w: f64,
-    _h: f64,
+    h: f64,
 ) {
+    // 1. Header Bar
     ctx.set_fill_style_str(theme.text_primary);
     ctx.set_font("bold 16px sans-serif");
     ctx.set_text_align("left");
-    let _ = ctx.fill_text(state.t("nav.sftp"), x + 24.0, y + 36.0);
+    let _ = ctx.fill_text(state.t("nav.sftp"), x + 24.0, y + 34.0);
 
-    ctx.set_fill_style_str(theme.text_secondary);
+    // Host badge
+    let host_label = state
+        .selected_host_id
+        .as_ref()
+        .and_then(|id| state.hosts.iter().find(|h| h.id.0 == *id))
+        .map(|h| format!("🖥️ {} ({}:{})", h.name, h.hostname, h.port))
+        .unwrap_or_else(|| "🖥️ 未选择主机 (No Host Selected)".to_string());
+
+    ctx.set_fill_style_str(theme.accent_cyan);
     ctx.set_font("13px 'JetBrains Mono', monospace");
-    let _ = ctx.fill_text("Current Path: /var/log/redash", x + 24.0, y + 68.0);
+    let _ = ctx.fill_text(&host_label, x + 160.0, y + 34.0);
 
-    // Mock Directory Table
-    let files = [
-        ("📁 app/", "DIR", "4.0 KB", "drwxr-xr-x"),
-        ("📁 config/", "DIR", "4.0 KB", "drwxr-xr-x"),
-        ("📄 server.log", "FILE", "1.2 MB", "-rw-r--r--"),
-        ("📄 daemon.log", "FILE", "482 KB", "-rw-r--r--"),
-        ("⚙ config.toml", "FILE", "2.1 KB", "-rw-r--r--"),
-    ];
+    // Refresh Button: [ 🔄 刷新 ]
+    let (btn_rx, btn_ry, btn_rw, btn_rh) = get_sftp_refresh_btn_rect(x, y, w);
+    ctx.set_fill_style_str(theme.bg_card_hover);
+    ctx.fill_rect(btn_rx, btn_ry, btn_rw, btn_rh);
+    ctx.set_stroke_style_str(theme.border_default);
+    ctx.set_line_width(1.0);
+    ctx.stroke_rect(btn_rx, btn_ry, btn_rw, btn_rh);
 
-    let mut row_y = y + 100.0;
-    for (name, ftype, size, perm) in files {
+    ctx.set_fill_style_str(theme.text_primary);
+    ctx.set_font("12px sans-serif");
+    ctx.set_text_align("center");
+    let _ = ctx.fill_text("🔄 刷新", btn_rx + btn_rw / 2.0, btn_ry + 18.0);
+
+    // 2. Breadcrumb & Navigation Bar
+    let is_root = state.sftp_current_path.trim() == "/" || state.sftp_current_path.trim().is_empty();
+    if !is_root {
+        let (p_x, p_y, p_w, p_h) = get_sftp_parent_dir_btn_rect(x, y);
         ctx.set_fill_style_str(theme.bg_card);
-        ctx.fill_rect(x + 24.0, row_y, w - 48.0, 32.0);
+        ctx.fill_rect(p_x, p_y, p_w, p_h);
         ctx.set_stroke_style_str(theme.border_default);
-        ctx.stroke_rect(x + 24.0, row_y, w - 48.0, 32.0);
+        ctx.stroke_rect(p_x, p_y, p_w, p_h);
 
         ctx.set_fill_style_str(theme.text_primary);
-        ctx.set_font("13px 'JetBrains Mono', monospace");
+        ctx.set_font("12px sans-serif");
+        ctx.set_text_align("center");
+        let _ = ctx.fill_text("⬆ 上级目录", p_x + p_w / 2.0, p_y + 17.0);
+    }
+
+    // Breadcrumb segments
+    let breadcrumb_rects = get_sftp_breadcrumb_rects(x, y, &state.sftp_current_path);
+    let breadcrumb_raw = parse_breadcrumbs(&state.sftp_current_path);
+
+    for (idx, (_target_path, seg_x, seg_y, seg_w, seg_h)) in breadcrumb_rects.iter().enumerate() {
+        let is_last = idx + 1 == breadcrumb_rects.len();
+        let name = &breadcrumb_raw[idx].0;
+
+        ctx.set_fill_style_str(if is_last {
+            theme.accent_cyan
+        } else {
+            theme.bg_card
+        });
+        ctx.fill_rect(*seg_x, *seg_y, *seg_w, *seg_h);
+        ctx.set_stroke_style_str(theme.border_default);
+        ctx.stroke_rect(*seg_x, *seg_y, *seg_w, *seg_h);
+
+        ctx.set_fill_style_str(if is_last {
+            theme.bg_root
+        } else {
+            theme.text_primary
+        });
+        ctx.set_font(if is_last {
+            "bold 12px 'JetBrains Mono', monospace"
+        } else {
+            "12px 'JetBrains Mono', monospace"
+        });
+        ctx.set_text_align("center");
+        let _ = ctx.fill_text(name, seg_x + seg_w / 2.0, seg_y + 17.0);
+
+        if !is_last {
+            ctx.set_fill_style_str(theme.text_secondary);
+            ctx.set_font("12px sans-serif");
+            ctx.set_text_align("center");
+            let _ = ctx.fill_text("/", seg_x + seg_w + 6.0, seg_y + 17.0);
+        }
+    }
+
+    // 3. Files Table Header
+    let table_x = x + 24.0;
+    let table_w = w - 48.0;
+    let header_y = y + 92.0;
+    let header_h = 28.0;
+
+    ctx.set_fill_style_str(theme.bg_card);
+    ctx.fill_rect(table_x, header_y, table_w, header_h);
+    ctx.set_stroke_style_str(theme.border_default);
+    ctx.stroke_rect(table_x, header_y, table_w, header_h);
+
+    ctx.set_fill_style_str(theme.text_secondary);
+    ctx.set_font("bold 12px sans-serif");
+    ctx.set_text_align("left");
+
+    let col_name_x = table_x + 12.0;
+    let col_type_x = table_x + (table_w * 0.45).max(280.0);
+    let col_size_x = col_type_x + 70.0;
+    let col_perm_x = col_size_x + 110.0;
+    let col_mod_x = col_perm_x + 120.0;
+
+    let _ = ctx.fill_text("名称 (Name)", col_name_x, header_y + 18.0);
+    let _ = ctx.fill_text("类型", col_type_x, header_y + 18.0);
+    let _ = ctx.fill_text("大小", col_size_x, header_y + 18.0);
+    let _ = ctx.fill_text("权限", col_perm_x, header_y + 18.0);
+    let _ = ctx.fill_text("修改时间", col_mod_x, header_y + 18.0);
+
+    // 4. File Rows / Loading / Empty
+    if state.sftp_loading {
+        let msg_y = header_y + 50.0;
+        ctx.set_fill_style_str(theme.accent_cyan);
+        ctx.set_font("14px sans-serif");
         ctx.set_text_align("left");
-        let _ = ctx.fill_text(name, x + 36.0, row_y + 20.0);
-
+        let _ = ctx.fill_text("⏳ 正在加载远程目录 (Loading remote directory...)", table_x + 12.0, msg_y);
+    } else if let Some(ref err) = state.sftp_error {
+        let msg_y = header_y + 50.0;
+        ctx.set_fill_style_str(theme.status_crit);
+        ctx.set_font("13px sans-serif");
+        ctx.set_text_align("left");
+        let _ = ctx.fill_text(&format!("❌ SFTP 错误: {}", err), table_x + 12.0, msg_y);
+    } else if state.sftp_files.is_empty() {
+        let msg_y = header_y + 50.0;
         ctx.set_fill_style_str(theme.text_secondary);
-        let _ = ctx.fill_text(ftype, x + 240.0, row_y + 20.0);
-        let _ = ctx.fill_text(size, x + 340.0, row_y + 20.0);
-        let _ = ctx.fill_text(perm, x + 460.0, row_y + 20.0);
+        ctx.set_font("13px sans-serif");
+        ctx.set_text_align("left");
+        let _ = ctx.fill_text("📂 空目录 (Empty directory)", table_x + 12.0, msg_y);
+    } else {
+        let max_visible_rows = ((h - (header_y - y + header_h + 20.0)) / 36.0).floor().max(1.0) as usize;
+        for (idx, file) in state.sftp_files.iter().enumerate().take(max_visible_rows) {
+            let (rx, ry, rw, rh) = get_sftp_file_row_rect(idx, x, y, w);
 
-        row_y += 38.0;
+            // Row background
+            ctx.set_fill_style_str(if idx % 2 == 0 {
+                theme.bg_card
+            } else {
+                theme.bg_sidebar
+            });
+            ctx.fill_rect(rx, ry, rw, rh);
+            ctx.set_stroke_style_str(theme.border_default);
+            ctx.stroke_rect(rx, ry, rw, rh);
+
+            // Icon + Name
+            let icon = file.category().default_icon();
+            let display_name = if file.is_dir {
+                format!("{} {}/", icon, file.name)
+            } else {
+                format!("{} {}", icon, file.name)
+            };
+
+            ctx.set_fill_style_str(if file.is_dir {
+                theme.accent_cyan
+            } else {
+                theme.text_primary
+            });
+            ctx.set_font(if file.is_dir {
+                "bold 13px 'JetBrains Mono', monospace"
+            } else {
+                "13px 'JetBrains Mono', monospace"
+            });
+            ctx.set_text_align("left");
+            let truncated_name = truncate_text(&display_name, 36);
+            let _ = ctx.fill_text(&truncated_name, col_name_x, ry + 21.0);
+
+            // Type
+            ctx.set_fill_style_str(theme.text_secondary);
+            ctx.set_font("12px sans-serif");
+            let ftype = if file.is_dir {
+                "DIR"
+            } else if file.is_symlink {
+                "LINK"
+            } else {
+                "FILE"
+            };
+            let _ = ctx.fill_text(ftype, col_type_x, ry + 21.0);
+
+            // Size
+            let size_str = if file.is_dir {
+                "-".to_string()
+            } else {
+                redash_types::format_bytes(file.size)
+            };
+            let _ = ctx.fill_text(&size_str, col_size_x, ry + 21.0);
+
+            // Permissions
+            ctx.set_font("12px 'JetBrains Mono', monospace");
+            let _ = ctx.fill_text(&file.permissions_str(), col_perm_x, ry + 21.0);
+
+            // Modified
+            let mod_str = format_modified_time(file.modified);
+            let _ = ctx.fill_text(&mod_str, col_mod_x, ry + 21.0);
+        }
+    }
+}
+
+pub fn render_sftp_editor_modal(
+    ctx: &CanvasRenderingContext2d,
+    state: &AppState,
+    theme: &ThemeColors,
+    width: f64,
+    height: f64,
+) {
+    let Some((ref file_path, ref content)) = state.sftp_editor else {
+        return;
+    };
+
+    // 1. Overlay backdrop
+    ctx.set_fill_style_str("rgba(0, 0, 0, 0.75)");
+    ctx.fill_rect(0.0, 0.0, width, height);
+
+    // 2. Editor Window
+    let (mx, my, mw, mh) = get_sftp_editor_modal_rect(width, height);
+    ctx.set_fill_style_str(theme.bg_card);
+    ctx.fill_rect(mx, my, mw, mh);
+    ctx.set_stroke_style_str(theme.accent_cyan);
+    ctx.set_line_width(2.0);
+    ctx.stroke_rect(mx, my, mw, mh);
+
+    // 3. Title Bar
+    let title_bar_h = 42.0;
+    ctx.set_fill_style_str(theme.bg_sidebar);
+    ctx.fill_rect(mx, my, mw, title_bar_h);
+    ctx.set_stroke_style_str(theme.border_default);
+    ctx.set_line_width(1.0);
+    ctx.begin_path();
+    ctx.move_to(mx, my + title_bar_h);
+    ctx.line_to(mx + mw, my + title_bar_h);
+    ctx.stroke();
+
+    // Title / File path + dirty indicator
+    ctx.set_fill_style_str(theme.text_primary);
+    ctx.set_font("bold 13px 'JetBrains Mono', monospace");
+    ctx.set_text_align("left");
+    let dirty_suffix = if state.sftp_editor_modified { " *" } else { "" };
+    let title = format!("📝 {}{}", file_path, dirty_suffix);
+    let _ = ctx.fill_text(&title, mx + 16.0, my + 26.0);
+
+    // Buttons
+    // Save button: [ 💾 保存 ]
+    let (save_x, save_y, save_w, save_h) = get_sftp_editor_save_btn_rect(width, height);
+    ctx.set_fill_style_str(if state.sftp_editor_modified {
+        theme.accent_cyan
+    } else {
+        theme.bg_card_hover
+    });
+    ctx.fill_rect(save_x, save_y, save_w, save_h);
+    ctx.set_stroke_style_str(theme.border_default);
+    ctx.stroke_rect(save_x, save_y, save_w, save_h);
+
+    ctx.set_fill_style_str(if state.sftp_editor_modified {
+        theme.bg_root
+    } else {
+        theme.text_primary
+    });
+    ctx.set_font("bold 12px sans-serif");
+    ctx.set_text_align("center");
+    let _ = ctx.fill_text("💾 保存", save_x + save_w / 2.0, save_y + 18.0);
+
+    // Close button: [ ✕ 关闭 ]
+    let (close_x, close_y, close_w, close_h) = get_sftp_editor_close_btn_rect(width, height);
+    ctx.set_fill_style_str(theme.bg_card_hover);
+    ctx.fill_rect(close_x, close_y, close_w, close_h);
+    ctx.set_stroke_style_str(theme.border_default);
+    ctx.stroke_rect(close_x, close_y, close_w, close_h);
+
+    ctx.set_fill_style_str(theme.text_primary);
+    ctx.set_font("12px sans-serif");
+    let _ = ctx.fill_text("✕ 关闭", close_x + close_w / 2.0, close_y + 18.0);
+
+    // 4. Editor Content Text Area
+    let area_x = mx + 12.0;
+    let area_y = my + title_bar_h + 10.0;
+    let area_w = mw - 24.0;
+    let area_h = mh - title_bar_h - 40.0;
+
+    // Background for code area
+    ctx.set_fill_style_str("#0d1117");
+    ctx.fill_rect(area_x, area_y, area_w, area_h);
+    ctx.set_stroke_style_str(theme.border_default);
+    ctx.stroke_rect(area_x, area_y, area_w, area_h);
+
+    // Line numbers gutter
+    let gutter_w = 44.0;
+    ctx.set_fill_style_str("#161b22");
+    ctx.fill_rect(area_x, area_y, gutter_w, area_h);
+    ctx.set_stroke_style_str(theme.border_default);
+    ctx.begin_path();
+    ctx.move_to(area_x + gutter_w, area_y);
+    ctx.line_to(area_x + gutter_w, area_y + area_h);
+    ctx.stroke();
+
+    // Render code lines
+    let line_height = 20.0;
+    let max_lines = (area_h / line_height).floor() as usize;
+    let code_x = area_x + gutter_w + 10.0;
+
+    for (idx, line) in content.lines().enumerate().take(max_lines) {
+        let line_y = area_y + 16.0 + (idx as f64) * line_height;
+
+        // Line number
+        ctx.set_fill_style_str(theme.text_secondary);
+        ctx.set_font("12px 'JetBrains Mono', monospace");
+        ctx.set_text_align("right");
+        let _ = ctx.fill_text(&(idx + 1).to_string(), area_x + gutter_w - 8.0, line_y);
+
+        // Code text
+        ctx.set_fill_style_str("#e6edf3");
+        ctx.set_text_align("left");
+        let _ = ctx.fill_text(line, code_x, line_y);
+    }
+
+    // Status bar at bottom of editor
+    let status_y = my + mh - 14.0;
+    ctx.set_fill_style_str(theme.text_secondary);
+    ctx.set_font("11px 'JetBrains Mono', monospace");
+    ctx.set_text_align("left");
+    let line_count = content.lines().count();
+    let byte_count = content.len();
+    let status_text = format!("UTF-8 | 行数: {} | 字符: {} 字节 | (Ctrl+S / ⌘+S 保存, Esc 关闭)", line_count, byte_count);
+    let _ = ctx.fill_text(&status_text, mx + 16.0, status_y);
+
+    if state.sftp_loading {
+        ctx.set_fill_style_str(theme.accent_cyan);
+        ctx.set_text_align("right");
+        let _ = ctx.fill_text("⏳ 正在保存文件...", mx + mw - 16.0, status_y);
     }
 }
 

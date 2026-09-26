@@ -3,6 +3,7 @@ use redash_types::agent::DetectedAgent;
 use redash_types::host::HostConfig;
 use redash_types::metrics::NodeMetrics;
 use redash_types::settings::AppSettings;
+use redash_types::sftp::RemoteFileItem;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -52,6 +53,15 @@ pub enum UserAction {
     OpenDockerLogs { id: String, name: String },
     CloseDockerLogs,
     SetSnippetOutput(Option<(String, String)>),
+    SetSftpPath(String),
+    SetSftpFiles(Vec<RemoteFileItem>),
+    SetSftpLoading(bool),
+    SetSftpError(Option<String>),
+    OpenSftpEditor { path: String, content: String },
+    UpdateSftpEditorContent(String),
+    CloseSftpEditor,
+    RequestReadSftpFile(String),
+    RequestSaveSftpFile,
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -63,6 +73,9 @@ pub enum UiEffect {
     DeleteHost(String),
     SendTerminalInput(String),
     SaveSettings,
+    FetchSftpList { host_id: String, path: String },
+    ReadSftpFile { host_id: String, path: String },
+    SaveSftpFile { host_id: String, path: String, content: String },
 }
 
 pub struct AppStateMachine {
@@ -89,6 +102,12 @@ pub struct AppStateMachine {
     pub selected_snippet_category: String,
     pub docker_log_modal: Option<(String, String)>,
     pub snippet_output: Option<(String, String)>,
+    pub sftp_current_path: String,
+    pub sftp_files: Vec<RemoteFileItem>,
+    pub sftp_loading: bool,
+    pub sftp_error: Option<String>,
+    pub sftp_editor: Option<(String, String)>,
+    pub sftp_editor_modified: bool,
 }
 
 impl Default for AppStateMachine {
@@ -130,6 +149,12 @@ impl AppStateMachine {
             selected_snippet_category: "All".to_string(),
             docker_log_modal: None,
             snippet_output: None,
+            sftp_current_path: "/".to_string(),
+            sftp_files: Vec::new(),
+            sftp_loading: false,
+            sftp_error: None,
+            sftp_editor: None,
+            sftp_editor_modified: false,
         }
     }
 
@@ -139,6 +164,17 @@ impl AppStateMachine {
         match action {
             UserAction::SwitchView(view) => {
                 self.active_view = view;
+                if view == ActiveView::Sftp
+                    && self.sftp_files.is_empty()
+                    && !self.sftp_loading
+                    && let Some(host_id) = &self.selected_host_id
+                {
+                    self.sftp_loading = true;
+                    effects.push(UiEffect::FetchSftpList {
+                        host_id: host_id.clone(),
+                        path: self.sftp_current_path.clone(),
+                    });
+                }
             }
             UserAction::SelectHost(id) => {
                 self.selected_host_id = id;
@@ -231,9 +267,102 @@ impl AppStateMachine {
             UserAction::SetSnippetOutput(output) => {
                 self.snippet_output = output;
             }
+            UserAction::SetSftpPath(path) => {
+                self.sftp_current_path = path.clone();
+                self.sftp_loading = true;
+                self.sftp_error = None;
+                if let Some(host_id) = &self.selected_host_id {
+                    effects.push(UiEffect::FetchSftpList {
+                        host_id: host_id.clone(),
+                        path,
+                    });
+                }
+            }
+            UserAction::SetSftpFiles(files) => {
+                self.sftp_files = files;
+                self.sftp_loading = false;
+                self.sftp_error = None;
+            }
+            UserAction::SetSftpLoading(loading) => {
+                self.sftp_loading = loading;
+            }
+            UserAction::SetSftpError(error) => {
+                self.sftp_error = error;
+                self.sftp_loading = false;
+            }
+            UserAction::OpenSftpEditor { path, content } => {
+                self.sftp_editor = Some((path, content));
+                self.sftp_editor_modified = false;
+                self.sftp_loading = false;
+            }
+            UserAction::UpdateSftpEditorContent(content) => {
+                if let Some((_, ref mut current_content)) = self.sftp_editor {
+                    *current_content = content;
+                    self.sftp_editor_modified = true;
+                }
+            }
+            UserAction::CloseSftpEditor => {
+                self.sftp_editor = None;
+                self.sftp_editor_modified = false;
+            }
+            UserAction::RequestReadSftpFile(path) => {
+                self.sftp_loading = true;
+                if let Some(host_id) = &self.selected_host_id {
+                    effects.push(UiEffect::ReadSftpFile {
+                        host_id: host_id.clone(),
+                        path,
+                    });
+                }
+            }
+            UserAction::RequestSaveSftpFile => {
+                if let (Some(host_id), Some((path, content))) = (&self.selected_host_id, &self.sftp_editor) {
+                    self.sftp_loading = true;
+                    effects.push(UiEffect::SaveSftpFile {
+                        host_id: host_id.clone(),
+                        path: path.clone(),
+                        content: content.clone(),
+                    });
+                }
+            }
         }
 
         effects
+    }
+
+    pub fn set_sftp_path(&mut self, path: String) -> Vec<UiEffect> {
+        self.handle_action(UserAction::SetSftpPath(path))
+    }
+
+    pub fn set_sftp_files(&mut self, files: Vec<RemoteFileItem>) {
+        self.handle_action(UserAction::SetSftpFiles(files));
+    }
+
+    pub fn set_sftp_loading(&mut self, loading: bool) {
+        self.handle_action(UserAction::SetSftpLoading(loading));
+    }
+
+    pub fn set_sftp_error(&mut self, error: Option<String>) {
+        self.handle_action(UserAction::SetSftpError(error));
+    }
+
+    pub fn open_sftp_editor(&mut self, path: String, content: String) {
+        self.handle_action(UserAction::OpenSftpEditor { path, content });
+    }
+
+    pub fn update_sftp_editor_content(&mut self, content: String) {
+        self.handle_action(UserAction::UpdateSftpEditorContent(content));
+    }
+
+    pub fn close_sftp_editor(&mut self) {
+        self.handle_action(UserAction::CloseSftpEditor);
+    }
+
+    pub fn request_read_sftp_file(&mut self, path: String) -> Vec<UiEffect> {
+        self.handle_action(UserAction::RequestReadSftpFile(path))
+    }
+
+    pub fn request_save_sftp_file(&mut self) -> Vec<UiEffect> {
+        self.handle_action(UserAction::RequestSaveSftpFile)
     }
 
     pub fn switch_view(&mut self, view: ActiveView) {
@@ -409,5 +538,106 @@ mod tests {
 
         sm.set_snippet_output(None);
         assert_eq!(sm.snippet_output, None);
+    }
+
+    #[test]
+    fn test_sftp_state_transitions() {
+        let mut sm = AppStateMachine::new();
+
+        // 1. Initial State
+        assert_eq!(sm.sftp_current_path, "/");
+        assert!(sm.sftp_files.is_empty());
+        assert!(!sm.sftp_loading);
+        assert!(sm.sftp_error.is_none());
+        assert!(sm.sftp_editor.is_none());
+        assert!(!sm.sftp_editor_modified);
+
+        // 2. Set path without host selected -> no effect
+        let effects = sm.set_sftp_path("/var/log".to_string());
+        assert_eq!(sm.sftp_current_path, "/var/log");
+        assert!(sm.sftp_loading);
+        assert!(effects.is_empty());
+
+        // 3. Select host and set path -> emits FetchSftpList
+        sm.selected_host_id = Some("srv-prod".to_string());
+        let effects = sm.set_sftp_path("/etc/nginx".to_string());
+        assert_eq!(sm.sftp_current_path, "/etc/nginx");
+        assert_eq!(effects, vec![UiEffect::FetchSftpList {
+            host_id: "srv-prod".to_string(),
+            path: "/etc/nginx".to_string(),
+        }]);
+
+        // 4. Set files -> clears loading and error
+        let file_item = RemoteFileItem {
+            name: "nginx.conf".to_string(),
+            path: "/etc/nginx/nginx.conf".to_string(),
+            is_dir: false,
+            is_symlink: false,
+            size: 2048,
+            modified: Some(1727000000),
+            permissions: 0o644,
+        };
+        sm.set_sftp_files(vec![file_item.clone()]);
+        assert_eq!(sm.sftp_files.len(), 1);
+        assert_eq!(sm.sftp_files[0].name, "nginx.conf");
+        assert!(!sm.sftp_loading);
+        assert!(sm.sftp_error.is_none());
+
+        // 5. Error handling
+        sm.set_sftp_error(Some("Permission denied".to_string()));
+        assert_eq!(sm.sftp_error, Some("Permission denied".to_string()));
+        assert!(!sm.sftp_loading);
+
+        // 6. Request Read File
+        let effects = sm.request_read_sftp_file("/etc/nginx/nginx.conf".to_string());
+        assert_eq!(effects, vec![UiEffect::ReadSftpFile {
+            host_id: "srv-prod".to_string(),
+            path: "/etc/nginx/nginx.conf".to_string(),
+        }]);
+
+        // 7. Open Editor
+        sm.open_sftp_editor(
+            "/etc/nginx/nginx.conf".to_string(),
+            "server { listen 80; }".to_string(),
+        );
+        assert_eq!(
+            sm.sftp_editor,
+            Some((
+                "/etc/nginx/nginx.conf".to_string(),
+                "server { listen 80; }".to_string()
+            ))
+        );
+        assert!(!sm.sftp_editor_modified);
+
+        // 8. Update editor content -> marked as modified
+        sm.update_sftp_editor_content("server { listen 443 ssl; }".to_string());
+        assert!(sm.sftp_editor_modified);
+        assert_eq!(
+            sm.sftp_editor.as_ref().unwrap().1,
+            "server { listen 443 ssl; }"
+        );
+
+        // 9. Request Save File -> emits SaveSftpFile
+        let effects = sm.request_save_sftp_file();
+        assert_eq!(effects, vec![UiEffect::SaveSftpFile {
+            host_id: "srv-prod".to_string(),
+            path: "/etc/nginx/nginx.conf".to_string(),
+            content: "server { listen 443 ssl; }".to_string(),
+        }]);
+        sm.set_sftp_loading(false);
+
+        // 10. Close Editor
+        sm.close_sftp_editor();
+        assert!(sm.sftp_editor.is_none());
+        assert!(!sm.sftp_editor_modified);
+
+        // 11. Switch view to Sftp auto-triggers fetch if empty
+        sm.sftp_files.clear();
+        let effects = sm.handle_action(UserAction::SwitchView(ActiveView::Sftp));
+        assert_eq!(sm.active_view, ActiveView::Sftp);
+        assert_eq!(effects, vec![UiEffect::FetchSftpList {
+            host_id: "srv-prod".to_string(),
+            path: "/etc/nginx".to_string(),
+        }]);
     }
 }

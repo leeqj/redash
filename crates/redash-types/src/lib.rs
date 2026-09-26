@@ -5,6 +5,7 @@ pub mod math;
 pub mod metrics;
 pub mod protocol;
 pub mod settings;
+pub mod sftp;
 
 pub use agent::*;
 pub use formatters::*;
@@ -13,6 +14,7 @@ pub use math::*;
 pub use metrics::*;
 pub use protocol::*;
 pub use settings::*;
+pub use sftp::*;
 
 #[cfg(test)]
 mod tests {

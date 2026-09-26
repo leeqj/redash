@@ -1,12 +1,17 @@
 use crate::app::{ActiveView, AppState, ProcessSortField, WorkbenchTab};
 use crate::render::LAYOUT;
 
+#[allow(clippy::large_enum_variant)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum UiAction {
     OpenTerminal(String),
     OpenSftp(String),
     DeleteHost(String),
     SaveNewHost,
     SendTerminalInput(String),
+    FetchSftpList { host_id: String, path: String },
+    ReadSftpFile { host_id: String, path: String },
+    SaveSftpFile { host_id: String, path: String, content: String },
 }
 
 pub fn handle_mouse_click(
@@ -16,6 +21,30 @@ pub fn handle_mouse_click(
     width: f64,
     height: f64,
 ) -> Option<UiAction> {
+    // 0. If SFTP Editor Modal is active, check editor modal clicks
+    if state.sftp_editor.is_some() {
+        let (save_x, save_y, save_w, save_h) = crate::render::get_sftp_editor_save_btn_rect(width, height);
+        if (save_x..=save_x + save_w).contains(&x) && (save_y..=save_y + save_h).contains(&y) {
+            if let (Some(host_id), Some((path, content))) = (&state.selected_host_id, &state.sftp_editor) {
+                return Some(UiAction::SaveSftpFile {
+                    host_id: host_id.clone(),
+                    path: path.clone(),
+                    content: content.clone(),
+                });
+            }
+            return None;
+        }
+
+        let (close_x, close_y, close_w, close_h) = crate::render::get_sftp_editor_close_btn_rect(width, height);
+        if (close_x..=close_x + close_w).contains(&x) && (close_y..=close_y + close_h).contains(&y) {
+            state.close_sftp_editor();
+            return None;
+        }
+
+        // Absorbs all clicks when editor modal is active
+        return None;
+    }
+
     // 1. If Modal is active, check modal clicks
     if state.show_add_modal {
         let mw = 420.0;
@@ -275,10 +304,145 @@ pub fn handle_mouse_click(
         }
     }
 
+    // 7. Check SFTP View clicks
+    if state.active_view == ActiveView::Sftp {
+        let content_x = LAYOUT.sidebar_width;
+        let content_y = LAYOUT.topbar_height;
+        let content_w = width - LAYOUT.sidebar_width;
+
+        // Check Refresh Button
+        let (ref_x, ref_y, ref_w, ref_h) = crate::render::get_sftp_refresh_btn_rect(content_x, content_y, content_w);
+        if (ref_x..=ref_x + ref_w).contains(&x) && (ref_y..=ref_y + ref_h).contains(&y) {
+            if let Some(host_id) = state.selected_host_id.clone() {
+                let path = state.sftp_current_path.clone();
+                state.set_sftp_loading(true);
+                return Some(UiAction::FetchSftpList {
+                    host_id,
+                    path,
+                });
+            }
+            return None;
+        }
+
+        // Check Parent Directory Button (if not root)
+        let is_root = state.sftp_current_path.trim() == "/" || state.sftp_current_path.trim().is_empty();
+        if !is_root {
+            let (p_x, p_y, p_w, p_h) = crate::render::get_sftp_parent_dir_btn_rect(content_x, content_y);
+            if (p_x..=p_x + p_w).contains(&x) && (p_y..=p_y + p_h).contains(&y) {
+                let parent = crate::render::get_parent_dir(&state.sftp_current_path);
+                state.sftp_current_path = parent.clone();
+                state.set_sftp_loading(true);
+                if let Some(host_id) = state.selected_host_id.clone() {
+                    return Some(UiAction::FetchSftpList {
+                        host_id,
+                        path: parent,
+                    });
+                }
+                return None;
+            }
+        }
+
+        // Check Breadcrumb Segment clicks
+        let mut clicked_target = None;
+        let breadcrumbs = crate::render::get_sftp_breadcrumb_rects(content_x, content_y, &state.sftp_current_path);
+        for (target_path, seg_x, seg_y, seg_w, seg_h) in breadcrumbs {
+            if (seg_x..=seg_x + seg_w).contains(&x) && (seg_y..=seg_y + seg_h).contains(&y) {
+                if target_path != state.sftp_current_path {
+                    clicked_target = Some(target_path);
+                }
+                break;
+            }
+        }
+        if let Some(target_path) = clicked_target {
+            state.sftp_current_path = target_path.clone();
+            state.set_sftp_loading(true);
+            if let Some(host_id) = state.selected_host_id.clone() {
+                return Some(UiAction::FetchSftpList {
+                    host_id,
+                    path: target_path,
+                });
+            }
+            return None;
+        }
+
+        // Check File Row clicks
+        let mut clicked_file = None;
+        for (idx, file) in state.sftp_files.iter().enumerate() {
+            let (rx, ry, rw, rh) = crate::render::get_sftp_file_row_rect(idx, content_x, content_y, content_w);
+            if (rx..=rx + rw).contains(&x) && (ry..=ry + rh).contains(&y) {
+                clicked_file = Some((file.is_dir, file.path.clone()));
+                break;
+            }
+        }
+        if let Some((is_dir, file_path)) = clicked_file {
+            if is_dir {
+                state.sftp_current_path = file_path.clone();
+                state.set_sftp_loading(true);
+                if let Some(host_id) = state.selected_host_id.clone() {
+                    return Some(UiAction::FetchSftpList {
+                        host_id,
+                        path: file_path,
+                    });
+                }
+            } else if let Some(host_id) = state.selected_host_id.clone() {
+                state.set_sftp_loading(true);
+                return Some(UiAction::ReadSftpFile {
+                    host_id,
+                    path: file_path,
+                });
+            }
+            return None;
+        }
+    }
+
     None
 }
 
-pub fn handle_key_down(state: &mut AppState, key: &str, _is_ctrl: bool) -> Option<UiAction> {
+pub fn handle_key_down(state: &mut AppState, key: &str, is_ctrl: bool) -> Option<UiAction> {
+    // If SFTP Editor Modal is open:
+    if state.sftp_editor.is_some() {
+        if key == "Escape" {
+            state.close_sftp_editor();
+            return None;
+        }
+
+        if (key == "s" || key == "S") && is_ctrl {
+            if let (Some(host_id), Some((path, content))) = (&state.selected_host_id, &state.sftp_editor) {
+                return Some(UiAction::SaveSftpFile {
+                    host_id: host_id.clone(),
+                    path: path.clone(),
+                    content: content.clone(),
+                });
+            }
+            return None;
+        }
+
+        if key == "Backspace" {
+            if let Some((_, ref mut content)) = state.sftp_editor {
+                content.pop();
+                state.sftp_editor_modified = true;
+            }
+            return None;
+        }
+
+        if key == "Enter" {
+            if let Some((_, ref mut content)) = state.sftp_editor {
+                content.push('\n');
+                state.sftp_editor_modified = true;
+            }
+            return None;
+        }
+
+        if key.len() == 1 && !is_ctrl {
+            if let Some((_, ref mut content)) = state.sftp_editor {
+                content.push_str(key);
+                state.sftp_editor_modified = true;
+            }
+            return None;
+        }
+
+        return None;
+    }
     // If Docker Log Modal is open, Escape closes it
     if state.docker_log_modal.is_some() && key == "Escape" {
         state.close_docker_logs();
@@ -446,5 +610,165 @@ mod tests {
         assert!(state.docker_log_modal.is_some());
         handle_mouse_click(&mut state, 10.0, 10.0, 1200.0, 800.0);
         assert!(state.docker_log_modal.is_none());
+    }
+
+    #[test]
+    fn test_sftp_input_and_editor_interactions() {
+        let mut state = AppState::new();
+        state.selected_host_id = Some("host-sftp-1".to_string());
+        state.switch_view(ActiveView::Sftp);
+        state.sftp_current_path = "/var/log".to_string();
+
+        let content_x = LAYOUT.sidebar_width;
+        let content_y = LAYOUT.topbar_height;
+        let content_w = 1200.0 - LAYOUT.sidebar_width;
+
+        // 1. Refresh button click
+        let (rx, ry, rw, rh) = crate::render::get_sftp_refresh_btn_rect(content_x, content_y, content_w);
+        let action = handle_mouse_click(&mut state, rx + rw / 2.0, ry + rh / 2.0, 1200.0, 800.0);
+        assert_eq!(
+            action,
+            Some(UiAction::FetchSftpList {
+                host_id: "host-sftp-1".to_string(),
+                path: "/var/log".to_string(),
+            })
+        );
+        assert!(state.sftp_loading);
+
+        // 2. Parent directory button click
+        state.set_sftp_loading(false);
+        let (px, py, pw, ph) = crate::render::get_sftp_parent_dir_btn_rect(content_x, content_y);
+        let action = handle_mouse_click(&mut state, px + pw / 2.0, py + ph / 2.0, 1200.0, 800.0);
+        assert_eq!(
+            action,
+            Some(UiAction::FetchSftpList {
+                host_id: "host-sftp-1".to_string(),
+                path: "/var".to_string(),
+            })
+        );
+        assert_eq!(state.sftp_current_path, "/var");
+
+        // 3. Breadcrumb navigation click
+        state.set_sftp_loading(false);
+        state.sftp_current_path = "/var/log/nginx".to_string();
+        let breadcrumbs = crate::render::get_sftp_breadcrumb_rects(content_x, content_y, &state.sftp_current_path);
+        // Click on segment 1 which is "/var"
+        let (ref target, bx, by, bw, bh) = breadcrumbs[1];
+        assert_eq!(target, "/var");
+        let action = handle_mouse_click(&mut state, bx + bw / 2.0, by + bh / 2.0, 1200.0, 800.0);
+        assert_eq!(
+            action,
+            Some(UiAction::FetchSftpList {
+                host_id: "host-sftp-1".to_string(),
+                path: "/var".to_string(),
+            })
+        );
+        assert_eq!(state.sftp_current_path, "/var");
+
+        // 4. File Row clicks
+        state.set_sftp_loading(false);
+        state.sftp_files = vec![
+            redash_types::sftp::RemoteFileItem {
+                name: "log".to_string(),
+                path: "/var/log".to_string(),
+                is_dir: true,
+                is_symlink: false,
+                size: 4096,
+                modified: None,
+                permissions: 0o755,
+            },
+            redash_types::sftp::RemoteFileItem {
+                name: "app.conf".to_string(),
+                path: "/var/app.conf".to_string(),
+                is_dir: false,
+                is_symlink: false,
+                size: 512,
+                modified: None,
+                permissions: 0o644,
+            },
+        ];
+
+        // Click directory row (index 0)
+        let (r0x, r0y, r0w, r0h) = crate::render::get_sftp_file_row_rect(0, content_x, content_y, content_w);
+        let action = handle_mouse_click(&mut state, r0x + r0w / 2.0, r0y + r0h / 2.0, 1200.0, 800.0);
+        assert_eq!(
+            action,
+            Some(UiAction::FetchSftpList {
+                host_id: "host-sftp-1".to_string(),
+                path: "/var/log".to_string(),
+            })
+        );
+        assert_eq!(state.sftp_current_path, "/var/log");
+
+        // Click file row (index 1)
+        let (r1x, r1y, r1w, r1h) = crate::render::get_sftp_file_row_rect(1, content_x, content_y, content_w);
+        let action = handle_mouse_click(&mut state, r1x + r1w / 2.0, r1y + r1h / 2.0, 1200.0, 800.0);
+        assert_eq!(
+            action,
+            Some(UiAction::ReadSftpFile {
+                host_id: "host-sftp-1".to_string(),
+                path: "/var/app.conf".to_string(),
+            })
+        );
+
+        // 5. SFTP Editor Modal interaction
+        state.open_sftp_editor("/var/app.conf".to_string(), "PORT=8080".to_string());
+        assert!(state.sftp_editor.is_some());
+        assert!(!state.sftp_editor_modified);
+
+        // Typing characters
+        handle_key_down(&mut state, "H", false);
+        handle_key_down(&mut state, "O", false);
+        handle_key_down(&mut state, "S", false);
+        handle_key_down(&mut state, "T", false);
+        handle_key_down(&mut state, "=", false);
+        assert!(state.sftp_editor_modified);
+        assert_eq!(
+            state.sftp_editor.as_ref().unwrap().1,
+            "PORT=8080HOST="
+        );
+
+        // Backspace
+        handle_key_down(&mut state, "Backspace", false);
+        assert_eq!(
+            state.sftp_editor.as_ref().unwrap().1,
+            "PORT=8080HOST"
+        );
+
+        // Ctrl+S to save
+        let action = handle_key_down(&mut state, "s", true);
+        assert_eq!(
+            action,
+            Some(UiAction::SaveSftpFile {
+                host_id: "host-sftp-1".to_string(),
+                path: "/var/app.conf".to_string(),
+                content: "PORT=8080HOST".to_string(),
+            })
+        );
+
+        // Click Save button
+        let (sx, sy, sw, sh) = crate::render::get_sftp_editor_save_btn_rect(1200.0, 800.0);
+        let action = handle_mouse_click(&mut state, sx + sw / 2.0, sy + sh / 2.0, 1200.0, 800.0);
+        assert_eq!(
+            action,
+            Some(UiAction::SaveSftpFile {
+                host_id: "host-sftp-1".to_string(),
+                path: "/var/app.conf".to_string(),
+                content: "PORT=8080HOST".to_string(),
+            })
+        );
+
+        // Click Close button
+        let (cx, cy, cw, ch) = crate::render::get_sftp_editor_close_btn_rect(1200.0, 800.0);
+        let action = handle_mouse_click(&mut state, cx + cw / 2.0, cy + ch / 2.0, 1200.0, 800.0);
+        assert!(action.is_none());
+        assert!(state.sftp_editor.is_none());
+
+        // Re-open and test Escape key to close
+        state.open_sftp_editor("/var/app.conf".to_string(), "test".to_string());
+        assert!(state.sftp_editor.is_some());
+        let action = handle_key_down(&mut state, "Escape", false);
+        assert!(action.is_none());
+        assert!(state.sftp_editor.is_none());
     }
 }
