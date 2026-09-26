@@ -37,3 +37,51 @@ pub const DARK_TECH_THEME: ThemeColors = ThemeColors {
     status_warn: "#d29922",
     status_crit: "#f85149",
 };
+
+pub const CYBERPUNK_THEME: ThemeColors = ThemeColors {
+    bg_root: "#080614",
+    bg_sidebar: "#110c26",
+    bg_card: "#181236",
+    bg_card_hover: "#221a4c",
+    bg_input: "#120d2b",
+    border_default: "#2f1e60",
+    border_muted: "#432b85",
+    border_accent: "#ff007f",
+    text_primary: "#fff5fa",
+    text_secondary: "#b2a1d9",
+    text_muted: "#715f9e",
+    accent_cyan: "#00f0ff",
+    accent_purple: "#ff007f",
+    status_online: "#00ff9f",
+    status_warn: "#ffb800",
+    status_crit: "#ff0055",
+};
+
+pub const SOLARIZED_DARK_THEME: ThemeColors = ThemeColors {
+    bg_root: "#002b36",
+    bg_sidebar: "#073642",
+    bg_card: "#09414f",
+    bg_card_hover: "#0d4e5f",
+    bg_input: "#06313c",
+    border_default: "#0e5a6d",
+    border_muted: "#146d84",
+    border_accent: "#2aa198",
+    text_primary: "#fdf6e3",
+    text_secondary: "#93a1a1",
+    text_muted: "#657b83",
+    accent_cyan: "#2aa198",
+    accent_purple: "#6c71c4",
+    status_online: "#859900",
+    status_warn: "#b58900",
+    status_crit: "#dc322f",
+};
+
+impl ThemeColors {
+    pub fn from_palette(palette: &ThemePalette) -> Self {
+        match palette.name {
+            "CyberpunkNeon" | "Cyberpunk" => CYBERPUNK_THEME,
+            "SolarizedDark" | "Solarized" => SOLARIZED_DARK_THEME,
+            _ => DARK_TECH_THEME,
+        }
+    }
+}

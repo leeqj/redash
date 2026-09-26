@@ -1,6 +1,7 @@
 pub mod dict;
 pub mod locale;
 
+pub use dict::lookup_in_locale;
 pub use locale::Locale;
 use std::sync::atomic::{AtomicU8, Ordering};
 
