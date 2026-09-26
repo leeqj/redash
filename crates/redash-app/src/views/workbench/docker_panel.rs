@@ -226,17 +226,7 @@ impl DockerPanel {
     }
 
     pub fn format_bytes(bytes: u64) -> String {
-        if bytes >= 1024 * 1024 * 1024 {
-            format!("{:.1} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
-        } else if bytes >= 1024 * 1024 {
-            format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
-        } else if bytes >= 1024 {
-            format!("{:.1} KB", bytes as f64 / 1024.0)
-        } else if bytes > 0 {
-            format!("{} B", bytes)
-        } else {
-            "0 B".to_string()
-        }
+        redash_types::formatters::format_bytes(bytes)
     }
 }
 
@@ -1184,7 +1174,7 @@ mod tests {
         assert_eq!(DockerPanel::format_bytes(500), "500 B");
         assert_eq!(DockerPanel::format_bytes(1024), "1.0 KB");
         assert_eq!(DockerPanel::format_bytes(1048576 * 12), "12.0 MB");
-        assert_eq!(DockerPanel::format_bytes(1073741824 * 2), "2.0 GB");
+        assert_eq!(DockerPanel::format_bytes(1073741824 * 2), "2.00 GB");
     }
 
     #[test]

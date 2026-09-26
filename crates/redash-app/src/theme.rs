@@ -492,6 +492,51 @@ impl DarkTechTheme {
     }
 }
 
+pub trait RgbaColorGpuiExt {
+    fn to_gpui_color(&self) -> gpui::Rgba;
+}
+
+impl RgbaColorGpuiExt for redash_ui_core::theme::RgbaColor {
+    fn to_gpui_color(&self) -> gpui::Rgba {
+        gpui::Rgba {
+            r: self.r as f32 / 255.0,
+            g: self.g as f32 / 255.0,
+            b: self.b as f32 / 255.0,
+            a: self.a,
+        }
+    }
+}
+
+impl From<&redash_ui_core::theme::ThemePalette> for ThemePalette {
+    fn from(p: &redash_ui_core::theme::ThemePalette) -> Self {
+        Self {
+            name: p.name,
+            title: p.name,
+            description: p.name,
+            bg_root: p.bg_root.to_u32_rgb(),
+            bg_panel: p.bg_sidebar.to_u32_rgb(),
+            bg_panel_hover: p.bg_card_hover.to_u32_rgb(),
+            bg_input: p.bg_input.to_u32_rgb(),
+            bg_popup: p.bg_card.to_u32_rgb(),
+            border_default: p.border_default.to_u32_rgb(),
+            border_muted: p.border_muted.to_u32_rgb(),
+            border_active: p.accent_cyan.to_u32_rgb(),
+            border_accent: p.border_accent.to_u32_rgb(),
+            status_online: p.status_online.to_u32_rgb(),
+            status_warn: p.status_warn.to_u32_rgb(),
+            status_crit: p.status_crit.to_u32_rgb(),
+            status_offline: p.text_muted.to_u32_rgb(),
+            accent_cyan: p.accent_cyan.to_u32_rgb(),
+            accent_indigo: p.accent_blue.to_u32_rgb(),
+            accent_emerald: p.status_online.to_u32_rgb(),
+            text_primary: p.text_primary.to_u32_rgb(),
+            text_secondary: p.text_secondary.to_u32_rgb(),
+            text_muted: p.text_muted.to_u32_rgb(),
+            text_accent: p.accent_cyan.to_u32_rgb(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

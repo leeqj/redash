@@ -39,6 +39,10 @@ impl RgbaColor {
         }
     }
 
+    pub fn to_canvas_style(&self) -> String {
+        self.to_css_rgba()
+    }
+
     pub fn to_hex_str(&self) -> String {
         format!("#{:02x}{:02x}{:02x}", self.r, self.g, self.b)
     }

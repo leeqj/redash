@@ -35,12 +35,10 @@ impl MicroMeter {
 
     /// Helper returning appropriate color according to percentage threshold.
     pub fn color_for_percentage(pct: f32) -> Hsla {
-        if pct > 85.0 {
-            DarkTechTheme::status_crit()
-        } else if pct > 70.0 {
-            DarkTechTheme::status_warn()
-        } else {
-            DarkTechTheme::accent_cyan()
+        match redash_types::math::evaluate_meter_level(pct) {
+            redash_types::math::MeterLevel::Critical => DarkTechTheme::status_crit(),
+            redash_types::math::MeterLevel::Warning => DarkTechTheme::status_warn(),
+            redash_types::math::MeterLevel::Normal => DarkTechTheme::accent_cyan(),
         }
     }
 
