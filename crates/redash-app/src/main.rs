@@ -1,9 +1,12 @@
-#![recursion_limit = "256"]
+#![recursion_limit = "2048"]
 
 mod components;
 pub mod i18n;
 mod terminal;
 mod views;
+
+#[cfg(test)]
+mod tests;
 
 use crate::i18n::I18n;
 use gpui::*;
@@ -199,71 +202,75 @@ impl ReDashApp {
     fn bind_fleet_actions(&mut self, fleet_view: Entity<FleetView>, cx: &mut Context<Self>) {
         let app_entity = cx.entity().downgrade();
         fleet_view.update(cx, |view, _cx| {
-            view.set_on_action(move |action, window, _cx| {
-                if let Some(app) = app_entity.upgrade() {
-                    match action {
-                        FleetAction::OpenTerminal(host) => {
-                            app.update(_cx, |app, cx| {
-                                app.open_workbench_tab(host, window, cx);
-                            });
-                        }
-                        FleetAction::OpenSftp(host) => {
-                            app.update(_cx, |app, cx| {
-                                app.open_sftp_tab(host, cx);
-                            });
-                        }
-                        FleetAction::OpenBatch(hosts) => {
-                            app.update(_cx, |app, cx| {
-                                app.open_batch_tab(hosts, cx);
-                            });
-                        }
-                        FleetAction::AddNewHost => {
-                            app.update(_cx, |app, cx| {
-                                app.open_add_host_modal(window, cx);
-                            });
-                        }
-                        FleetAction::EditHost(host) => {
-                            app.update(_cx, |app, cx| {
-                                app.open_edit_host_modal(host, window, cx);
-                            });
-                        }
-                        FleetAction::CloneHost(host) => {
-                            app.update(_cx, |app, cx| {
-                                app.clone_host(host, cx);
-                            });
-                        }
-                        FleetAction::DeleteHost(host_id) => {
-                            app.update(_cx, |app, cx| {
-                                app.delete_host(host_id, cx);
-                            });
-                        }
-                        FleetAction::DeleteBatch(host_ids) => {
-                            app.update(_cx, |app, cx| {
-                                app.delete_batch(host_ids, cx);
-                            });
-                        }
-                        FleetAction::MoveHostUp(host_id) => {
-                            app.update(_cx, |app, cx| {
-                                app.move_host(host_id, true, cx);
-                            });
-                        }
-                        FleetAction::MoveHostDown(host_id) => {
-                            app.update(_cx, |app, cx| {
-                                app.move_host(host_id, false, cx);
-                            });
-                        }
-                        FleetAction::MoveHostToTop(host_id) => {
-                            app.update(_cx, |app, cx| {
-                                app.move_host_to_top(host_id, cx);
-                            });
-                        }
-                        FleetAction::ReorderHosts(host_ids) => {
-                            app.update(_cx, |app, cx| {
-                                app.reorder_hosts(host_ids, cx);
-                            });
+            view.set_on_action(move |action, window, cx| {
+                let app_entity = app_entity.clone();
+                // Release the FleetView event borrow before updating it again.
+                window.defer(cx, move |window, cx| {
+                    if let Some(app) = app_entity.upgrade() {
+                        match action {
+                            FleetAction::OpenTerminal(host) => {
+                                app.update(cx, |app, cx| {
+                                    app.open_workbench_tab(host, window, cx);
+                                });
+                            }
+                            FleetAction::OpenSftp(host) => {
+                                app.update(cx, |app, cx| {
+                                    app.open_sftp_tab(host, cx);
+                                });
+                            }
+                            FleetAction::OpenBatch(hosts) => {
+                                app.update(cx, |app, cx| {
+                                    app.open_batch_tab(hosts, cx);
+                                });
+                            }
+                            FleetAction::AddNewHost => {
+                                app.update(cx, |app, cx| {
+                                    app.open_add_host_modal(window, cx);
+                                });
+                            }
+                            FleetAction::EditHost(host) => {
+                                app.update(cx, |app, cx| {
+                                    app.open_edit_host_modal(host, window, cx);
+                                });
+                            }
+                            FleetAction::CloneHost(host) => {
+                                app.update(cx, |app, cx| {
+                                    app.clone_host(host, cx);
+                                });
+                            }
+                            FleetAction::DeleteHost(host_id) => {
+                                app.update(cx, |app, cx| {
+                                    app.delete_host(host_id, cx);
+                                });
+                            }
+                            FleetAction::DeleteBatch(host_ids) => {
+                                app.update(cx, |app, cx| {
+                                    app.delete_batch(host_ids, cx);
+                                });
+                            }
+                            FleetAction::MoveHostUp(host_id) => {
+                                app.update(cx, |app, cx| {
+                                    app.move_host(host_id, true, cx);
+                                });
+                            }
+                            FleetAction::MoveHostDown(host_id) => {
+                                app.update(cx, |app, cx| {
+                                    app.move_host(host_id, false, cx);
+                                });
+                            }
+                            FleetAction::MoveHostToTop(host_id) => {
+                                app.update(cx, |app, cx| {
+                                    app.move_host_to_top(host_id, cx);
+                                });
+                            }
+                            FleetAction::ReorderHosts(host_ids) => {
+                                app.update(cx, |app, cx| {
+                                    app.reorder_hosts(host_ids, cx);
+                                });
+                            }
                         }
                     }
-                }
+                });
             });
         });
     }
@@ -352,11 +359,15 @@ impl ReDashApp {
         let app_entity = cx.entity().downgrade();
         modal_entity.update(cx, |modal, _cx| {
             modal.set_on_action(move |action, window, cx| {
-                if let Some(app) = app_entity.upgrade() {
-                    app.update(cx, |app, cx| {
-                        app.handle_modal_action(action, window, cx);
-                    });
-                }
+                let app_entity = app_entity.clone();
+                // Saving may need to show an error in this same modal.
+                window.defer(cx, move |window, cx| {
+                    if let Some(app) = app_entity.upgrade() {
+                        app.update(cx, |app, cx| {
+                            app.handle_modal_action(action, window, cx);
+                        });
+                    }
+                });
             });
         });
 
@@ -373,15 +384,29 @@ impl ReDashApp {
     ) {
         let fh = cx.focus_handle();
         let fh_clone = fh.clone();
-        let modal_entity = cx.new(|_cx| HostModal::new_edit(host).with_focus_handle(fh_clone));
+        let credential_missing = self
+            .fleet_view
+            .read(cx)
+            .probe_errors
+            .get(&host.id)
+            .is_some_and(|failure| failure.needs_credentials);
+        let modal_entity = cx.new(|_cx| {
+            HostModal::new_edit(host)
+                .with_missing_credential(credential_missing)
+                .with_focus_handle(fh_clone)
+        });
         let app_entity = cx.entity().downgrade();
         modal_entity.update(cx, |modal, _cx| {
             modal.set_on_action(move |action, window, cx| {
-                if let Some(app) = app_entity.upgrade() {
-                    app.update(cx, |app, cx| {
-                        app.handle_modal_action(action, window, cx);
-                    });
-                }
+                let app_entity = app_entity.clone();
+                // Saving may need to show an error in this same modal.
+                window.defer(cx, move |window, cx| {
+                    if let Some(app) = app_entity.upgrade() {
+                        app.update(cx, |app, cx| {
+                            app.handle_modal_action(action, window, cx);
+                        });
+                    }
+                });
             });
         });
 
@@ -402,8 +427,9 @@ impl ReDashApp {
                 cx.notify();
             }
             HostModalAction::Delete(host_id) => {
-                self.delete_host(host_id, cx);
-                self.active_modal = None;
+                if self.delete_host(host_id, cx) {
+                    self.active_modal = None;
+                }
                 cx.notify();
             }
             HostModalAction::Clone(host) => {
@@ -443,20 +469,10 @@ impl ReDashApp {
                     return;
                 }
 
-                // 4. Update monitored hosts
+                // Publish the saved configuration before closing the editor.
+                self.error_msg = None;
                 self.sync_monitored_hosts(cx);
 
-                // 5. Update fleet view safely asynchronously
-                let updated_hosts = self.host_store.hosts.clone();
-                let fleet = self.fleet_view.clone();
-                cx.spawn(async move |_this, cx| {
-                    let _ = fleet.update(cx, |f, cx| {
-                        f.set_hosts(updated_hosts, cx);
-                    });
-                })
-                .detach();
-
-                // 6. Close modal
                 self.active_modal = None;
                 cx.notify();
             }
@@ -474,23 +490,16 @@ impl ReDashApp {
         }
         if let Ok(_cloned) = outcome {
             self.sync_monitored_hosts(cx);
-            let updated_hosts = self.host_store.hosts.clone();
-            let fleet = self.fleet_view.clone();
-            cx.spawn(async move |_this, cx| {
-                let _ = fleet.update(cx, |f, cx| {
-                    f.set_hosts(updated_hosts, cx);
-                });
-            })
-            .detach();
             cx.notify();
         }
     }
 
-    fn delete_host(&mut self, host_id: HostId, cx: &mut Context<Self>) {
+    fn delete_host(&mut self, host_id: HostId, cx: &mut Context<Self>) -> bool {
         if let Err(error) = self.host_store.delete_host(&host_id) {
             self.show_error(format!("删除失败：{error}"), cx);
-            return;
+            return false;
         }
+        self.error_msg = None;
         // 1. Disconnect session
         let session_mgr = Arc::clone(&self.session_mgr);
         let hid = host_id.clone();
@@ -509,19 +518,10 @@ impl ReDashApp {
             self.active_tab_index = self.tabs.len().saturating_sub(1);
         }
 
-        // 3. Remove from HostStore and persist (cleans secrets + saves atomically)
-
-        // 4. Sync monitored hosts & fleet view
+        // Publish only after the configuration was persisted successfully.
         self.sync_monitored_hosts(cx);
-        let updated_hosts = self.host_store.hosts.clone();
-        let fleet = self.fleet_view.clone();
-        cx.spawn(async move |_this, cx| {
-            let _ = fleet.update(cx, |f, cx| {
-                f.set_hosts(updated_hosts, cx);
-            });
-        })
-        .detach();
         cx.notify();
+        true
     }
 
     fn delete_batch(&mut self, host_ids: Vec<HostId>, cx: &mut Context<Self>) {
@@ -529,6 +529,7 @@ impl ReDashApp {
             self.show_error(format!("删除失败：{error}"), cx);
             return;
         }
+        self.error_msg = None;
         // 1. Disconnect sessions
         for hid in &host_ids {
             let session_mgr = Arc::clone(&self.session_mgr);
@@ -550,18 +551,8 @@ impl ReDashApp {
             self.active_tab_index = self.tabs.len().saturating_sub(1);
         }
 
-        // 3. Remove batch from HostStore (cleans secrets and saves atomically)
-
-        // 4. Sync monitored hosts & fleet view
+        // Publish only after the configuration was persisted successfully.
         self.sync_monitored_hosts(cx);
-        let updated_hosts = self.host_store.hosts.clone();
-        let fleet = self.fleet_view.clone();
-        cx.spawn(async move |_this, cx| {
-            let _ = fleet.update(cx, |f, cx| {
-                f.set_hosts(updated_hosts, cx);
-            });
-        })
-        .detach();
         cx.notify();
     }
 
@@ -576,14 +567,6 @@ impl ReDashApp {
         }
         if let Ok(true) = outcome {
             self.sync_monitored_hosts(cx);
-            let updated_hosts = self.host_store.hosts.clone();
-            let fleet = self.fleet_view.clone();
-            cx.spawn(async move |_this, cx| {
-                let _ = fleet.update(cx, |f, cx| {
-                    f.set_hosts(updated_hosts, cx);
-                });
-            })
-            .detach();
             cx.notify();
         }
     }
@@ -600,14 +583,6 @@ impl ReDashApp {
         }
         if let Ok(true) = outcome {
             self.sync_monitored_hosts(cx);
-            let updated_hosts = self.host_store.hosts.clone();
-            let fleet = self.fleet_view.clone();
-            cx.spawn(async move |_this, cx| {
-                let _ = fleet.update(cx, |f, cx| {
-                    f.set_hosts(updated_hosts, cx);
-                });
-            })
-            .detach();
             cx.notify();
         }
     }
@@ -623,14 +598,6 @@ impl ReDashApp {
         }
         if let Ok(()) = outcome {
             self.sync_monitored_hosts(cx);
-            let updated_hosts = self.host_store.hosts.clone();
-            let fleet = self.fleet_view.clone();
-            cx.spawn(async move |_this, cx| {
-                let _ = fleet.update(cx, |f, cx| {
-                    f.set_hosts(updated_hosts, cx);
-                });
-            })
-            .detach();
             cx.notify();
         }
     }
@@ -1126,16 +1093,16 @@ impl ReDashApp {
                                 }
                             }
                             Err(error) => {
-                                let message = format!("{error:#}");
+                                let failure = views::fleet_view::ProbeFailure::from_error(&error);
                                 app.fleet_view.update(cx, |view, cx| {
-                                    view.set_probe_error(host.id.clone(), message.clone(), cx)
+                                    view.set_probe_error(host.id.clone(), failure.clone(), cx)
                                 });
                                 for tab in &app.tabs {
                                     if let TabContent::Workbench(id, workbench) = &tab.content
                                         && id == &host.id
                                     {
                                         workbench.update(cx, |view, cx| {
-                                            view.probe_error = Some(message.clone());
+                                            view.probe_error = Some(failure.message.into());
                                             cx.notify();
                                         });
                                     }

@@ -27,6 +27,10 @@ pub struct VaultStatus {
     pub memory_cached_count: usize,
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("Saved credential is missing; edit this host to save it again")]
+pub struct MissingCredential;
+
 fn legacy_paths() -> Vec<PathBuf> {
     let Some(base) = dirs::config_dir().or_else(dirs::home_dir) else {
         return Vec::new();
@@ -235,7 +239,11 @@ impl CredentialVault {
             Ok(value) => Ok(value),
             Err(keyring::Error::NoEntry) => {
                 Self::migrate_legacy()?;
-                native_get(id).context("Credential not found after migration")
+                match native_get(id) {
+                    Ok(value) => Ok(value),
+                    Err(keyring::Error::NoEntry) => Err(MissingCredential.into()),
+                    Err(error) => Err(error).context("Failed to read migrated credential"),
+                }
             }
             Err(error) => {
                 Err(error).context("Failed to read credential from the system credential store")
@@ -306,7 +314,10 @@ mod tests {
     }
     #[test]
     fn missing_credentials_are_errors() {
-        assert!(CredentialVault::get_secret(&uuid::Uuid::new_v4().to_string()).is_err());
+        let error = CredentialVault::get_secret(&uuid::Uuid::new_v4().to_string())
+            .unwrap_err()
+            .context("Password authentication could not start");
+        assert!(error.downcast_ref::<MissingCredential>().is_some());
         assert!(
             CredentialVault::duplicate_secret(&uuid::Uuid::new_v4().to_string(), "unused").is_err()
         );

@@ -208,6 +208,7 @@ impl IntoElement for SparklineChart {
             vec![(self.data, stroke_col, fill_col)]
         };
 
+        let has_samples = series_list.iter().any(|(data, _, _)| !data.is_empty());
         // Precompute min and max for range readout
         let (min_val, max_val_samp) = {
             let mut min = 100.0_f32;
@@ -495,7 +496,7 @@ impl IntoElement for SparklineChart {
         hud = hud.child(mid_row);
 
         // 3. Footer: MIN / MAX Range (if enabled)
-        if show_range {
+        if show_range && has_samples {
             let footer = div()
                 .w_full()
                 .flex()

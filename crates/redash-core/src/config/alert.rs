@@ -63,19 +63,143 @@ impl AlertDispatcher {
         }
     }
 
+    pub fn is_feishu_webhook(webhook_url: &str) -> bool {
+        webhook_url.contains("open.feishu.cn") || webhook_url.contains("open.larksuite.com")
+    }
+
+    pub fn format_timestamp_utc(timestamp: u64) -> String {
+        let days = timestamp / 86400;
+        let time_of_day = timestamp % 86400;
+        let hours = time_of_day / 3600;
+        let minutes = (time_of_day % 3600) / 60;
+        let seconds = time_of_day % 60;
+
+        let mut year = 1970;
+        let mut d = days;
+        loop {
+            let leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+            let days_in_year = if leap { 366 } else { 365 };
+            if d < days_in_year {
+                break;
+            }
+            d -= days_in_year;
+            year += 1;
+        }
+        let leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+        let days_in_months = [
+            31,
+            if leap { 29 } else { 28 },
+            31,
+            30,
+            31,
+            30,
+            31,
+            31,
+            30,
+            31,
+            30,
+            31,
+        ];
+        let mut month = 1;
+        for &dim in &days_in_months {
+            if d < dim {
+                break;
+            }
+            d -= dim;
+            month += 1;
+        }
+        let day = d + 1;
+        format!("{year:04}-{month:02}-{day:02} {hours:02}:{minutes:02}:{seconds:02} UTC")
+    }
+
+    pub fn build_feishu_payload(event: &AlertEvent) -> serde_json::Value {
+        let (title, template_color) = match event.alert_type.as_str() {
+            "offline" => ("🚨 主机离线警报", "carmine"),
+            "cpu" => ("⚠️ CPU 负载告警", "red"),
+            "mem" => ("⚠️ 内存过载告警", "orange"),
+            "disk" => ("⚠️ 磁盘空间紧迫告警", "red"),
+            _ => ("⚠️ 服务器指标告警", "orange"),
+        };
+
+        let type_cn = match event.alert_type.as_str() {
+            "offline" => "节点离线 / 采集超时",
+            "cpu" => "CPU 负载超标",
+            "mem" => "内存占用超标",
+            "disk" => "磁盘空间超标",
+            other => other,
+        };
+
+        let time_str = Self::format_timestamp_utc(event.timestamp);
+
+        serde_json::json!({
+            "msg_type": "interactive",
+            "card": {
+                "header": {
+                    "title": {
+                        "tag": "plain_text",
+                        "content": format!("ReDash - {}", title)
+                    },
+                    "template": template_color
+                },
+                "elements": [
+                    {
+                        "tag": "div",
+                        "fields": [
+                            {
+                                "is_short": true,
+                                "text": {
+                                    "tag": "lark_md",
+                                    "content": format!("**🖥️ 目标主机**\n{}", event.host_name)
+                                }
+                            },
+                            {
+                                "is_short": true,
+                                "text": {
+                                    "tag": "lark_md",
+                                    "content": format!("**🏷️ 告警类型**\n{}", type_cn)
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "tag": "div",
+                        "text": {
+                            "tag": "lark_md",
+                            "content": format!("**📝 详细信息**\n{}", event.message)
+                        }
+                    },
+                    {
+                        "tag": "hr"
+                    },
+                    {
+                        "tag": "note",
+                        "elements": [
+                            {
+                                "tag": "plain_text",
+                                "content": format!("时间: {} | Host ID: {} | ReDash 监控中心", time_str, event.host_id)
+                            }
+                        ]
+                    }
+                ]
+            }
+        })
+    }
+
     pub async fn send_webhook(webhook_url: &str, event: &AlertEvent) -> Result<()> {
-        let payload = serde_json::to_string(event)?;
+        let is_feishu = Self::is_feishu_webhook(webhook_url);
+        let payload = if is_feishu {
+            serde_json::to_string(&Self::build_feishu_payload(event))?
+        } else {
+            serde_json::to_string(event)?
+        };
 
         let output = tokio::process::Command::new("curl")
-            .arg("--fail")
             .arg("--proto")
             .arg("=http,https")
             .arg("-s")
             .arg("-S")
-            .arg("--output")
-            .arg(if cfg!(windows) { "NUL" } else { "/dev/null" })
-            .arg("--write-out")
-            .arg("%{http_code}")
+            .arg("-w")
+            .arg("\n%{http_code}")
             .arg("--max-time")
             .arg("10")
             .arg("-X")
@@ -95,11 +219,41 @@ impl AlertDispatcher {
             anyhow::bail!("Webhook failed: {}", err);
         }
 
-        let status: u16 = String::from_utf8_lossy(&output.stdout).trim().parse()?;
+        let full_output = String::from_utf8_lossy(&output.stdout);
+        let (body, status_code_str) = match full_output.rfind('\n') {
+            Some(idx) => (&full_output[..idx], full_output[idx + 1..].trim()),
+            None => ("", full_output.trim()),
+        };
+
+        let status: u16 = status_code_str.parse().map_err(|e| {
+            anyhow::anyhow!("Failed to parse HTTP status code '{status_code_str}': {e}")
+        })?;
+
         anyhow::ensure!(
             (200..300).contains(&status),
-            "Webhook returned HTTP {status}"
+            "Webhook returned HTTP {status}: {body}"
         );
+
+        if is_feishu && let Ok(json) = serde_json::from_str::<serde_json::Value>(body) {
+            if let Some(code) = json.get("code").and_then(|c| c.as_i64())
+                && code != 0
+            {
+                let msg = json
+                    .get("msg")
+                    .and_then(|m| m.as_str())
+                    .unwrap_or("unknown error");
+                anyhow::bail!("飞书机器人推送被拒绝 (code {code}): {msg}");
+            } else if let Some(code) = json.get("StatusCode").and_then(|c| c.as_i64())
+                && code != 0
+            {
+                let msg = json
+                    .get("StatusMessage")
+                    .and_then(|m| m.as_str())
+                    .unwrap_or("unknown error");
+                anyhow::bail!("飞书机器人推送被拒绝 (StatusCode {code}): {msg}");
+            }
+        }
+
         Ok(())
     }
 
@@ -332,5 +486,32 @@ mod tests {
                 .is_err()
         );
         server.await.unwrap();
+    }
+
+    #[test]
+    fn test_feishu_detection_and_payload() {
+        let feishu_url = "https://open.feishu.cn/open-apis/bot/v2/hook/abc-123";
+        let lark_url = "https://open.larksuite.com/open-apis/bot/v2/hook/xyz-789";
+        let generic_url = "https://example.com/webhook";
+
+        assert!(AlertDispatcher::is_feishu_webhook(feishu_url));
+        assert!(AlertDispatcher::is_feishu_webhook(lark_url));
+        assert!(!AlertDispatcher::is_feishu_webhook(generic_url));
+
+        let event = AlertEvent {
+            host_id: "host-42".into(),
+            host_name: "prod-db-master".into(),
+            alert_type: "cpu".into(),
+            message: "CPU 98.5% overload".into(),
+            timestamp: 1700000000,
+        };
+
+        let payload = AlertDispatcher::build_feishu_payload(&event);
+        assert_eq!(payload["msg_type"], "interactive");
+        assert_eq!(payload["card"]["header"]["template"], "red");
+        let json_str = serde_json::to_string(&payload).unwrap();
+        assert!(json_str.contains("prod-db-master"));
+        assert!(json_str.contains("CPU 98.5% overload"));
+        assert!(json_str.contains("CPU 负载超标"));
     }
 }

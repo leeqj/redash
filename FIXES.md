@@ -1,6 +1,6 @@
 # ReDash 审查修复记录
 
-日期：2026-09-26。对应 [CODE_REVIEW.md](CODE_REVIEW.md) 中的 27 项问题（10 项 P1、17 项 P2）。这些问题均已落实代码修复；本机格式检查、严格 Clippy 和 158 个测试通过。协议与持久化边界使用 mock、临时目录及本机临时端口验证，GUI 和真实服务器兼容性仍需联调。
+日期：2026-09-26。对应 [CODE_REVIEW.md](CODE_REVIEW.md) 中的 27 项问题（10 项 P1、17 项 P2）。这些问题均已落实代码修复；初次修复通过本机格式检查、严格 Clippy 和 158 个测试。后续用户反馈的删除闪退及凭据缺失交互修复记录见本文末尾。协议与持久化边界使用 mock、临时目录及本机临时端口验证，完整 GUI 和真实服务器兼容性仍需联调。
 
 保留原有 `redash-core` / `redash-app` 分层，复用 russh、russh-sftp、keyring、Alacritty 和 Tokio。没有引入新的运行时框架；新增的 `rand` 仅用于测试生成 SSH 主机密钥。
 
@@ -47,7 +47,7 @@
 
 ## 自动验证
 
-本机 macOS，rustc/cargo 1.96.0；依赖离线缓存。最终执行：
+初次修复的验证环境为本机 macOS，rustc/cargo 1.96.0；依赖离线缓存。执行：
 
 ```sh
 cargo fmt --all -- --check
@@ -81,3 +81,26 @@ cargo test --workspace --locked --offline
 - 仍需真实 OpenSSH/SFTP、系统凭据库、断网场景和桌面交互联调；Linux/Windows 桌面构建与性能基准不在本次验证范围内。
 
 仓库开始时尚无 Git 提交，源码均未跟踪。修复前快照保存在 `/tmp/redash-before-fixes-20260926.tar.gz`；它是本机临时备份，不替代正式版本控制。
+
+## 用户反馈跟进：删除闪退与凭据缺失交互
+
+删除闪退来自 GPUI 实体的同步重入：`FleetView` 点击事件持有该视图的更新借用，回调进入 `ReDashApp::delete_host`，`sync_monitored_hosts` 又更新相同 `FleetView`。GPUI 因此 panic，macOS 鼠标事件边界无法展开 Rust panic，最终 SIGABRT。保存错误还有同类问题：`HostModal` 的保存回调通过 `show_error` 再次更新自身。
+
+在修改回调前，新增的 GPUI 回归测试分别复现了：
+
+```text
+cannot update redash::views::fleet_view::FleetView while it is already being updated
+cannot update redash::components::host_modal::HostModal while it is already being updated
+```
+
+修复内容：
+
+- Fleet 操作和主机表单操作通过 `Window::defer` 在当前事件借用释放后执行，覆盖删除、批量删除、编辑、复制及排序入口。
+- 删除失败保留表单和当前配置；成功重试后关闭表单并清除旧错误。移除重复异步回写的主机列表快照，避免旧快照覆盖较新的删除结果。
+- 使用 `MissingCredential` 类型识别凭据缺失，移除误导性的“after migration”提示。卡片显示简短原因和可点击的“编辑凭据”，完整错误通过“详情”查看，不再直接挤占卡片。
+- 编辑入口聚焦缺失的密码或口令；已知缺失时阻止留空保存，允许重新填写或切换认证方式。不会凭空恢复已丢失的密码，也不自动读取其他服务的秘密。
+- 未采集指标使用主题文字颜色；无数据时隐藏 MIN/MAX 0% 并显示“未采集”。
+
+回归测试位于 [app/src/tests.rs](crates/redash-app/src/tests.rs)，使用 GPUI 官方测试窗口和临时主机配置，不运行监控、不连接用户服务器、不触碰真实凭据。覆盖单台/批量删除的界面及磁盘一致性、保存失败、删除失败与成功重试，以及凭据恢复入口；另外增加错误分类和私钥口令校验测试。
+
+跟进修复的最终验证：`cargo fmt --all -- --check`、严格 Clippy 和 `git diff --check` 通过；全量 **163 个测试通过**（App 86，包含 3 个 GPUI 回归测试；Core 68；SFTP/SSH 集成测试 9）。测试覆盖事件回调及状态流，尚未完成真实服务器连接和完整桌面视觉验收。

@@ -3,7 +3,7 @@ use crate::components::theme::{DarkTechTheme, ThemePalette};
 use crate::i18n::{I18n, Locale};
 use gpui::prelude::FluentBuilder;
 use gpui::*;
-use redash_core::config::{AlertDispatcher, AppSettings, HostStore};
+use redash_core::config::{AlertDispatcher, AlertEvent, AppSettings, HostStore};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsCategory {
@@ -188,6 +188,7 @@ impl SettingsView {
     }
 
     fn render_option_pill<T: PartialEq + Clone + 'static>(
+        id_prefix: &'static str,
         label: &'static str,
         value: T,
         current_value: &T,
@@ -198,7 +199,7 @@ impl SettingsView {
         let val_clone = value.clone();
 
         div()
-            .id(ElementId::Name(label.into()))
+            .id(ElementId::Name(format!("{}_{}", id_prefix, label).into()))
             .h(px(28.0))
             .px_3()
             .rounded_md()
@@ -370,6 +371,7 @@ impl SettingsView {
                             .flex_row()
                             .gap_2()
                             .child(Self::render_option_pill(
+                                "probe_interval",
                                 crate::t!("settings.opt_1s"),
                                 1u64,
                                 &draft.probe_interval_secs,
@@ -380,6 +382,7 @@ impl SettingsView {
                                 cx,
                             ))
                             .child(Self::render_option_pill(
+                                "probe_interval",
                                 crate::t!("settings.opt_2s"),
                                 2u64,
                                 &draft.probe_interval_secs,
@@ -390,6 +393,7 @@ impl SettingsView {
                                 cx,
                             ))
                             .child(Self::render_option_pill(
+                                "probe_interval",
                                 crate::t!("settings.opt_5s"),
                                 5u64,
                                 &draft.probe_interval_secs,
@@ -400,6 +404,7 @@ impl SettingsView {
                                 cx,
                             ))
                             .child(Self::render_option_pill(
+                                "probe_interval",
                                 crate::t!("settings.opt_10s"),
                                 10u64,
                                 &draft.probe_interval_secs,
@@ -448,6 +453,7 @@ impl SettingsView {
                             .flex_row()
                             .gap_2()
                             .child(Self::render_option_pill(
+                                "probe_timeout",
                                 "3s (严苛)",
                                 3u64,
                                 &draft.probe_timeout_secs,
@@ -458,6 +464,7 @@ impl SettingsView {
                                 cx,
                             ))
                             .child(Self::render_option_pill(
+                                "probe_timeout",
                                 "5s (默认)",
                                 5u64,
                                 &draft.probe_timeout_secs,
@@ -468,6 +475,7 @@ impl SettingsView {
                                 cx,
                             ))
                             .child(Self::render_option_pill(
+                                "probe_timeout",
                                 "10s (宽松)",
                                 10u64,
                                 &draft.probe_timeout_secs,
@@ -478,6 +486,7 @@ impl SettingsView {
                                 cx,
                             ))
                             .child(Self::render_option_pill(
+                                "probe_timeout",
                                 "15s (高延迟网络)",
                                 15u64,
                                 &draft.probe_timeout_secs,
@@ -526,6 +535,7 @@ impl SettingsView {
                             .flex_row()
                             .gap_2()
                             .child(Self::render_option_pill(
+                                "history_points",
                                 "20 点 (极简)",
                                 20usize,
                                 &draft.history_points,
@@ -536,6 +546,7 @@ impl SettingsView {
                                 cx,
                             ))
                             .child(Self::render_option_pill(
+                                "history_points",
                                 "30 点 (标准)",
                                 30usize,
                                 &draft.history_points,
@@ -546,6 +557,7 @@ impl SettingsView {
                                 cx,
                             ))
                             .child(Self::render_option_pill(
+                                "history_points",
                                 "60 点 (精细)",
                                 60usize,
                                 &draft.history_points,
@@ -556,6 +568,7 @@ impl SettingsView {
                                 cx,
                             ))
                             .child(Self::render_option_pill(
+                                "history_points",
                                 "120 点 (全景)",
                                 120usize,
                                 &draft.history_points,
@@ -631,6 +644,7 @@ impl SettingsView {
                             .flex_wrap()
                             .gap_2()
                             .child(Self::render_option_pill(
+                                "term_font",
                                 "Menlo",
                                 "Menlo".to_string(),
                                 &draft.terminal_font_family,
@@ -641,6 +655,7 @@ impl SettingsView {
                                 cx,
                             ))
                             .child(Self::render_option_pill(
+                                "term_font",
                                 "SF Mono",
                                 "SF Mono".to_string(),
                                 &draft.terminal_font_family,
@@ -651,6 +666,7 @@ impl SettingsView {
                                 cx,
                             ))
                             .child(Self::render_option_pill(
+                                "term_font",
                                 "JetBrains Mono",
                                 "JetBrains Mono".to_string(),
                                 &draft.terminal_font_family,
@@ -661,6 +677,7 @@ impl SettingsView {
                                 cx,
                             ))
                             .child(Self::render_option_pill(
+                                "term_font",
                                 "Fira Code",
                                 "Fira Code".to_string(),
                                 &draft.terminal_font_family,
@@ -671,6 +688,7 @@ impl SettingsView {
                                 cx,
                             ))
                             .child(Self::render_option_pill(
+                                "term_font",
                                 "Courier New",
                                 "Courier New".to_string(),
                                 &draft.terminal_font_family,
@@ -706,6 +724,7 @@ impl SettingsView {
                             .flex_row()
                             .gap_2()
                             .child(Self::render_option_pill(
+                                "term_size",
                                 "11 px",
                                 11.0f32,
                                 &draft.terminal_font_size,
@@ -716,6 +735,7 @@ impl SettingsView {
                                 cx,
                             ))
                             .child(Self::render_option_pill(
+                                "term_size",
                                 "12 px (推荐)",
                                 12.0f32,
                                 &draft.terminal_font_size,
@@ -726,6 +746,7 @@ impl SettingsView {
                                 cx,
                             ))
                             .child(Self::render_option_pill(
+                                "term_size",
                                 "13 px",
                                 13.0f32,
                                 &draft.terminal_font_size,
@@ -736,6 +757,7 @@ impl SettingsView {
                                 cx,
                             ))
                             .child(Self::render_option_pill(
+                                "term_size",
                                 "14 px",
                                 14.0f32,
                                 &draft.terminal_font_size,
@@ -746,6 +768,7 @@ impl SettingsView {
                                 cx,
                             ))
                             .child(Self::render_option_pill(
+                                "term_size",
                                 "16 px",
                                 16.0f32,
                                 &draft.terminal_font_size,
@@ -781,6 +804,7 @@ impl SettingsView {
                             .flex_row()
                             .gap_2()
                             .child(Self::render_option_pill(
+                                "term_cursor",
                                 "█ 块状方块 (Block)",
                                 "Block".to_string(),
                                 &draft.terminal_cursor_style,
@@ -791,6 +815,7 @@ impl SettingsView {
                                 cx,
                             ))
                             .child(Self::render_option_pill(
+                                "term_cursor",
                                 "| 细竖线 (Line)",
                                 "Line".to_string(),
                                 &draft.terminal_cursor_style,
@@ -801,6 +826,7 @@ impl SettingsView {
                                 cx,
                             ))
                             .child(Self::render_option_pill(
+                                "term_cursor",
                                 "_ 下划线 (Underline)",
                                 "Underline".to_string(),
                                 &draft.terminal_cursor_style,
@@ -1445,19 +1471,19 @@ impl SettingsView {
                             .flex()
                             .flex_row()
                             .gap_2()
-                            .child(Self::render_option_pill("80%", 80.0f32, &draft.alert_cpu_threshold, |v, this, cx| {
+                            .child(Self::render_option_pill("alert_cpu", "80%", 80.0f32, &draft.alert_cpu_threshold, |v, this, cx| {
                                 this.draft.alert_cpu_threshold = v;
                                 cx.notify();
                             }, cx))
-                            .child(Self::render_option_pill("85%", 85.0f32, &draft.alert_cpu_threshold, |v, this, cx| {
+                            .child(Self::render_option_pill("alert_cpu", "85%", 85.0f32, &draft.alert_cpu_threshold, |v, this, cx| {
                                 this.draft.alert_cpu_threshold = v;
                                 cx.notify();
                             }, cx))
-                            .child(Self::render_option_pill("90% (推荐)", 90.0f32, &draft.alert_cpu_threshold, |v, this, cx| {
+                            .child(Self::render_option_pill("alert_cpu", "90% (推荐)", 90.0f32, &draft.alert_cpu_threshold, |v, this, cx| {
                                 this.draft.alert_cpu_threshold = v;
                                 cx.notify();
                             }, cx))
-                            .child(Self::render_option_pill("95% (严苛)", 95.0f32, &draft.alert_cpu_threshold, |v, this, cx| {
+                            .child(Self::render_option_pill("alert_cpu", "95% (严苛)", 95.0f32, &draft.alert_cpu_threshold, |v, this, cx| {
                                 this.draft.alert_cpu_threshold = v;
                                 cx.notify();
                             }, cx)),
@@ -1499,19 +1525,19 @@ impl SettingsView {
                             .flex()
                             .flex_row()
                             .gap_2()
-                            .child(Self::render_option_pill("85%", 85.0f32, &draft.alert_mem_threshold, |v, this, cx| {
+                            .child(Self::render_option_pill("alert_mem", "85%", 85.0f32, &draft.alert_mem_threshold, |v, this, cx| {
                                 this.draft.alert_mem_threshold = v;
                                 cx.notify();
                             }, cx))
-                            .child(Self::render_option_pill("90%", 90.0f32, &draft.alert_mem_threshold, |v, this, cx| {
+                            .child(Self::render_option_pill("alert_mem", "90%", 90.0f32, &draft.alert_mem_threshold, |v, this, cx| {
                                 this.draft.alert_mem_threshold = v;
                                 cx.notify();
                             }, cx))
-                            .child(Self::render_option_pill("95% (推荐)", 95.0f32, &draft.alert_mem_threshold, |v, this, cx| {
+                            .child(Self::render_option_pill("alert_mem", "95% (推荐)", 95.0f32, &draft.alert_mem_threshold, |v, this, cx| {
                                 this.draft.alert_mem_threshold = v;
                                 cx.notify();
                             }, cx))
-                            .child(Self::render_option_pill("98% (极高)", 98.0f32, &draft.alert_mem_threshold, |v, this, cx| {
+                            .child(Self::render_option_pill("alert_mem", "98% (极高)", 98.0f32, &draft.alert_mem_threshold, |v, this, cx| {
                                 this.draft.alert_mem_threshold = v;
                                 cx.notify();
                             }, cx)),
@@ -1553,19 +1579,19 @@ impl SettingsView {
                             .flex()
                             .flex_row()
                             .gap_2()
-                            .child(Self::render_option_pill("80%", 80.0f32, &draft.alert_disk_threshold, |v, this, cx| {
+                            .child(Self::render_option_pill("alert_disk", "80%", 80.0f32, &draft.alert_disk_threshold, |v, this, cx| {
                                 this.draft.alert_disk_threshold = v;
                                 cx.notify();
                             }, cx))
-                            .child(Self::render_option_pill("85%", 85.0f32, &draft.alert_disk_threshold, |v, this, cx| {
+                            .child(Self::render_option_pill("alert_disk", "85%", 85.0f32, &draft.alert_disk_threshold, |v, this, cx| {
                                 this.draft.alert_disk_threshold = v;
                                 cx.notify();
                             }, cx))
-                            .child(Self::render_option_pill("90% (推荐)", 90.0f32, &draft.alert_disk_threshold, |v, this, cx| {
+                            .child(Self::render_option_pill("alert_disk", "90% (推荐)", 90.0f32, &draft.alert_disk_threshold, |v, this, cx| {
                                 this.draft.alert_disk_threshold = v;
                                 cx.notify();
                             }, cx))
-                            .child(Self::render_option_pill("95% (紧迫)", 95.0f32, &draft.alert_disk_threshold, |v, this, cx| {
+                            .child(Self::render_option_pill("alert_disk", "95% (紧迫)", 95.0f32, &draft.alert_disk_threshold, |v, this, cx| {
                                 this.draft.alert_disk_threshold = v;
                                 cx.notify();
                             }, cx)),
@@ -1593,7 +1619,7 @@ impl SettingsView {
                 },
                 cx,
             ))
-            // 6. Webhook 与测试按钮卡片
+            // 6. Webhook 与飞书机器人配置卡片
             .child(
                 div()
                     .p_3p5()
@@ -1606,26 +1632,125 @@ impl SettingsView {
                     .gap_3()
                     .child(
                         div()
-                            .text_size(px(12.5))
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_color(DarkTechTheme::text_primary())
-                            .child(crate::t!("settings.notify_webhook")),
+                            .flex()
+                            .flex_row()
+                            .items_center()
+                            .justify_between()
+                            .child(
+                                div()
+                                    .text_size(px(12.5))
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .text_color(DarkTechTheme::text_primary())
+                                    .child(crate::t!("settings.notify_webhook")),
+                            )
+                            .child(
+                                if let Some(ref url) = draft.alert_webhook_url {
+                                    if AlertDispatcher::is_feishu_webhook(url) {
+                                        div()
+                                            .px_2()
+                                            .py_0p5()
+                                            .rounded_md()
+                                            .bg(DarkTechTheme::bg_input())
+                                            .border_1()
+                                            .border_color(DarkTechTheme::border_active())
+                                            .text_size(px(10.5))
+                                            .text_color(DarkTechTheme::text_accent())
+                                            .child("🤖 飞书群自定义机器人 (已适配交互卡片)")
+                                    } else {
+                                        div()
+                                            .px_2()
+                                            .py_0p5()
+                                            .rounded_md()
+                                            .bg(DarkTechTheme::bg_input())
+                                            .border_1()
+                                            .border_color(DarkTechTheme::border_muted())
+                                            .text_size(px(10.5))
+                                            .text_color(DarkTechTheme::text_secondary())
+                                            .child("🌐 通用 Webhook (JSON)")
+                                    }
+                                } else {
+                                    div()
+                                        .px_2()
+                                        .py_0p5()
+                                        .rounded_md()
+                                        .bg(DarkTechTheme::bg_input())
+                                        .text_size(px(10.5))
+                                        .text_color(DarkTechTheme::text_muted())
+                                        .child("未启用")
+                                },
+                            ),
                     )
+                    // URL 显示与状态
                     .child(
                         div()
-                            .text_size(px(11.0))
-                            .text_color(DarkTechTheme::text_muted())
-                            .child(if let Some(ref url) = draft.alert_webhook_url {
-                                format!("已配置 Webhook 地址: {}", url)
+                            .p_2p5()
+                            .rounded_md()
+                            .bg(DarkTechTheme::bg_input())
+                            .border_1()
+                            .border_color(if draft.alert_webhook_url.is_some() {
+                                DarkTechTheme::border_active()
                             } else {
-                                "未配置 Webhook 地址 (支持飞书群机器人、钉钉、Telegram Bot 等 HTTP POST Webhook)".to_string()
-                            }),
+                                DarkTechTheme::border_default()
+                            })
+                            .flex()
+                            .flex_row()
+                            .items_center()
+                            .justify_between()
+                            .child(
+                                div()
+                                    .text_size(px(11.5))
+                                    .font_family("Menlo")
+                                    .text_color(if draft.alert_webhook_url.is_some() {
+                                        DarkTechTheme::text_primary()
+                                    } else {
+                                        DarkTechTheme::text_muted()
+                                    })
+                                    .child(if let Some(ref url) = draft.alert_webhook_url {
+                                        url.clone()
+                                    } else {
+                                        "https://open.feishu.cn/open-apis/bot/v2/hook/... (支持直接从剪贴板粘贴)".to_string()
+                                    }),
+                            ),
                     )
+                    // 操作按钮栏
                     .child(
                         div()
                             .flex()
                             .flex_row()
+                            .flex_wrap()
                             .gap_2()
+                            // 从剪贴板粘贴
+                            .child(
+                                div()
+                                    .id("btn_paste_webhook")
+                                    .px_2p5()
+                                    .py_1()
+                                    .rounded_md()
+                                    .bg(DarkTechTheme::bg_input())
+                                    .border_1()
+                                    .border_color(DarkTechTheme::border_default())
+                                    .text_color(DarkTechTheme::text_primary())
+                                    .text_size(px(11.0))
+                                    .cursor_pointer()
+                                    .hover(|s| s.border_color(DarkTechTheme::border_active()).text_color(DarkTechTheme::text_accent()))
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        if let Some(clip) = cx.read_from_clipboard()
+                                            && let Some(text) = clip.text()
+                                        {
+                                            let trimmed = text.trim();
+                                            if !trimmed.is_empty() {
+                                                this.draft.alert_webhook_url = Some(trimmed.to_string());
+                                                this.status_message = Some(("已从剪贴板粘贴 Webhook 地址".to_string(), true));
+                                                cx.notify();
+                                                return;
+                                            }
+                                        }
+                                        this.status_message = Some(("剪贴板中未发现有效文本内容".to_string(), false));
+                                        cx.notify();
+                                    }))
+                                    .child("📋 从剪贴板粘贴 Webhook"),
+                            )
+                            // 填入飞书机器人示例
                             .child(
                                 div()
                                     .id("btn_preset_webhook_feishu")
@@ -1641,10 +1766,12 @@ impl SettingsView {
                                     .hover(|s| s.border_color(DarkTechTheme::border_active()).text_color(DarkTechTheme::text_accent()))
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.draft.alert_webhook_url = Some("https://open.feishu.cn/open-apis/bot/v2/hook/demo-test".to_string());
+                                        this.status_message = Some(("已填入飞书自定义机器人 Webhook 示例".to_string(), true));
                                         cx.notify();
                                     }))
-                                    .child("填入飞书机器人示例"),
+                                    .child("🤖 填入飞书示例"),
                             )
+                            // 清空 Webhook
                             .child(
                                 div()
                                     .id("btn_clear_webhook")
@@ -1660,14 +1787,15 @@ impl SettingsView {
                                     .hover(|s| s.text_color(DarkTechTheme::status_crit()))
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.draft.alert_webhook_url = None;
+                                        this.status_message = Some(("已清除 Webhook 地址".to_string(), true));
                                         cx.notify();
                                     }))
                                     .child("清空 Webhook"),
                             )
-                            // Test Native Desktop Notification
+                            // 测试飞书/Webhook 消息发送
                             .child(
                                 div()
-                                    .id("btn_test_notification")
+                                    .id("btn_test_webhook")
                                     .px_3()
                                     .py_1()
                                     .rounded_md()
@@ -1677,6 +1805,65 @@ impl SettingsView {
                                     .text_size(px(11.0))
                                     .cursor_pointer()
                                     .hover(|s| s.bg(DarkTechTheme::accent_cyan()))
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        let Some(ref url) = this.draft.alert_webhook_url else {
+                                            this.status_message = Some(("请先配置或粘贴 Webhook 地址再进行测试".to_string(), false));
+                                            cx.notify();
+                                            return;
+                                        };
+                                        let url = url.clone();
+                                        let is_feishu = AlertDispatcher::is_feishu_webhook(&url);
+                                        let event = AlertEvent {
+                                            host_id: "test-node-01".to_string(),
+                                            host_name: "ReDash-Prod-Server".to_string(),
+                                            alert_type: "cpu".to_string(),
+                                            message: "这是一条来自 ReDash 桌面运维工作台的告警测试通知，指标监控与机器人通道运转正常。".to_string(),
+                                            timestamp: std::time::SystemTime::now()
+                                                .duration_since(std::time::UNIX_EPOCH)
+                                                .unwrap_or_default()
+                                                .as_secs(),
+                                        };
+                                        cx.spawn(async move |this, cx| {
+                                            let res = AlertDispatcher::send_webhook(&url, &event).await;
+                                            let _ = this.update(cx, |this, cx| {
+                                                match res {
+                                                    Ok(()) => {
+                                                        let target = if is_feishu { "飞书群机器人" } else { "Webhook" };
+                                                        this.status_message = Some((format!("{} 测试消息推送成功！", target), true));
+                                                    }
+                                                    Err(err) => {
+                                                        this.status_message = Some((format!("Webhook 推送失败: {:#}", err), false));
+                                                    }
+                                                }
+                                                cx.notify();
+                                            });
+                                        })
+                                        .detach();
+                                    }))
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .flex_row()
+                                            .items_center()
+                                            .gap_1p5()
+                                            .child(Icon::play().with_size(px(11.0)))
+                                            .child("测试 Webhook/飞书推送"),
+                                    ),
+                            )
+                            // 测试原生系统桌面通知
+                            .child(
+                                div()
+                                    .id("btn_test_notification")
+                                    .px_2p5()
+                                    .py_1()
+                                    .rounded_md()
+                                    .bg(DarkTechTheme::bg_input())
+                                    .border_1()
+                                    .border_color(DarkTechTheme::border_default())
+                                    .text_color(DarkTechTheme::text_secondary())
+                                    .text_size(px(11.0))
+                                    .cursor_pointer()
+                                    .hover(|s| s.border_color(DarkTechTheme::border_muted()).text_color(DarkTechTheme::text_primary()))
                                     .on_click(cx.listener(|_this, _, _, cx| {
                                         cx.spawn(async move |this, cx| {
                                             let res = AlertDispatcher::send_macos_notification(
@@ -1701,7 +1888,7 @@ impl SettingsView {
                                             .flex_row()
                                             .items_center()
                                             .gap_1p5()
-                                            .child(Icon::bell().with_size(px(12.0)))
+                                            .child(Icon::bell().with_size(px(11.0)))
                                             .child(crate::t!("settings.btn_test_alert")),
                                     ),
                             ),

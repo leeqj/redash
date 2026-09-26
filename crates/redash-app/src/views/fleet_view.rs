@@ -8,8 +8,30 @@ use crate::components::micro_meter::MicroMeter;
 use crate::components::status_led::{HostLedState, StatusLed};
 use crate::components::theme::DarkTechTheme;
 use crate::t;
-use redash_core::config::{HostConfig, HostId, TargetOs};
+use redash_core::config::{HostConfig, HostId, MissingCredential, TargetOs};
 use redash_core::probe::NodeMetrics;
+
+#[derive(Debug, Clone)]
+pub struct ProbeFailure {
+    pub message: &'static str,
+    pub details: String,
+    pub needs_credentials: bool,
+}
+
+impl ProbeFailure {
+    pub fn from_error(error: &anyhow::Error) -> Self {
+        let needs_credentials = error.downcast_ref::<MissingCredential>().is_some();
+        Self {
+            message: if needs_credentials {
+                "登录凭据缺失，请重新保存"
+            } else {
+                "连接或采集失败，请查看详情"
+            },
+            details: format!("{error:#}"),
+            needs_credentials,
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum FleetAction {
@@ -102,7 +124,7 @@ pub enum CardMetricType {
 }
 
 pub struct FleetView {
-    pub probe_errors: HashMap<HostId, String>,
+    pub probe_errors: HashMap<HostId, ProbeFailure>,
     pub history_limit: usize,
     pub hosts: Vec<HostConfig>,
     pub metrics: HashMap<HostId, NodeMetrics>,
@@ -268,8 +290,8 @@ impl FleetView {
         self.mem_histories.remove(id);
         self.disk_histories.remove(id);
     }
-    pub fn set_probe_error(&mut self, id: HostId, message: String, cx: &mut Context<Self>) {
-        self.probe_errors.insert(id, message);
+    pub fn set_probe_error(&mut self, id: HostId, failure: ProbeFailure, cx: &mut Context<Self>) {
+        self.probe_errors.insert(id, failure);
         cx.notify();
     }
 
@@ -771,7 +793,6 @@ impl Render for FleetView {
 
                         div()
                             .id(ElementId::Name(format!("host_card_{}", host_id.0).into()))
-                            .children(self.probe_errors.get(&host_id).map(|error| div().text_xs().text_color(DarkTechTheme::status_warn()).child(format!("采集失败 · 最后成功: {} · {error}", metric.map(|m| m.timestamp.to_string()).unwrap_or_else(|| "尚无记录".into())))))
                             .w(px(320.0))
                             .min_h(px(220.0))
                             .bg(DarkTechTheme::bg_panel())
@@ -987,6 +1008,39 @@ impl Render for FleetView {
                                                     .child(div().text_size(px(11.0)).child(os_name)),
                                             ),
                                     )
+                                    .children(self.probe_errors.get(&host_id).map(|failure| {
+                                        let details = failure.details.clone();
+                                        let host = host.clone();
+                                        let now = std::time::SystemTime::now()
+                                            .duration_since(std::time::UNIX_EPOCH)
+                                            .unwrap_or_default().as_secs();
+                                        div().w_full().flex().flex_col().gap_1().p_2().rounded_md()
+                                            .bg(DarkTechTheme::bg_input())
+                                            .text_size(px(10.0)).text_color(DarkTechTheme::status_warn())
+                                            .child(failure.message)
+                                            .child(div().text_color(DarkTechTheme::text_muted()).child(
+                                                metric.map(|m| format!("上次采集成功：{} 秒前", now.saturating_sub(m.timestamp)))
+                                                    .unwrap_or_else(|| "尚无成功采集".into())
+                                            ))
+                                            .child(div().flex().gap_3()
+                                                .when(failure.needs_credentials, |row| row.child(
+                                                    div().id(ElementId::Name(format!("repair_credentials_{}", host_id.0).into()))
+                                                        .cursor_pointer().text_color(DarkTechTheme::accent_cyan())
+                                                        .on_click(cx.listener(move |this, _, window, cx| {
+                                                            if let Some(callback) = &this.on_action {
+                                                                callback(FleetAction::EditHost(host.clone()), window, cx);
+                                                            }
+                                                        }))
+                                                        .child("编辑凭据")
+                                                ))
+                                                .child(div().id(ElementId::Name(format!("probe_details_{}", host_id.0).into()))
+                                                    .cursor_pointer().text_color(DarkTechTheme::text_secondary())
+                                                    .on_click(cx.listener(move |_, _, window, cx| {
+                                                        let answer = window.prompt(PromptLevel::Warning, "连接或采集失败", Some(&details), &["关闭"], cx);
+                                                        cx.spawn(async move |_, _| { let _ = answer.await; }).detach();
+                                                    }))
+                                                    .child("详情")))
+                                    }))
                                     // Row 3: Precision Telemetry MicroMeters & Interactive Sparkline HUD
                                     .child({
                                         let is_cpu_active = active_metric == CardMetricType::Cpu;
@@ -1027,7 +1081,7 @@ impl Render for FleetView {
                                                                     this.set_card_metric(&host_id, CardMetricType::Cpu, cx);
                                                                 }
                                                             }))
-                                                            .child(if metric.is_some() { MicroMeter::cpu(cpu_val).into_any_element() } else { div().text_sm().child("CPU：未采集").into_any_element() }),
+                                                            .child(if metric.is_some() { MicroMeter::cpu(cpu_val).into_any_element() } else { div().text_sm().text_color(DarkTechTheme::text_secondary()).child("CPU：未采集").into_any_element() }),
                                                     )
                                                     // RAM row
                                                     .child(
@@ -1052,7 +1106,7 @@ impl Render for FleetView {
                                                             .child(if metric.is_some() {
                                                                 MicroMeter::memory(mem_used_gb, mem_total_gb, mem_val).into_any_element()
                                                             } else {
-                                                                div().text_sm().child("内存：未采集").into_any_element()
+                                                                div().text_sm().text_color(DarkTechTheme::text_secondary()).child("内存：未采集").into_any_element()
                                                             }),
                                                     )
                                                     // DISK row
@@ -1075,7 +1129,7 @@ impl Render for FleetView {
                                                                     this.set_card_metric(&host_id, CardMetricType::Disk, cx);
                                                                 }
                                                             }))
-                                                            .child(if metric.is_some_and(|m| !m.disks.is_empty()) { MicroMeter::disk(disk_val).into_any_element() } else { div().text_sm().child("磁盘：未采集").into_any_element() }),
+                                                            .child(if metric.is_some_and(|m| !m.disks.is_empty()) { MicroMeter::disk(disk_val).into_any_element() } else { div().text_sm().text_color(DarkTechTheme::text_secondary()).child("磁盘：未采集").into_any_element() }),
                                                     ),
                                             )
                                             // Right Column: Interactive Sparkline HUD Box
@@ -1270,7 +1324,7 @@ impl Render for FleetView {
                                                                     SparklineSeries::new("RAM", mem_history, DarkTechTheme::accent_indigo()),
                                                                     SparklineSeries::new("DISK", disk_history, DarkTechTheme::status_warn()),
                                                                 ])
-                                                                .with_value(format!("{:.0}%/{:.0}%/{:.0}%", cpu_val, mem_val, disk_val))
+                                                                .with_value(if metric.is_some() { format!("{:.0}%/{:.0}%/{:.0}%", cpu_val, mem_val, disk_val) } else { "未采集".into() })
                                                                 .with_scale_labels(true)
                                                                 .with_pulse_dot(true),
                                                             }),
@@ -1639,6 +1693,19 @@ impl Render for FleetView {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[core::prelude::v1::test]
+    fn missing_credentials_have_actionable_summary_and_separate_details() {
+        let error =
+            anyhow::Error::new(MissingCredential).context("credential_id: internal-test-id");
+        let failure = ProbeFailure::from_error(&error);
+        assert!(failure.needs_credentials);
+        assert!(!failure.message.contains("internal-test-id"));
+        assert!(failure.details.contains("internal-test-id"));
+        assert!(
+            !ProbeFailure::from_error(&anyhow::anyhow!("Connection timed out")).needs_credentials
+        );
+    }
 
     #[core::prelude::v1::test]
     fn test_fleet_view_set_hosts() {

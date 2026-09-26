@@ -67,6 +67,7 @@ pub struct HostModal {
     pub key_path: String,
     pub passphrase: String,
     pub show_passphrase: bool,
+    pub credential_missing: bool,
     pub target_os: TargetOs,
     pub tags_input: String,
     pub bandwidth_limit_gb: String,
@@ -94,6 +95,7 @@ impl HostModal {
             key_path: "~/.ssh/id_ed25519".to_string(),
             passphrase: String::new(),
             show_passphrase: false,
+            credential_missing: false,
             target_os: TargetOs::Linux,
             tags_input: String::new(),
             bandwidth_limit_gb: String::new(),
@@ -153,6 +155,7 @@ impl HostModal {
             key_path,
             passphrase,
             show_passphrase: false,
+            credential_missing: false,
             target_os: host.target_os,
             tags_input: tags_str,
             bandwidth_limit_gb: bw_limit_str,
@@ -174,6 +177,21 @@ impl HostModal {
 
     pub fn with_focus_handle(mut self, fh: FocusHandle) -> Self {
         self.focus_handle = Some(fh);
+        self
+    }
+
+    pub fn with_missing_credential(mut self, missing: bool) -> Self {
+        self.credential_missing = missing;
+        if missing {
+            self.error_msg =
+                Some("已保存的登录凭据不存在，请重新填写密码或私钥口令，也可更改认证方式。".into());
+            self.active_field = match self.auth_type {
+                AuthTypeSelection::Password => HostModalField::Password,
+                AuthTypeSelection::PrivateKey => HostModalField::Passphrase,
+                AuthTypeSelection::Agent => HostModalField::Name,
+            };
+            self.cursor_pos = 0;
+        }
         self
     }
 
@@ -370,6 +388,9 @@ impl HostModal {
 
         let auth = match self.auth_type {
             AuthTypeSelection::Password => {
+                if self.credential_missing && self.password.is_empty() {
+                    return Err("登录密码缺失，请重新填写密码后保存。".into());
+                }
                 if self.password.is_empty()
                     && !matches!(&self.mode, HostModalMode::Edit(host) if matches!(host.auth, AuthMethod::Password { .. }))
                 {
@@ -419,6 +440,10 @@ impl HostModal {
                         _ => None,
                     }
                 };
+                if self.credential_missing && self.passphrase.is_empty() && passphrase_id.is_some()
+                {
+                    return Err("私钥口令缺失，请重新填写口令后保存。".into());
+                }
                 AuthMethod::PrivateKey {
                     key_path: PathBuf::from(trimmed_key),
                     passphrase_id,
@@ -1713,6 +1738,31 @@ impl Render for HostModal {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[core::prelude::v1::test]
+    fn missing_key_passphrase_cannot_be_saved_empty() {
+        let mut host = HostConfig::new("key", "localhost", "test");
+        host.auth = AuthMethod::PrivateKey {
+            key_path: "/tmp/key".into(),
+            passphrase_id: Some("missing".into()),
+        };
+        let mut modal = HostModal::new_edit(host).with_missing_credential(true);
+        assert_eq!(modal.active_field, HostModalField::Passphrase);
+        assert!(modal.validate_and_build().unwrap_err().contains("口令缺失"));
+        modal.passphrase = "replacement-for-test-only".into();
+        assert!(modal.validate_and_build().unwrap().2.is_some());
+        modal.passphrase.clear();
+        modal.key_path = "/tmp/different-unencrypted-key".into();
+        let (host, _, passphrase) = modal.validate_and_build().unwrap();
+        assert!(matches!(
+            host.auth,
+            AuthMethod::PrivateKey {
+                passphrase_id: None,
+                ..
+            }
+        ));
+        assert!(passphrase.is_none());
+    }
 
     #[core::prelude::v1::test]
     fn editing_preserves_proxy_and_unread_credentials() {
