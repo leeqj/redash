@@ -3,6 +3,8 @@ resolver = "2"
 members = [
     "crates/redash-core",
     "crates/redash-app",
+    "crates/redash-server",
+    "crates/redash-web",
 ]
 
 [workspace.package]
@@ -32,3 +34,5 @@ gpui = "0.2.2"
 gpui-component = "0.6.6"
 futures = "0.3"
 unicode-width = "0.2"
+axum = { version = "0.8", features = ["ws"] }
+tower-http = { version = "0.6", features = ["cors", "fs", "trace"] }
