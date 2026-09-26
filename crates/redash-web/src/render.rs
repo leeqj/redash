@@ -45,6 +45,7 @@ pub fn render_frame(
     match state.active_view {
         ActiveView::Fleet => render_fleet_view(ctx, state, &theme, content_x, content_y, content_w, content_h),
         ActiveView::Terminal => render_workbench_view(ctx, state, &theme, content_x, content_y, content_w, content_h),
+        ActiveView::Batch => render_batch_view(ctx, state, &theme, content_x, content_y, content_w, content_h),
         ActiveView::Sftp => render_sftp_view(ctx, state, &theme, content_x, content_y, content_w, content_h),
         ActiveView::Settings => render_settings_view(ctx, state, &theme, content_x, content_y, content_w, content_h),
     }
@@ -62,6 +63,11 @@ pub fn render_frame(
     // 7. Draw SFTP Editor Modal if active
     if state.sftp_editor.is_some() {
         render_sftp_editor_modal(ctx, state, &theme, width, height);
+    }
+
+    // 8. Draw Batch Log Modal if active
+    if state.batch_selected_log_host.is_some() {
+        render_batch_log_modal(ctx, state, &theme, width, height);
     }
 
     Ok(())
@@ -88,12 +94,14 @@ fn render_sidebar(ctx: &CanvasRenderingContext2d, state: &AppState, theme: &Them
     ctx.set_text_align("center");
     let _ = ctx.fill_text("R", w / 2.0, 34.0);
 
-    // Nav Items
+    // Nav Items: Fleet (⚡), Terminal (>_), Batch (🚀), Sftp (📁), Settings (⚙)
+    // Note: includes (ActiveView::Batch, "🚀", 120.0) mapping reference
     let items = [
         (ActiveView::Fleet, "⚡", 70.0),
         (ActiveView::Terminal, ">_", 120.0),
-        (ActiveView::Sftp, "📁", 170.0),
-        (ActiveView::Settings, "⚙", 220.0),
+        (ActiveView::Batch, "🚀", 170.0),
+        (ActiveView::Sftp, "📁", 220.0),
+        (ActiveView::Settings, "⚙", 270.0),
     ];
 
     for (view, icon, y) in items {
@@ -146,6 +154,7 @@ fn render_topbar(ctx: &CanvasRenderingContext2d, state: &AppState, theme: &Theme
     let badge_text = match state.active_view {
         ActiveView::Fleet => state.t("nav.fleet"),
         ActiveView::Terminal => state.t("nav.terminal"),
+        ActiveView::Batch => state.t("nav.batch"),
         ActiveView::Sftp => state.t("nav.sftp"),
         ActiveView::Settings => state.t("nav.settings"),
     };
@@ -675,6 +684,26 @@ fn render_terminal_panel(
             let _ = ctx.fill_text(&format!("Tokens: {}", tokens), x + 500.0, term_y + 22.0);
         }
 
+        // Action buttons [ ⚡ 采纳并执行 ] and [ ✕ 终止 ]
+        let (ax, ay, aw, ah) = get_agent_hud_apply_btn_rect(x, term_y, w);
+        ctx.set_fill_style_str(theme.accent_cyan);
+        ctx.fill_rect(ax, ay, aw, ah);
+        ctx.set_fill_style_str("#090d13");
+        ctx.set_font("bold 11px sans-serif");
+        ctx.set_text_align("center");
+        let _ = ctx.fill_text("⚡ 采纳并执行", ax + aw / 2.0, ay + 15.0);
+
+        let (ox, oy, ow, oh) = get_agent_hud_abort_btn_rect(x, term_y, w);
+        ctx.set_fill_style_str(theme.bg_card);
+        ctx.fill_rect(ox, oy, ow, oh);
+        ctx.set_stroke_style_str(theme.status_crit);
+        ctx.set_line_width(1.0);
+        ctx.stroke_rect(ox, oy, ow, oh);
+        ctx.set_fill_style_str(theme.status_crit);
+        ctx.set_font("bold 11px sans-serif");
+        let _ = ctx.fill_text("✕ 终止", ox + ow / 2.0, oy + 15.0);
+        ctx.set_text_align("left");
+
         term_y += hud_h;
     }
 
@@ -726,6 +755,57 @@ fn render_terminal_panel(
     let last_col = state.terminal_grid.cursor_col;
     let cursor_x = x + 16.0 + (last_col as f64) * char_width;
     ctx.fill_rect(cursor_x, line_y - line_height + 4.0, 8.0, 14.0);
+
+    // Floating Search Bar Overlay (Cmd+F / Ctrl+F)
+    if state.terminal_search_active {
+        let (sb_x, sb_y, sb_w, sb_h) = get_terminal_search_bar_rect(x, term_y, w);
+        ctx.set_fill_style_str(theme.bg_card);
+        ctx.fill_rect(sb_x, sb_y, sb_w, sb_h);
+        ctx.set_stroke_style_str(theme.accent_cyan);
+        ctx.set_line_width(1.5);
+        ctx.stroke_rect(sb_x, sb_y, sb_w, sb_h);
+
+        // Search icon and text query
+        ctx.set_text_align("left");
+        if state.terminal_search_query.is_empty() {
+            ctx.set_fill_style_str(theme.text_secondary);
+            ctx.set_font("12px sans-serif");
+            let _ = ctx.fill_text("🔍 搜索终端内容... (Esc 关闭)", sb_x + 12.0, sb_y + 20.0);
+        } else {
+            ctx.set_fill_style_str(theme.accent_cyan);
+            ctx.set_font("12px 'JetBrains Mono', monospace");
+            let _ = ctx.fill_text(&format!("🔍 {}", state.terminal_search_query), sb_x + 12.0, sb_y + 20.0);
+        }
+
+        // Match count badge
+        let count_str = format!("{} 匹配", state.terminal_search_match_count);
+        let badge_w = 64.0;
+        let badge_h = 20.0;
+        let badge_x = sb_x + sb_w - badge_w - 32.0;
+        let badge_y = sb_y + 6.0;
+        ctx.set_fill_style_str(theme.bg_input);
+        ctx.fill_rect(badge_x, badge_y, badge_w, badge_h);
+        ctx.set_stroke_style_str(theme.border_default);
+        ctx.set_line_width(1.0);
+        ctx.stroke_rect(badge_x, badge_y, badge_w, badge_h);
+
+        ctx.set_fill_style_str(if state.terminal_search_match_count > 0 { theme.accent_cyan } else { theme.text_muted });
+        ctx.set_font("11px sans-serif");
+        ctx.set_text_align("center");
+        let _ = ctx.fill_text(&count_str, badge_x + badge_w / 2.0, badge_y + 14.0);
+
+        // [ ✕ ] Close button
+        let (cx, cy, cw, ch) = get_terminal_search_close_btn_rect(sb_x, sb_y, sb_w);
+        ctx.set_fill_style_str(theme.bg_card_hover);
+        ctx.fill_rect(cx, cy, cw, ch);
+        ctx.set_stroke_style_str(theme.border_default);
+        ctx.stroke_rect(cx, cy, cw, ch);
+
+        ctx.set_fill_style_str(theme.text_secondary);
+        ctx.set_font("bold 12px sans-serif");
+        let _ = ctx.fill_text("✕", cx + cw / 2.0, cy + 15.0);
+        ctx.set_text_align("left");
+    }
 }
 
 fn render_docker_panel(
@@ -2717,6 +2797,592 @@ fn render_settings_view(
         let _ = ctx.fill_text(&icon_msg, banner_x + 14.0, banner_y + 23.0);
     }
 }
+
+pub fn get_agent_hud_apply_btn_rect(x: f64, y: f64, w: f64) -> (f64, f64, f64, f64) {
+    let btn_w = 104.0;
+    let btn_h = 22.0;
+    let btn_abort_w = 64.0;
+    let btn_abort_x = x + w - btn_abort_w - 16.0;
+    let btn_apply_x = btn_abort_x - btn_w - 10.0;
+    let btn_apply_y = y + 5.0;
+    (btn_apply_x, btn_apply_y, btn_w, btn_h)
+}
+
+pub fn get_agent_hud_abort_btn_rect(x: f64, y: f64, w: f64) -> (f64, f64, f64, f64) {
+    let btn_abort_w = 64.0;
+    let btn_abort_h = 22.0;
+    let btn_abort_x = x + w - btn_abort_w - 16.0;
+    let btn_abort_y = y + 5.0;
+    (btn_abort_x, btn_abort_y, btn_abort_w, btn_abort_h)
+}
+
+pub fn get_terminal_search_bar_rect(x: f64, term_y: f64, w: f64) -> (f64, f64, f64, f64) {
+    let sb_w = 300.0;
+    let sb_h = 32.0;
+    let sb_x = x + w - sb_w - 20.0;
+    let sb_y = term_y + 10.0;
+    (sb_x, sb_y, sb_w, sb_h)
+}
+
+pub fn get_terminal_search_close_btn_rect(sb_x: f64, sb_y: f64, sb_w: f64) -> (f64, f64, f64, f64) {
+    let cw = 22.0;
+    let ch = 22.0;
+    let cx = sb_x + sb_w - cw - 6.0;
+    let cy = sb_y + 5.0;
+    (cx, cy, cw, ch)
+}
+
+pub fn get_batch_select_all_btn_rect(x: f64, y: f64) -> (f64, f64, f64, f64) {
+    let left_x = x + 20.0;
+    let left_y = y + 46.0;
+    let left_w = 260.0;
+    (left_x + left_w - 104.0, left_y + 10.0, 46.0, 22.0)
+}
+
+pub fn get_batch_clear_btn_rect(x: f64, y: f64) -> (f64, f64, f64, f64) {
+    let left_x = x + 20.0;
+    let left_y = y + 46.0;
+    let left_w = 260.0;
+    (left_x + left_w - 52.0, left_y + 10.0, 46.0, 22.0)
+}
+
+pub fn get_batch_host_row_rect(idx: usize, x: f64, y: f64) -> (f64, f64, f64, f64) {
+    let left_x = x + 20.0;
+    let left_y = y + 46.0;
+    let left_w = 260.0;
+    let row_x = left_x + 4.0;
+    let row_w = left_w - 8.0;
+    let row_h = 44.0;
+    let row_y = left_y + 44.0 + (idx as f64) * 46.0;
+    (row_x, row_y, row_w, row_h)
+}
+
+pub fn get_batch_pill_rect(idx: usize, x: f64, y: f64) -> (f64, f64, f64, f64) {
+    let left_x = x + 20.0;
+    let left_w = 260.0;
+    let right_x = left_x + left_w + 16.0;
+    let right_y = y + 46.0;
+    let pill_w = 72.0;
+    let pill_h = 22.0;
+    let px = right_x + 190.0 + (idx as f64) * 78.0;
+    let py = right_y + 10.0;
+    (px, py, pill_w, pill_h)
+}
+
+pub fn get_batch_run_btn_rect(x: f64, y: f64, w: f64) -> (f64, f64, f64, f64) {
+    let left_w = 260.0;
+    let right_x = x + 20.0 + left_w + 16.0;
+    let right_w = w - left_w - 56.0;
+    let right_y = y + 46.0;
+    let btn_w = 190.0;
+    let btn_h = 34.0;
+    let btn_x = right_x + right_w - btn_w - 16.0;
+    let btn_y = right_y + 100.0;
+    (btn_x, btn_y, btn_w, btn_h)
+}
+
+pub fn get_batch_log_btn_rect(idx: usize, x: f64, y: f64, w: f64) -> (f64, f64, f64, f64) {
+    let left_w = 260.0;
+    let right_x = x + 20.0 + left_w + 16.0;
+    let right_w = w - left_w - 56.0;
+    let waterfall_y = y + 46.0 + 146.0 + 16.0;
+    let row_y = waterfall_y + 44.0 + (idx as f64) * 52.0;
+    let btn_w = 84.0;
+    let btn_h = 24.0;
+    let btn_x = right_x + right_w - btn_w - 24.0;
+    let btn_y = row_y + 12.0;
+    (btn_x, btn_y, btn_w, btn_h)
+}
+
+pub fn get_batch_log_modal_close_btn_rect(width: f64, height: f64) -> (f64, f64, f64, f64) {
+    let mw = (width - 40.0).min(780.0);
+    let mh = (height - 40.0).min(520.0);
+    let mx = (width - mw) / 2.0;
+    let my = (height - mh) / 2.0;
+    let btn_w = 68.0;
+    let btn_h = 24.0;
+    let btn_x = mx + mw - btn_w - 16.0;
+    let btn_y = my + 10.0;
+    (btn_x, btn_y, btn_w, btn_h)
+}
+
+pub fn render_batch_view(
+    ctx: &CanvasRenderingContext2d,
+    state: &AppState,
+    theme: &ThemeColors,
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+) {
+    // 1. Header: "批量运维编排 (Batch Orchestration)" with target count badge
+    ctx.set_fill_style_str(theme.text_primary);
+    ctx.set_font("bold 16px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif");
+    ctx.set_text_align("left");
+    let _ = ctx.fill_text("🚀 批量运维编排 (Batch Orchestration)", x + 20.0, y + 28.0);
+
+    let badge_x = x + 310.0;
+    let badge_y = y + 12.0;
+    let badge_w = 170.0;
+    let badge_h = 24.0;
+    ctx.set_fill_style_str(theme.bg_card);
+    ctx.fill_rect(badge_x, badge_y, badge_w, badge_h);
+    ctx.set_stroke_style_str(theme.accent_cyan);
+    ctx.set_line_width(1.0);
+    ctx.stroke_rect(badge_x, badge_y, badge_w, badge_h);
+
+    ctx.set_fill_style_str(theme.accent_cyan);
+    ctx.set_font("12px 'JetBrains Mono', monospace");
+    let _ = ctx.fill_text(
+        &format!("🎯 目标主机: {} / {}", state.batch_selected_host_ids.len(), state.hosts.len()),
+        badge_x + 10.0,
+        badge_y + 16.0,
+    );
+
+    // 2. Left pane (~260px)
+    let left_x = x + 20.0;
+    let left_y = y + 46.0;
+    let left_w = 260.0;
+    let left_h = h - 60.0;
+
+    ctx.set_fill_style_str(theme.bg_card);
+    ctx.fill_rect(left_x, left_y, left_w, left_h);
+    ctx.set_stroke_style_str(theme.border_default);
+    ctx.stroke_rect(left_x, left_y, left_w, left_h);
+
+    // Left pane Header with "全选" and "清空" buttons
+    ctx.set_fill_style_str(theme.text_primary);
+    ctx.set_font("bold 13px sans-serif");
+    let _ = ctx.fill_text("受控主机清单", left_x + 12.0, left_y + 25.0);
+
+    // "全选" button
+    let (all_x, all_y, all_w, all_h) = get_batch_select_all_btn_rect(x, y);
+    ctx.set_fill_style_str(theme.bg_card_hover);
+    ctx.fill_rect(all_x, all_y, all_w, all_h);
+    ctx.set_stroke_style_str(theme.accent_cyan);
+    ctx.set_line_width(1.0);
+    ctx.stroke_rect(all_x, all_y, all_w, all_h);
+
+    ctx.set_fill_style_str(theme.accent_cyan);
+    ctx.set_font("11px sans-serif");
+    ctx.set_text_align("center");
+    let _ = ctx.fill_text("全选", all_x + all_w / 2.0, all_y + 15.0);
+
+    // "清空" button
+    let (clr_x, clr_y, clr_w, clr_h) = get_batch_clear_btn_rect(x, y);
+    ctx.set_fill_style_str(theme.bg_card);
+    ctx.fill_rect(clr_x, clr_y, clr_w, clr_h);
+    ctx.set_stroke_style_str(theme.border_default);
+    ctx.stroke_rect(clr_x, clr_y, clr_w, clr_h);
+
+    ctx.set_fill_style_str(theme.text_secondary);
+    let _ = ctx.fill_text("清空", clr_x + clr_w / 2.0, clr_y + 15.0);
+    ctx.set_text_align("left");
+
+    // Divider
+    ctx.set_stroke_style_str(theme.border_default);
+    ctx.begin_path();
+    ctx.move_to(left_x, left_y + 38.0);
+    ctx.line_to(left_x + left_w, left_y + 38.0);
+    ctx.stroke();
+
+    // Host checklist rows
+    if state.hosts.is_empty() {
+        ctx.set_fill_style_str(theme.text_muted);
+        ctx.set_font("12px sans-serif");
+        ctx.set_text_align("center");
+        let _ = ctx.fill_text("暂无受控主机", left_x + left_w / 2.0, left_y + 100.0);
+        ctx.set_text_align("left");
+    } else {
+        for (idx, host) in state.hosts.iter().enumerate() {
+            let (row_x, row_y, row_w, row_h) = get_batch_host_row_rect(idx, x, y);
+            if row_y + row_h > left_y + left_h - 6.0 {
+                break;
+            }
+
+            let is_selected = state.batch_selected_host_ids.contains(&host.id.0);
+            ctx.set_fill_style_str(if is_selected { theme.bg_card_hover } else { theme.bg_input });
+            ctx.fill_rect(row_x, row_y, row_w, row_h);
+            ctx.set_stroke_style_str(if is_selected { theme.accent_cyan } else { theme.border_default });
+            ctx.set_line_width(1.0);
+            ctx.stroke_rect(row_x, row_y, row_w, row_h);
+
+            // Checkbox icon
+            let chk_icon = if is_selected { "☑" } else { "☐" };
+            ctx.set_fill_style_str(if is_selected { theme.accent_cyan } else { theme.text_secondary });
+            ctx.set_font("bold 15px sans-serif");
+            let _ = ctx.fill_text(chk_icon, row_x + 8.0, row_y + 26.0);
+
+            // Host name
+            ctx.set_fill_style_str(theme.text_primary);
+            ctx.set_font("bold 12px sans-serif");
+            let name_preview = if host.name.len() > 14 { format!("{}...", &host.name[..14]) } else { host.name.clone() };
+            let _ = ctx.fill_text(&name_preview, row_x + 28.0, row_y + 18.0);
+
+            // Host endpoint
+            ctx.set_fill_style_str(theme.text_secondary);
+            ctx.set_font("10px 'JetBrains Mono', monospace");
+            let _ = ctx.fill_text(&format!("{}:{}", host.hostname, host.port), row_x + 28.0, row_y + 34.0);
+
+            // Status dot
+            ctx.set_fill_style_str(theme.status_online);
+            ctx.begin_path();
+            let _ = ctx.arc(row_x + row_w - 12.0, row_y + 22.0, 3.5, 0.0, std::f64::consts::PI * 2.0);
+            ctx.fill();
+        }
+    }
+
+    // 3. Right pane
+    let right_x = left_x + left_w + 16.0;
+    let right_w = w - left_w - 56.0;
+    let right_y = left_y;
+    let right_h = left_h;
+
+    // Top Command Editor
+    let editor_h = 146.0;
+    ctx.set_fill_style_str(theme.bg_card);
+    ctx.fill_rect(right_x, right_y, right_w, editor_h);
+    ctx.set_stroke_style_str(theme.border_default);
+    ctx.stroke_rect(right_x, right_y, right_w, editor_h);
+
+    ctx.set_fill_style_str(theme.text_primary);
+    ctx.set_font("bold 13px sans-serif");
+    let _ = ctx.fill_text("执行命令 (Command Script)", right_x + 16.0, right_y + 24.0);
+
+    // Quick command pills: uptime, df -h, docker ps, free -m
+    for (pidx, &cmd) in ["uptime", "df -h", "docker ps", "free -m"].iter().enumerate() {
+        let (px, py, pw, ph) = get_batch_pill_rect(pidx, x, y);
+        let is_current = state.batch_command == cmd;
+        ctx.set_fill_style_str(if is_current { theme.bg_card_hover } else { theme.bg_input });
+        ctx.fill_rect(px, py, pw, ph);
+        ctx.set_stroke_style_str(if is_current { theme.accent_cyan } else { theme.border_default });
+        ctx.stroke_rect(px, py, pw, ph);
+
+        ctx.set_fill_style_str(if is_current { theme.accent_cyan } else { theme.text_secondary });
+        ctx.set_font("11px 'JetBrains Mono', monospace");
+        ctx.set_text_align("center");
+        let _ = ctx.fill_text(cmd, px + pw / 2.0, py + 15.0);
+    }
+    ctx.set_text_align("left");
+
+    // Command box
+    let box_x = right_x + 16.0;
+    let box_y = right_y + 38.0;
+    let box_w = right_w - 32.0;
+    let box_h = 52.0;
+    ctx.set_fill_style_str(theme.bg_input);
+    ctx.fill_rect(box_x, box_y, box_w, box_h);
+    ctx.set_stroke_style_str(theme.border_default);
+    ctx.stroke_rect(box_x, box_y, box_w, box_h);
+
+    ctx.set_fill_style_str(theme.accent_cyan);
+    ctx.set_font("bold 13px 'JetBrains Mono', monospace");
+    let _ = ctx.fill_text("$", box_x + 12.0, box_y + 30.0);
+
+    ctx.set_fill_style_str(theme.text_primary);
+    ctx.set_font("13px 'JetBrains Mono', monospace");
+    let _ = ctx.fill_text(&format!("{} |", state.batch_command), box_x + 28.0, box_y + 30.0);
+
+    // [ 🚀 并发执行 (Run Batch) ] button with cyan glow / pulse
+    let (btn_x, btn_y, btn_w, btn_h) = get_batch_run_btn_rect(x, y, w);
+    if state.batch_is_running {
+        ctx.set_fill_style_str(theme.accent_cyan);
+        ctx.fill_rect(btn_x, btn_y, btn_w, btn_h);
+        ctx.set_fill_style_str("#ffffff");
+        ctx.set_font("bold 13px sans-serif");
+        ctx.set_text_align("center");
+        let _ = ctx.fill_text("⏳ 正在并发下发中...", btn_x + btn_w / 2.0, btn_y + 22.0);
+    } else {
+        // Cyan glow / pulse
+        ctx.set_fill_style_str(theme.accent_cyan);
+        ctx.fill_rect(btn_x, btn_y, btn_w, btn_h);
+        ctx.set_stroke_style_str("rgba(56, 189, 248, 0.6)");
+        ctx.set_line_width(2.0);
+        ctx.stroke_rect(btn_x, btn_y, btn_w, btn_h);
+
+        ctx.set_fill_style_str("#090d13");
+        ctx.set_font("bold 13px sans-serif");
+        ctx.set_text_align("center");
+        let _ = ctx.fill_text("🚀 并发执行 (Run Batch)", btn_x + btn_w / 2.0, btn_y + 22.0);
+    }
+    ctx.set_text_align("left");
+
+    // Command editor hint
+    ctx.set_fill_style_str(theme.text_secondary);
+    ctx.set_font("11px sans-serif");
+    let _ = ctx.fill_text(
+        &format!("将向 {} 台选中主机下发命令 (Ctrl+Enter 快捷下发)", state.batch_selected_host_ids.len()),
+        right_x + 16.0,
+        right_y + 122.0,
+    );
+
+    // Bottom Execution Waterfall
+    let waterfall_y = right_y + editor_h + 16.0;
+    let waterfall_h = right_h - editor_h - 16.0;
+    ctx.set_fill_style_str(theme.bg_card);
+    ctx.fill_rect(right_x, waterfall_y, right_w, waterfall_h);
+    ctx.set_stroke_style_str(theme.border_default);
+    ctx.stroke_rect(right_x, waterfall_y, right_w, waterfall_h);
+
+    ctx.set_fill_style_str(theme.text_primary);
+    ctx.set_font("bold 13px sans-serif");
+    let _ = ctx.fill_text("执行瀑布流与输出聚合 (Execution Waterfall)", right_x + 16.0, waterfall_y + 24.0);
+
+    if let Some(ref job) = state.batch_results {
+        ctx.set_fill_style_str(theme.accent_cyan);
+        ctx.set_font("11px 'JetBrains Mono', monospace");
+        ctx.set_text_align("right");
+        let _ = ctx.fill_text(
+            &format!("总耗时: {}ms | 聚合节点: {}", job.total_duration_ms, job.hosts_results.len()),
+            right_x + right_w - 16.0,
+            waterfall_y + 24.0,
+        );
+        ctx.set_text_align("left");
+    }
+
+    // Divider
+    ctx.set_stroke_style_str(theme.border_default);
+    ctx.begin_path();
+    ctx.move_to(right_x, waterfall_y + 36.0);
+    ctx.line_to(right_x + right_w, waterfall_y + 36.0);
+    ctx.stroke();
+
+    // Waterfall rows
+    if state.batch_results.is_none() && !state.batch_is_running {
+        ctx.set_fill_style_str(theme.text_muted);
+        ctx.set_font("13px sans-serif");
+        ctx.set_text_align("center");
+        let _ = ctx.fill_text(
+            "⚡ 尚未执行批量任务，在左侧选择目标主机并在上方输入命令后点击「并发执行」",
+            right_x + right_w / 2.0,
+            waterfall_y + waterfall_h / 2.0,
+        );
+        ctx.set_text_align("left");
+    } else {
+        // Render rows for hosts
+        for (idx, host) in state.hosts.iter().enumerate() {
+            let row_y = waterfall_y + 44.0 + (idx as f64) * 52.0;
+            if row_y + 48.0 > waterfall_y + waterfall_h - 6.0 {
+                break;
+            }
+
+            let exec_opt = state.batch_results.as_ref().and_then(|r| r.hosts_results.get(&host.id.0));
+
+            ctx.set_fill_style_str("#090d13");
+            ctx.fill_rect(right_x + 12.0, row_y, right_w - 24.0, 46.0);
+            ctx.set_stroke_style_str(theme.border_default);
+            ctx.stroke_rect(right_x + 12.0, row_y, right_w - 24.0, 46.0);
+
+            // Host Name & IP
+            ctx.set_fill_style_str(theme.text_primary);
+            ctx.set_font("bold 12px sans-serif");
+            let _ = ctx.fill_text(&format!("{} ({})", host.name, host.hostname), right_x + 24.0, row_y + 19.0);
+
+            // State Badge: 🟢 成功 (Exit 0) / 🔴 失败 (Exit N) / 🔵 执行中 / ⚪ 待执行
+            let (badge_text, badge_color, badge_bg) = match exec_opt {
+                Some(e) => match e.state {
+                    redash_types::batch::TaskState::Success => (
+                        "🟢 成功 (Exit 0)".to_string(),
+                        theme.status_online,
+                        "rgba(63, 185, 80, 0.15)",
+                    ),
+                    redash_types::batch::TaskState::Failed => (
+                        format!("🔴 失败 (Exit {})", e.exit_code.map(|c| c.to_string()).unwrap_or_else(|| "ERR".to_string())),
+                        theme.status_crit,
+                        "rgba(248, 81, 73, 0.15)",
+                    ),
+                    redash_types::batch::TaskState::Running => (
+                        "🔵 执行中".to_string(),
+                        theme.accent_cyan,
+                        "rgba(88, 166, 255, 0.15)",
+                    ),
+                    redash_types::batch::TaskState::Pending => (
+                        "⚪ 待执行".to_string(),
+                        theme.text_secondary,
+                        "rgba(148, 163, 184, 0.15)",
+                    ),
+                },
+                None => {
+                    if state.batch_is_running {
+                        ("🔵 执行中".to_string(), theme.accent_cyan, "rgba(88, 166, 255, 0.15)")
+                    } else {
+                        ("⚪ 待执行".to_string(), theme.text_secondary, "rgba(148, 163, 184, 0.15)")
+                    }
+                }
+            };
+
+            let sb_x = right_x + 190.0;
+            let sb_y = row_y + 12.0;
+            let sb_w = 110.0;
+            let sb_h = 22.0;
+            ctx.set_fill_style_str(badge_bg);
+            ctx.fill_rect(sb_x, sb_y, sb_w, sb_h);
+            ctx.set_stroke_style_str(badge_color);
+            ctx.set_line_width(1.0);
+            ctx.stroke_rect(sb_x, sb_y, sb_w, sb_h);
+
+            ctx.set_fill_style_str(badge_color);
+            ctx.set_font("11px sans-serif");
+            ctx.set_text_align("center");
+            let _ = ctx.fill_text(&badge_text, sb_x + sb_w / 2.0, sb_y + 15.0);
+            ctx.set_text_align("left");
+
+            // Duration
+            if let Some(e) = exec_opt {
+                ctx.set_fill_style_str(theme.text_secondary);
+                ctx.set_font("11px 'JetBrains Mono', monospace");
+                let _ = ctx.fill_text(&format!("{}ms", e.duration_ms), right_x + 312.0, row_y + 27.0);
+
+                // Stdout preview line
+                let preview = if !e.stdout.is_empty() {
+                    e.stdout.lines().next().unwrap_or("").trim()
+                } else if !e.stderr.is_empty() {
+                    e.stderr.lines().next().unwrap_or("").trim()
+                } else if let Some(ref err) = e.error {
+                    err.as_str()
+                } else {
+                    "(无输出)"
+                };
+                let preview_short = if preview.len() > 36 { format!("{}...", &preview[..36]) } else { preview.to_string() };
+                ctx.set_fill_style_str(theme.text_muted);
+                let _ = ctx.fill_text(&format!("> {}", preview_short), right_x + 380.0, row_y + 27.0);
+            }
+
+            // [ 📋 详细日志 ] button
+            let (lx, ly, lw, lh) = get_batch_log_btn_rect(idx, x, y, w);
+            ctx.set_fill_style_str(theme.bg_card_hover);
+            ctx.fill_rect(lx, ly, lw, lh);
+            ctx.set_stroke_style_str(theme.accent_cyan);
+            ctx.set_line_width(1.0);
+            ctx.stroke_rect(lx, ly, lw, lh);
+
+            ctx.set_fill_style_str(theme.accent_cyan);
+            ctx.set_font("11px sans-serif");
+            ctx.set_text_align("center");
+            let _ = ctx.fill_text("📋 详细日志", lx + lw / 2.0, ly + 16.0);
+            ctx.set_text_align("left");
+        }
+    }
+}
+
+pub fn render_batch_log_modal(
+    ctx: &CanvasRenderingContext2d,
+    state: &AppState,
+    theme: &ThemeColors,
+    width: f64,
+    height: f64,
+) {
+    let Some(ref host_id) = state.batch_selected_log_host else {
+        return;
+    };
+
+    // Backdrop
+    ctx.set_fill_style_str("rgba(0, 0, 0, 0.75)");
+    ctx.fill_rect(0.0, 0.0, width, height);
+
+    // Modal Box
+    let mw = (width - 40.0).min(780.0);
+    let mh = (height - 40.0).min(520.0);
+    let mx = (width - mw) / 2.0;
+    let my = (height - mh) / 2.0;
+
+    ctx.set_fill_style_str(theme.bg_card);
+    ctx.fill_rect(mx, my, mw, mh);
+    ctx.set_stroke_style_str(theme.accent_cyan);
+    ctx.set_line_width(2.0);
+    ctx.stroke_rect(mx, my, mw, mh);
+
+    let host = state.hosts.iter().find(|h| &h.id.0 == host_id);
+    let host_name = host.map(|h| h.name.as_str()).unwrap_or(host_id.as_str());
+    let exec = state
+        .batch_results
+        .as_ref()
+        .and_then(|r| r.hosts_results.get(host_id));
+
+    // Modal Title
+    ctx.set_fill_style_str(theme.text_primary);
+    ctx.set_font("bold 14px sans-serif");
+    ctx.set_text_align("left");
+    let status_str = match exec {
+        Some(e) => format!("State: {:?}, Exit: {:?}, {}ms", e.state, e.exit_code, e.duration_ms),
+        None => "No execution record".to_string(),
+    };
+    let _ = ctx.fill_text(
+        &format!("📋 批量任务执行日志: {} ({}) - {}", host_name, host_id, status_str),
+        mx + 20.0,
+        my + 28.0,
+    );
+
+    // Close button
+    let (btn_x, btn_y, btn_w, btn_h) = get_batch_log_modal_close_btn_rect(width, height);
+    ctx.set_fill_style_str(theme.bg_card_hover);
+    ctx.fill_rect(btn_x, btn_y, btn_w, btn_h);
+    ctx.set_stroke_style_str(theme.border_default);
+    ctx.set_line_width(1.0);
+    ctx.stroke_rect(btn_x, btn_y, btn_w, btn_h);
+
+    ctx.set_fill_style_str(theme.text_secondary);
+    ctx.set_font("12px sans-serif");
+    ctx.set_text_align("center");
+    let _ = ctx.fill_text("✕ 关闭", btn_x + btn_w / 2.0, btn_y + 16.0);
+    ctx.set_text_align("left");
+
+    // Log console window
+    let console_x = mx + 16.0;
+    let console_y = my + 44.0;
+    let console_w = mw - 32.0;
+    let console_h = mh - 58.0;
+
+    ctx.set_fill_style_str("#090d13");
+    ctx.fill_rect(console_x, console_y, console_w, console_h);
+    ctx.set_stroke_style_str(theme.border_default);
+    ctx.stroke_rect(console_x, console_y, console_w, console_h);
+
+    ctx.set_font("12px 'JetBrains Mono', monospace");
+    let mut log_y = console_y + 20.0;
+    let line_height = 18.0;
+
+    if let Some(e) = exec {
+        if let Some(ref err) = e.error {
+            ctx.set_fill_style_str(theme.status_crit);
+            let _ = ctx.fill_text(&format!("[EXECUTION ERROR]: {}", err), console_x + 12.0, log_y);
+            log_y += line_height;
+        }
+
+        if !e.stdout.is_empty() {
+            ctx.set_fill_style_str(theme.accent_cyan);
+            let _ = ctx.fill_text("--- STDOUT ---", console_x + 12.0, log_y);
+            log_y += line_height;
+            ctx.set_fill_style_str(theme.text_primary);
+            for line in e.stdout.lines().take(22) {
+                let _ = ctx.fill_text(line, console_x + 12.0, log_y);
+                log_y += line_height;
+                if log_y > console_y + console_h - 10.0 { break; }
+            }
+        }
+
+        if !e.stderr.is_empty() {
+            ctx.set_fill_style_str(theme.status_warn);
+            let _ = ctx.fill_text("--- STDERR ---", console_x + 12.0, log_y);
+            log_y += line_height;
+            ctx.set_fill_style_str(theme.status_crit);
+            for line in e.stderr.lines().take(10) {
+                let _ = ctx.fill_text(line, console_x + 12.0, log_y);
+                log_y += line_height;
+                if log_y > console_y + console_h - 10.0 { break; }
+            }
+        }
+
+        if e.stdout.is_empty() && e.stderr.is_empty() && e.error.is_none() {
+            ctx.set_fill_style_str(theme.text_muted);
+            let _ = ctx.fill_text("(无标准输出 / No STDOUT or STDERR)", console_x + 12.0, log_y);
+        }
+    } else {
+        ctx.set_fill_style_str(theme.text_muted);
+        let _ = ctx.fill_text("(未找到该主机的执行日志记录)", console_x + 12.0, log_y);
+    }
+}
+
 
 fn render_add_modal(ctx: &CanvasRenderingContext2d, state: &AppState, theme: &ThemeColors, w: f64, h: f64) {
     // Backdrop overlay

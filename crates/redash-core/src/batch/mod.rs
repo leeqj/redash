@@ -4,44 +4,14 @@ use std::sync::Arc;
 use std::time::Duration;
 use uuid::Uuid;
 
-use crate::config::{HostConfig, HostId};
+use crate::config::HostConfig;
 use crate::session::SessionManager;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum TaskState {
-    Pending,
-    Running,
-    Success,
-    Failed,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HostTaskExecution {
-    pub host_id: HostId,
-    pub host_name: String,
-    pub state: TaskState,
-    pub stdout: String,
-    pub stderr: String,
-    pub exit_code: Option<u32>,
-    pub duration_ms: u64,
-    #[serde(default)]
-    pub duration_us: u64,
-    pub error: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BatchJobResult {
-    pub job_id: String,
-    pub command: String,
-    pub hosts_results: HashMap<HostId, HostTaskExecution>,
-    pub total_duration_ms: u64,
-    #[serde(default)]
-    pub total_duration_us: u64,
-}
+pub use redash_types::batch::{BatchJobResult, BatchRunRequest, HostTaskExecution, TaskState};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum BatchProgressEvent {
-    HostStarted { host_id: HostId, host_name: String },
+    HostStarted { host_id: String, host_name: String },
     HostCompleted(HostTaskExecution),
     AllCompleted(BatchJobResult),
 }
@@ -76,7 +46,7 @@ impl BatchRunner {
             let tx_opt = progress_tx.clone();
 
             handles.spawn(async move {
-                let host_id = host.id.clone();
+                let host_id = host.id.0.clone();
                 let host_name = host.name.clone();
 
                 if let Some(ref tx) = tx_opt {
@@ -162,7 +132,7 @@ mod tests {
     #[test]
     fn test_batch_job_result_serialization() {
         let mut results = HashMap::new();
-        let hid = HostId("node-1".into());
+        let hid = "node-1".to_string();
         results.insert(
             hid.clone(),
             HostTaskExecution {
@@ -201,7 +171,7 @@ mod tests {
 
     #[test]
     fn test_batch_progress_event_serialization() {
-        let hid = HostId("node-2".into());
+        let hid = "node-2".to_string();
         let event_started = BatchProgressEvent::HostStarted {
             host_id: hid.clone(),
             host_name: "db-node".into(),

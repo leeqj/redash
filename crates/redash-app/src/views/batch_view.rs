@@ -296,7 +296,7 @@ impl BatchView {
             self.active_executions.insert(
                 host.id.clone(),
                 HostTaskExecution {
-                    host_id: host.id.clone(),
+                    host_id: host.id.0.clone(),
                     host_name: host.name.clone(),
                     state: TaskState::Pending,
                     stdout: String::new(),
@@ -350,12 +350,12 @@ impl BatchView {
                     }
                     match event {
                         BatchProgressEvent::HostStarted { host_id, .. } => {
-                            if let Some(exec) = view.active_executions.get_mut(&host_id) {
+                            if let Some(exec) = view.active_executions.get_mut(&HostId(host_id)) {
                                 exec.state = TaskState::Running;
                             }
                         }
                         BatchProgressEvent::HostCompleted(exec) => {
-                            view.active_executions.insert(exec.host_id.clone(), exec);
+                            view.active_executions.insert(HostId(exec.host_id.clone()), exec);
                         }
                         BatchProgressEvent::AllCompleted(result) => {
                             view.is_running = false;
@@ -544,7 +544,7 @@ impl Render for BatchView {
                     TaskState::Failed => failed_count += 1,
                 }
             } else if let Some(ref job) = self.last_result
-                && let Some(res) = job.hosts_results.get(&host.id)
+                && let Some(res) = job.hosts_results.get(&host.id.0)
             {
                 if res.state == TaskState::Success {
                     success_count += 1;
@@ -565,7 +565,7 @@ impl Render for BatchView {
                 if let Some(exec) = self.active_executions.get(&host.id) {
                     Some(exec.clone())
                 } else if let Some(ref job) = self.last_result {
-                    job.hosts_results.get(&host.id).cloned()
+                    job.hosts_results.get(&host.id.0).cloned()
                 } else {
                     None
                 }
@@ -1483,7 +1483,7 @@ impl BatchView {
                     .child(
                         div()
                             .id(ElementId::Name(
-                                format!("terminal_body_{}", res.host_id.0).into(),
+                                format!("terminal_body_{}", res.host_id).into(),
                             ))
                             .w_full()
                             .when(is_grid, |d| d.h(px(180.0)))

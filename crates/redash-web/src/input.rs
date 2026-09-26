@@ -14,6 +14,9 @@ pub enum UiAction {
     SaveSftpFile { host_id: String, path: String, content: String },
     SaveSettings,
     ExportSettingsJson,
+    RunBatch { host_ids: Vec<String>, command: String },
+    ApplyAgentSuggestion,
+    AbortAgentTask,
 }
 
 pub fn handle_mouse_click(
@@ -104,6 +107,26 @@ pub fn handle_mouse_click(
         return None;
     }
 
+    // 2.5. If Batch Log Modal is active, check modal clicks
+    if state.batch_selected_log_host.is_some() {
+        let (close_x, close_y, close_w, close_h) = crate::render::get_batch_log_modal_close_btn_rect(width, height);
+        if (close_x..=close_x + close_w).contains(&x) && (close_y..=close_y + close_h).contains(&y) {
+            state.select_batch_log_host(None);
+            return None;
+        }
+
+        let mw = (width - 40.0).min(780.0);
+        let mh = (height - 40.0).min(520.0);
+        let mx = (width - mw) / 2.0;
+        let my = (height - mh) / 2.0;
+        if x < mx || x > mx + mw || y < my || y > my + mh {
+            state.select_batch_log_host(None);
+            return None;
+        }
+
+        return None;
+    }
+
     // 3. Check Left Sidebar clicks
     if x <= LAYOUT.sidebar_width {
         if (50.0..=90.0).contains(&y) {
@@ -111,8 +134,10 @@ pub fn handle_mouse_click(
         } else if (100.0..=140.0).contains(&y) {
             state.switch_view(ActiveView::Terminal);
         } else if (150.0..=190.0).contains(&y) {
-            state.switch_view(ActiveView::Sftp);
+            state.switch_view(ActiveView::Batch);
         } else if (200.0..=240.0).contains(&y) {
+            state.switch_view(ActiveView::Sftp);
+        } else if (250.0..=290.0).contains(&y) {
             state.switch_view(ActiveView::Settings);
         }
         return None;
@@ -185,6 +210,37 @@ pub fn handle_mouse_click(
         }
 
         let panel_y = base_y + crate::render::WORKBENCH_TAB_BAR_HEIGHT;
+
+        // Terminal sub-panel clicks: HUD action buttons and search bar
+        if state.active_workbench_tab == WorkbenchTab::Terminal {
+            let panel_w = width - base_x;
+            // 1. Check AI Agent HUD action buttons if agent is active
+            if state.agent.is_some() {
+                let (ax, ay, aw, ah) = crate::render::get_agent_hud_apply_btn_rect(base_x, panel_y, panel_w);
+                if (ax..=ax + aw).contains(&x) && (ay..=ay + ah).contains(&y) {
+                    return Some(UiAction::ApplyAgentSuggestion);
+                }
+
+                let (ox, oy, ow, oh) = crate::render::get_agent_hud_abort_btn_rect(base_x, panel_y, panel_w);
+                if (ox..=ox + ow).contains(&x) && (oy..=oy + oh).contains(&y) {
+                    return Some(UiAction::AbortAgentTask);
+                }
+            }
+
+            // 2. Check Terminal Search Bar close button if active
+            if state.terminal_search_active {
+                let term_y = panel_y + if state.agent.is_some() { 32.0 } else { 0.0 };
+                let (sb_x, sb_y, sb_w, _sb_h) = crate::render::get_terminal_search_bar_rect(base_x, term_y, panel_w);
+                let (cx, cy, cw, ch) = crate::render::get_terminal_search_close_btn_rect(sb_x, sb_y, sb_w);
+                if (cx..=cx + cw).contains(&x) && (cy..=cy + ch).contains(&y) {
+                    state.close_terminal_search();
+                    return None;
+                }
+                if (sb_x..=sb_x + sb_w).contains(&x) && (sb_y..=sb_y + _sb_h).contains(&y) {
+                    return None;
+                }
+            }
+        }
 
         // Processes panel clicks: Sort buttons
         if state.active_workbench_tab == WorkbenchTab::Processes {
@@ -304,6 +360,69 @@ pub fn handle_mouse_click(
                 }
             }
         }
+    }
+
+    // 6.5. Check Batch View clicks
+    if state.active_view == ActiveView::Batch {
+        let content_x = LAYOUT.sidebar_width;
+        let content_y = LAYOUT.topbar_height;
+        let content_w = width - LAYOUT.sidebar_width;
+
+        // "全选" button
+        let (all_x, all_y, all_w, all_h) = crate::render::get_batch_select_all_btn_rect(content_x, content_y);
+        if (all_x..=all_x + all_w).contains(&x) && (all_y..=all_y + all_h).contains(&y) {
+            state.select_all_batch_hosts();
+            return None;
+        }
+
+        // "清空" button
+        let (clr_x, clr_y, clr_w, clr_h) = crate::render::get_batch_clear_btn_rect(content_x, content_y);
+        if (clr_x..=clr_x + clr_w).contains(&x) && (clr_y..=clr_y + clr_h).contains(&y) {
+            state.clear_batch_hosts();
+            return None;
+        }
+
+        // Host checklist rows
+        for (idx, host) in state.hosts.iter().enumerate() {
+            let (rx, ry, rw, rh) = crate::render::get_batch_host_row_rect(idx, content_x, content_y);
+            if (rx..=rx + rw).contains(&x) && (ry..=ry + rh).contains(&y) {
+                state.toggle_batch_host(host.id.0.clone());
+                return None;
+            }
+        }
+
+        // Quick command pills: uptime, df -h, docker ps, free -m
+        for (pidx, &cmd) in ["uptime", "df -h", "docker ps", "free -m"].iter().enumerate() {
+            let (px, py, pw, ph) = crate::render::get_batch_pill_rect(pidx, content_x, content_y);
+            if (px..=px + pw).contains(&x) && (py..=py + ph).contains(&y) {
+                state.set_batch_command(cmd.to_string());
+                return None;
+            }
+        }
+
+        // [ 🚀 并发执行 (Run Batch) ] button
+        let (btn_x, btn_y, btn_w, btn_h) = crate::render::get_batch_run_btn_rect(content_x, content_y, content_w);
+        if (btn_x..=btn_x + btn_w).contains(&x) && (btn_y..=btn_y + btn_h).contains(&y) {
+            if !state.batch_is_running && !state.batch_selected_host_ids.is_empty() && !state.batch_command.trim().is_empty() {
+                state.set_batch_running(true);
+                return Some(UiAction::RunBatch {
+                    host_ids: state.batch_selected_host_ids.iter().cloned().collect(),
+                    command: state.batch_command.clone(),
+                });
+            }
+            return None;
+        }
+
+        // Detail Log buttons in Execution Waterfall
+        for (idx, host) in state.hosts.iter().enumerate() {
+            let (lx, ly, lw, lh) = crate::render::get_batch_log_btn_rect(idx, content_x, content_y, content_w);
+            if (lx..=lx + lw).contains(&x) && (ly..=ly + lh).contains(&y) {
+                state.select_batch_log_host(Some(host.id.0.clone()));
+                return None;
+            }
+        }
+
+        return None;
     }
 
     // 7. Check SFTP View clicks
@@ -541,6 +660,14 @@ pub fn handle_mouse_click(
 }
 
 pub fn handle_key_down(state: &mut AppState, key: &str, is_ctrl: bool) -> Option<UiAction> {
+    // If Batch Log Modal is open, Escape closes it
+    if state.batch_selected_log_host.is_some() {
+        if key == "Escape" {
+            state.select_batch_log_host(None);
+        }
+        return None;
+    }
+
     // If SFTP Editor Modal is open:
     if state.sftp_editor.is_some() {
         if key == "Escape" {
@@ -637,12 +764,75 @@ pub fn handle_key_down(state: &mut AppState, key: &str, is_ctrl: bool) -> Option
         return None;
     }
 
-    // In Terminal View, forward key inputs
+    // In Terminal View, forward key inputs or handle search
     if state.active_view == ActiveView::Terminal {
+        if (key == "f" || key == "F") && is_ctrl {
+            state.toggle_terminal_search();
+            return None;
+        }
+
+        if state.terminal_search_active {
+            match key {
+                "Escape" => {
+                    state.close_terminal_search();
+                    return None;
+                }
+                "Backspace" => {
+                    let mut q = state.terminal_search_query.clone();
+                    q.pop();
+                    state.set_terminal_search_query(q);
+                    return None;
+                }
+                "Enter" => {
+                    return None;
+                }
+                c if c.len() == 1 && !is_ctrl => {
+                    let mut q = state.terminal_search_query.clone();
+                    q.push_str(c);
+                    state.set_terminal_search_query(q);
+                    return None;
+                }
+                _ => return None,
+            }
+        }
+
         match key {
             "Enter" => Some(UiAction::SendTerminalInput("\r".to_string())),
             "Backspace" => Some(UiAction::SendTerminalInput("\x08".to_string())),
             c if c.len() == 1 => Some(UiAction::SendTerminalInput(c.to_string())),
+            _ => None,
+        }
+    } else if state.active_view == ActiveView::Batch {
+        if key == "Enter" && is_ctrl {
+            if !state.batch_is_running && !state.batch_selected_host_ids.is_empty() && !state.batch_command.trim().is_empty() {
+                state.set_batch_running(true);
+                return Some(UiAction::RunBatch {
+                    host_ids: state.batch_selected_host_ids.iter().cloned().collect(),
+                    command: state.batch_command.clone(),
+                });
+            }
+            return None;
+        }
+
+        match key {
+            "Backspace" => {
+                let mut cmd = state.batch_command.clone();
+                cmd.pop();
+                state.set_batch_command(cmd);
+                None
+            }
+            "Enter" => {
+                let mut cmd = state.batch_command.clone();
+                cmd.push('\n');
+                state.set_batch_command(cmd);
+                None
+            }
+            c if c.len() == 1 && !is_ctrl => {
+                let mut cmd = state.batch_command.clone();
+                cmd.push_str(c);
+                state.set_batch_command(cmd);
+                None
+            }
             _ => None,
         }
     } else {
@@ -1045,5 +1235,192 @@ mod tests {
         let action = handle_mouse_click(&mut state, rx + rw / 2.0, ry + rh / 2.0, 1200.0, 800.0);
         assert_eq!(action, Some(UiAction::SaveSettings));
         assert_eq!(state.settings, redash_types::settings::AppSettings::default());
+    }
+
+    #[test]
+    fn test_batch_view_clicks_and_interactions() {
+        let mut state = AppState::new();
+        let mut h1 = crate::models::HostConfig::new("Web Server 01", "192.168.1.10", "root");
+        h1.id = redash_types::HostId("srv-1".to_string());
+        let mut h2 = crate::models::HostConfig::new("DB Server 01", "192.168.1.20", "root");
+        h2.id = redash_types::HostId("srv-2".to_string());
+        state.hosts = vec![h1, h2];
+        state.switch_view(ActiveView::Batch);
+        assert_eq!(state.active_view, ActiveView::Batch);
+
+        let content_x = LAYOUT.sidebar_width;
+        let content_y = LAYOUT.topbar_height;
+        let content_w = 1200.0 - LAYOUT.sidebar_width;
+
+        // 1. Select all hosts
+        let (ax, ay, aw, ah) = crate::render::get_batch_select_all_btn_rect(content_x, content_y);
+        let action = handle_mouse_click(&mut state, ax + aw / 2.0, ay + ah / 2.0, 1200.0, 800.0);
+        assert!(action.is_none());
+        assert_eq!(state.batch_selected_host_ids.len(), 2);
+
+        // 2. Clear all hosts
+        let (cx, cy, cw, ch) = crate::render::get_batch_clear_btn_rect(content_x, content_y);
+        let action = handle_mouse_click(&mut state, cx + cw / 2.0, cy + ch / 2.0, 1200.0, 800.0);
+        assert!(action.is_none());
+        assert!(state.batch_selected_host_ids.is_empty());
+
+        // 3. Toggle host row 0
+        let (rx, ry, rw, rh) = crate::render::get_batch_host_row_rect(0, content_x, content_y);
+        handle_mouse_click(&mut state, rx + rw / 2.0, ry + rh / 2.0, 1200.0, 800.0);
+        assert!(state.batch_selected_host_ids.contains("srv-1"));
+        assert_eq!(state.batch_selected_host_ids.len(), 1);
+
+        // Toggle host row 0 again (uncheck)
+        handle_mouse_click(&mut state, rx + rw / 2.0, ry + rh / 2.0, 1200.0, 800.0);
+        assert!(!state.batch_selected_host_ids.contains("srv-1"));
+        assert!(state.batch_selected_host_ids.is_empty());
+
+        // 4. Quick command pills
+        let (px, py, pw, ph) = crate::render::get_batch_pill_rect(1, content_x, content_y);
+        handle_mouse_click(&mut state, px + pw / 2.0, py + ph / 2.0, 1200.0, 800.0);
+        assert_eq!(state.batch_command, "df -h");
+
+        // 5. Run Batch button click
+        let (bx, by, bw, bh) = crate::render::get_batch_run_btn_rect(content_x, content_y, content_w);
+        // With no hosts selected, should do nothing
+        let action = handle_mouse_click(&mut state, bx + bw / 2.0, by + bh / 2.0, 1200.0, 800.0);
+        assert!(action.is_none());
+        assert!(!state.batch_is_running);
+
+        // Select host 1 and run
+        state.toggle_batch_host("srv-2".to_string());
+        let action = handle_mouse_click(&mut state, bx + bw / 2.0, by + bh / 2.0, 1200.0, 800.0);
+        assert_eq!(
+            action,
+            Some(UiAction::RunBatch {
+                host_ids: vec!["srv-2".to_string()],
+                command: "df -h".to_string(),
+            })
+        );
+        assert!(state.batch_is_running);
+
+        // Clicking again while running does nothing
+        let action = handle_mouse_click(&mut state, bx + bw / 2.0, by + bh / 2.0, 1200.0, 800.0);
+        assert!(action.is_none());
+
+        // 6. Waterfall host log button click
+        let (lx, ly, lw, lh) = crate::render::get_batch_log_btn_rect(0, content_x, content_y, content_w);
+        let action = handle_mouse_click(&mut state, lx + lw / 2.0, ly + lh / 2.0, 1200.0, 800.0);
+        assert!(action.is_none());
+        assert_eq!(state.batch_selected_log_host, Some("srv-1".to_string()));
+
+        // 7. Close log modal via modal close button
+        let (cl_x, cl_y, cl_w, cl_h) = crate::render::get_batch_log_modal_close_btn_rect(1200.0, 800.0);
+        let action = handle_mouse_click(&mut state, cl_x + cl_w / 2.0, cl_y + cl_h / 2.0, 1200.0, 800.0);
+        assert!(action.is_none());
+        assert!(state.batch_selected_log_host.is_none());
+
+        // Re-open log modal and test Escape key to close
+        state.select_batch_log_host(Some("srv-2".to_string()));
+        assert_eq!(state.batch_selected_log_host, Some("srv-2".to_string()));
+        let action = handle_key_down(&mut state, "Escape", false);
+        assert!(action.is_none());
+        assert!(state.batch_selected_log_host.is_none());
+    }
+
+    #[test]
+    fn test_batch_keyboard_interactions() {
+        let mut state = AppState::new();
+        state.switch_view(ActiveView::Batch);
+        state.batch_command = "echo".to_string();
+
+        // Type characters
+        handle_key_down(&mut state, " ", false);
+        handle_key_down(&mut state, "o", false);
+        handle_key_down(&mut state, "k", false);
+        assert_eq!(state.batch_command, "echo ok");
+
+        // Backspace
+        handle_key_down(&mut state, "Backspace", false);
+        assert_eq!(state.batch_command, "echo o");
+
+        // Enter adds newline
+        handle_key_down(&mut state, "Enter", false);
+        assert_eq!(state.batch_command, "echo o\n");
+
+        // Ctrl+Enter triggers RunBatch when hosts are selected
+        state.toggle_batch_host("host-alpha".to_string());
+        let action = handle_key_down(&mut state, "Enter", true);
+        assert_eq!(
+            action,
+            Some(UiAction::RunBatch {
+                host_ids: vec!["host-alpha".to_string()],
+                command: "echo o\n".to_string(),
+            })
+        );
+        assert!(state.batch_is_running);
+    }
+
+    #[test]
+    fn test_terminal_search_and_hud_clicks() {
+        let mut state = AppState::new();
+        state.switch_view(ActiveView::Terminal);
+        state.terminal_lines = vec![
+            "Starting server...".to_string(),
+            "Error: port already in use".to_string(),
+            "Retrying...".to_string(),
+            "Error: cannot bind socket".to_string(),
+        ];
+
+        // 1. Cmd+F / Ctrl+F opens search
+        assert!(!state.terminal_search_active);
+        let action = handle_key_down(&mut state, "f", true);
+        assert!(action.is_none());
+        assert!(state.terminal_search_active);
+
+        // 2. Type search query "error"
+        for c in ["e", "r", "r", "o", "r"] {
+            handle_key_down(&mut state, c, false);
+        }
+        assert_eq!(state.terminal_search_query, "error");
+        assert_eq!(state.terminal_search_match_count, 2);
+
+        // 3. Backspace in search
+        handle_key_down(&mut state, "Backspace", false);
+        assert_eq!(state.terminal_search_query, "erro");
+        assert_eq!(state.terminal_search_match_count, 2);
+
+        // 4. Click search close button
+        let base_x = LAYOUT.sidebar_width;
+        let panel_y = LAYOUT.topbar_height + crate::render::WORKBENCH_TAB_BAR_HEIGHT;
+        let panel_w = 1200.0 - base_x;
+        let (sb_x, sb_y, sb_w, _) = crate::render::get_terminal_search_bar_rect(base_x, panel_y, panel_w);
+        let (cx, cy, cw, ch) = crate::render::get_terminal_search_close_btn_rect(sb_x, sb_y, sb_w);
+        let action = handle_mouse_click(&mut state, cx + cw / 2.0, cy + ch / 2.0, 1200.0, 800.0);
+        assert!(action.is_none());
+        assert!(!state.terminal_search_active);
+        assert!(state.terminal_search_query.is_empty());
+
+        // 5. Escape closes search
+        handle_key_down(&mut state, "f", true);
+        assert!(state.terminal_search_active);
+        handle_key_down(&mut state, "Escape", false);
+        assert!(!state.terminal_search_active);
+
+        // 6. Agent HUD buttons
+        state.agent = Some(redash_types::agent::DetectedAgent {
+            id: "claude".to_string(),
+            name: "Claude Code".to_string(),
+            category: "Top Frontier".to_string(),
+            status: redash_types::agent::AgentStatus::NeedsInput,
+            detail: "Suggested command: rm -rf /tmp/cache".to_string(),
+            cost_usd: None,
+            tokens: None,
+        });
+
+        // Click HUD Apply button
+        let (ax, ay, aw, ah) = crate::render::get_agent_hud_apply_btn_rect(base_x, panel_y, panel_w);
+        let action = handle_mouse_click(&mut state, ax + aw / 2.0, ay + ah / 2.0, 1200.0, 800.0);
+        assert_eq!(action, Some(UiAction::ApplyAgentSuggestion));
+
+        // Click HUD Abort button
+        let (ox, oy, ow, oh) = crate::render::get_agent_hud_abort_btn_rect(base_x, panel_y, panel_w);
+        let action = handle_mouse_click(&mut state, ox + ow / 2.0, oy + oh / 2.0, 1200.0, 800.0);
+        assert_eq!(action, Some(UiAction::AbortAgentTask));
     }
 }

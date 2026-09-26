@@ -517,3 +517,96 @@ pub fn async_save_settings(
         }
     });
 }
+
+pub type BatchRunCallback = Rc<RefCell<dyn FnMut(Result<redash_types::batch::BatchJobResult, String>)>>;
+
+#[allow(clippy::type_complexity)]
+pub fn async_run_batch(
+    host_ids: Vec<String>,
+    command: String,
+    on_done: Rc<RefCell<dyn FnMut(Result<redash_types::batch::BatchJobResult, String>)>>,
+) {
+    wasm_bindgen_futures::spawn_local(async move {
+        let Some(window) = web_sys::window() else {
+            (on_done.borrow_mut())(Err("Window not found".to_string()));
+            return;
+        };
+
+        let opts = web_sys::RequestInit::new();
+        opts.set_method("POST");
+
+        let req = redash_types::batch::BatchRunRequest { host_ids, command };
+        let payload_str = match serde_json::to_string(&req) {
+            Ok(s) => s,
+            Err(e) => {
+                (on_done.borrow_mut())(Err(format!("Failed to serialize request: {}", e)));
+                return;
+            }
+        };
+        opts.set_body(&wasm_bindgen::JsValue::from_str(&payload_str));
+
+        let headers = match web_sys::Headers::new() {
+            Ok(h) => h,
+            Err(_) => {
+                (on_done.borrow_mut())(Err("Failed to construct Headers".to_string()));
+                return;
+            }
+        };
+        let _ = headers.set("Content-Type", "application/json");
+        opts.set_headers(&headers);
+
+        let resp_val = match wasm_bindgen_futures::JsFuture::from(
+            window.fetch_with_str_and_init("/api/batch/exec", &opts),
+        )
+        .await
+        {
+            Ok(v) => v,
+            Err(e) => {
+                (on_done.borrow_mut())(Err(format!("Network request failed: {:?}", e)));
+                return;
+            }
+        };
+        let resp: web_sys::Response = resp_val.unchecked_into();
+        let json_prom = match resp.json() {
+            Ok(p) => p,
+            Err(e) => {
+                (on_done.borrow_mut())(Err(format!("Failed to parse response: {:?}", e)));
+                return;
+            }
+        };
+        let json_val = match wasm_bindgen_futures::JsFuture::from(json_prom).await {
+            Ok(v) => v,
+            Err(e) => {
+                (on_done.borrow_mut())(Err(format!("Failed to await JSON: {:?}", e)));
+                return;
+            }
+        };
+        if let Some(json_str) = js_sys::JSON::stringify(&json_val).ok().and_then(|s| s.as_string()) {
+            #[derive(serde::Deserialize)]
+            struct ApiResp {
+                success: bool,
+                data: Option<redash_types::batch::BatchJobResult>,
+                message: Option<String>,
+            }
+            match serde_json::from_str::<ApiResp>(&json_str) {
+                Ok(res) if res.success => {
+                    if let Some(result) = res.data {
+                        (on_done.borrow_mut())(Ok(result));
+                    } else {
+                        (on_done.borrow_mut())(Err("Empty batch response data".to_string()));
+                    }
+                }
+                Ok(res) => {
+                    let msg = res.message.unwrap_or_else(|| "Failed to execute batch job".to_string());
+                    (on_done.borrow_mut())(Err(msg));
+                }
+                Err(e) => {
+                    (on_done.borrow_mut())(Err(format!("Failed to deserialize response: {}", e)));
+                }
+            }
+        } else {
+            (on_done.borrow_mut())(Err("Failed to stringify JSON response".to_string()));
+        }
+    });
+}
+

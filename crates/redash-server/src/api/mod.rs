@@ -1,3 +1,4 @@
+pub mod batch;
 pub mod hosts;
 pub mod settings;
 pub mod sftp;
@@ -27,4 +28,6 @@ pub fn api_router() -> Router<AppState> {
         .route("/api/sftp/{host_id}/list", get(sftp::list_directory))
         .route("/api/sftp/{host_id}/read", get(sftp::read_file_content))
         .route("/api/sftp/{host_id}/write", post(sftp::write_file_content))
+        // Batch execution
+        .route("/api/batch/exec", post(batch::run_batch_job))
 }

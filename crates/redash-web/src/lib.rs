@@ -232,6 +232,32 @@ pub fn start_web_app(canvas_id: &str) -> Result<(), JsValue> {
                             state.hosts.push(new_host);
                         }
                     }
+                    UiAction::RunBatch { host_ids, command } => {
+                        let app_state_batch = app_state_clone.clone();
+                        let on_done = Rc::new(RefCell::new(move |res: Result<redash_types::batch::BatchJobResult, String>| {
+                            let mut sm = app_state_batch.borrow_mut();
+                            sm.set_batch_running(false);
+                            match res {
+                                Ok(results) => {
+                                    sm.set_batch_results(results);
+                                }
+                                Err(err) => {
+                                    console::log_1(&format!("Batch execution error: {}", err).into());
+                                }
+                            }
+                        }));
+                        gateway::async_run_batch(host_ids, command, on_done);
+                    }
+                    UiAction::ApplyAgentSuggestion => {
+                        gateway_clone.borrow().send_terminal_input("\r");
+                        if let Some(ref mut agent) = state.agent {
+                            agent.status = redash_types::agent::AgentStatus::Done;
+                        }
+                    }
+                    UiAction::AbortAgentTask => {
+                        gateway_clone.borrow().send_terminal_input("\x03");
+                        state.agent = None;
+                    }
                     _ => {}
                 }
             }
@@ -295,6 +321,32 @@ pub fn start_web_app(canvas_id: &str) -> Result<(), JsValue> {
                         if let Some(new_host) = state.build_new_host() {
                             state.hosts.push(new_host);
                         }
+                    }
+                    UiAction::RunBatch { host_ids, command } => {
+                        let app_state_batch = app_state_clone.clone();
+                        let on_done = Rc::new(RefCell::new(move |res: Result<redash_types::batch::BatchJobResult, String>| {
+                            let mut sm = app_state_batch.borrow_mut();
+                            sm.set_batch_running(false);
+                            match res {
+                                Ok(results) => {
+                                    sm.set_batch_results(results);
+                                }
+                                Err(err) => {
+                                    console::log_1(&format!("Batch execution error: {}", err).into());
+                                }
+                            }
+                        }));
+                        gateway::async_run_batch(host_ids, command, on_done);
+                    }
+                    UiAction::ApplyAgentSuggestion => {
+                        gateway_clone.borrow().send_terminal_input("\r");
+                        if let Some(ref mut agent) = state.agent {
+                            agent.status = redash_types::agent::AgentStatus::Done;
+                        }
+                    }
+                    UiAction::AbortAgentTask => {
+                        gateway_clone.borrow().send_terminal_input("\x03");
+                        state.agent = None;
                     }
                     _ => {}
                 }

@@ -204,3 +204,33 @@ async fn test_settings_api() {
 
     assert_eq!(res.status(), StatusCode::OK);
 }
+
+#[tokio::test]
+async fn test_batch_exec_api() {
+    let state = AppState::new();
+    let app = build_router(state);
+
+    let batch_req = redash_types::batch::BatchRunRequest {
+        host_ids: vec!["non-existent".to_string()],
+        command: "uptime".to_string(),
+    };
+
+    let res = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/batch/exec")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&batch_req).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), StatusCode::OK);
+    let body = res.into_body().collect().await.unwrap().to_bytes();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["success"], true);
+    assert_eq!(json["data"]["command"], "uptime");
+    assert!(json["data"]["job_id"].is_string());
+}

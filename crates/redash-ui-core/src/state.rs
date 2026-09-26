@@ -1,15 +1,17 @@
 use crate::terminal::TerminalGrid;
 use redash_types::agent::DetectedAgent;
+use redash_types::batch::BatchJobResult;
 use redash_types::host::HostConfig;
 use redash_types::metrics::NodeMetrics;
 use redash_types::settings::AppSettings;
 use redash_types::sftp::RemoteFileItem;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ActiveView {
     Fleet,
     Terminal,
+    Batch,
     Sftp,
     Settings,
 }
@@ -83,6 +85,17 @@ pub enum UserAction {
     SetTerminalFontSize(f32),
     SetTerminalCursorStyle(String),
     SetSettingsSaveStatus(Option<(String, bool)>),
+    ToggleBatchHost(String),
+    SelectAllBatchHosts,
+    ClearBatchHosts,
+    SetBatchCommand(String),
+    SetBatchRunning(bool),
+    SetBatchResults(BatchJobResult),
+    SelectBatchLogHost(Option<String>),
+    ToggleTerminalSearch,
+    SetTerminalSearchQuery(String),
+    CloseTerminalSearch,
+    TriggerRunBatch,
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -97,6 +110,7 @@ pub enum UiEffect {
     FetchSftpList { host_id: String, path: String },
     ReadSftpFile { host_id: String, path: String },
     SaveSftpFile { host_id: String, path: String, content: String },
+    RunBatch { host_ids: Vec<String>, command: String },
 }
 
 pub struct AppStateMachine {
@@ -132,6 +146,14 @@ pub struct AppStateMachine {
     pub active_settings_category: SettingsCategory,
     pub settings_save_status: Option<(String, bool)>,
     pub ping_target: String,
+    pub batch_selected_host_ids: HashSet<String>,
+    pub batch_command: String,
+    pub batch_is_running: bool,
+    pub batch_results: Option<BatchJobResult>,
+    pub batch_selected_log_host: Option<String>,
+    pub terminal_search_active: bool,
+    pub terminal_search_query: String,
+    pub terminal_search_match_count: usize,
 }
 
 impl Default for AppStateMachine {
@@ -182,6 +204,14 @@ impl AppStateMachine {
             active_settings_category: SettingsCategory::Appearance,
             settings_save_status: None,
             ping_target: "1.1.1.1".to_string(),
+            batch_selected_host_ids: HashSet::new(),
+            batch_command: "uptime".to_string(),
+            batch_is_running: false,
+            batch_results: None,
+            batch_selected_log_host: None,
+            terminal_search_active: false,
+            terminal_search_query: String::new(),
+            terminal_search_match_count: 0,
         }
     }
 
@@ -255,6 +285,14 @@ impl AppStateMachine {
                     if self.terminal_lines.len() > 500 {
                         self.terminal_lines.remove(0);
                     }
+                }
+                if self.terminal_search_active && !self.terminal_search_query.is_empty() {
+                    let q = self.terminal_search_query.to_lowercase();
+                    self.terminal_search_match_count = self
+                        .terminal_lines
+                        .iter()
+                        .map(|line| line.to_lowercase().matches(&q).count())
+                        .sum();
                 }
             }
             UserAction::UpdateMetrics { host_id, metrics } => {
@@ -397,9 +435,122 @@ impl AppStateMachine {
             UserAction::SetSettingsSaveStatus(status) => {
                 self.settings_save_status = status;
             }
+            UserAction::ToggleBatchHost(id) => {
+                if self.batch_selected_host_ids.contains(&id) {
+                    self.batch_selected_host_ids.remove(&id);
+                } else {
+                    self.batch_selected_host_ids.insert(id);
+                }
+            }
+            UserAction::SelectAllBatchHosts => {
+                for h in &self.hosts {
+                    self.batch_selected_host_ids.insert(h.id.0.clone());
+                }
+            }
+            UserAction::ClearBatchHosts => {
+                self.batch_selected_host_ids.clear();
+            }
+            UserAction::SetBatchCommand(cmd) => {
+                self.batch_command = cmd;
+            }
+            UserAction::SetBatchRunning(running) => {
+                self.batch_is_running = running;
+            }
+            UserAction::SetBatchResults(res) => {
+                self.batch_is_running = false;
+                self.batch_results = Some(res);
+            }
+            UserAction::SelectBatchLogHost(host) => {
+                self.batch_selected_log_host = host;
+            }
+            UserAction::ToggleTerminalSearch => {
+                self.terminal_search_active = !self.terminal_search_active;
+                if !self.terminal_search_active {
+                    self.terminal_search_query.clear();
+                    self.terminal_search_match_count = 0;
+                } else if !self.terminal_search_query.is_empty() {
+                    let q = self.terminal_search_query.to_lowercase();
+                    self.terminal_search_match_count = self
+                        .terminal_lines
+                        .iter()
+                        .map(|line| line.to_lowercase().matches(&q).count())
+                        .sum();
+                }
+            }
+            UserAction::SetTerminalSearchQuery(query) => {
+                self.terminal_search_query = query;
+                if self.terminal_search_query.is_empty() {
+                    self.terminal_search_match_count = 0;
+                } else {
+                    let q = self.terminal_search_query.to_lowercase();
+                    self.terminal_search_match_count = self
+                        .terminal_lines
+                        .iter()
+                        .map(|line| line.to_lowercase().matches(&q).count())
+                        .sum();
+                }
+            }
+            UserAction::CloseTerminalSearch => {
+                self.terminal_search_active = false;
+                self.terminal_search_query.clear();
+                self.terminal_search_match_count = 0;
+            }
+            UserAction::TriggerRunBatch => {
+                if !self.batch_selected_host_ids.is_empty() && !self.batch_command.trim().is_empty() {
+                    self.batch_is_running = true;
+                    effects.push(UiEffect::RunBatch {
+                        host_ids: self.batch_selected_host_ids.iter().cloned().collect(),
+                        command: self.batch_command.clone(),
+                    });
+                }
+            }
         }
 
         effects
+    }
+
+    pub fn toggle_batch_host(&mut self, id: String) -> Vec<UiEffect> {
+        self.handle_action(UserAction::ToggleBatchHost(id))
+    }
+
+    pub fn select_all_batch_hosts(&mut self) -> Vec<UiEffect> {
+        self.handle_action(UserAction::SelectAllBatchHosts)
+    }
+
+    pub fn clear_batch_hosts(&mut self) -> Vec<UiEffect> {
+        self.handle_action(UserAction::ClearBatchHosts)
+    }
+
+    pub fn set_batch_command(&mut self, command: String) -> Vec<UiEffect> {
+        self.handle_action(UserAction::SetBatchCommand(command))
+    }
+
+    pub fn set_batch_running(&mut self, running: bool) -> Vec<UiEffect> {
+        self.handle_action(UserAction::SetBatchRunning(running))
+    }
+
+    pub fn set_batch_results(&mut self, results: BatchJobResult) -> Vec<UiEffect> {
+        self.handle_action(UserAction::SetBatchResults(results))
+    }
+
+    pub fn select_batch_log_host(&mut self, host: Option<String>) -> Vec<UiEffect> {
+        self.handle_action(UserAction::SelectBatchLogHost(host))
+    }
+
+    pub fn toggle_terminal_search(&mut self) -> Vec<UiEffect> {
+        self.handle_action(UserAction::ToggleTerminalSearch)
+    }
+
+    pub fn set_terminal_search_query(&mut self, query: String) -> Vec<UiEffect> {
+        self.handle_action(UserAction::SetTerminalSearchQuery(query))
+    }
+
+    pub fn close_terminal_search(&mut self) -> Vec<UiEffect> {
+        self.handle_action(UserAction::CloseTerminalSearch)
+    }
+
+    pub fn trigger_run_batch(&mut self) -> Vec<UiEffect> {
+        self.handle_action(UserAction::TriggerRunBatch)
     }
 
     pub fn switch_settings_category(&mut self, cat: SettingsCategory) {
@@ -851,5 +1002,139 @@ mod tests {
         assert_eq!(sm.settings, AppSettings::default());
         assert_eq!(sm.ping_target, "1.1.1.1");
         assert_eq!(effects, vec![UiEffect::SaveSettings]);
+    }
+
+    #[test]
+    fn test_batch_state_and_actions() {
+        use redash_types::batch::{BatchJobResult, HostTaskExecution, TaskState};
+        let mut sm = AppStateMachine::new();
+
+        // Check initial state
+        assert!(sm.batch_selected_host_ids.is_empty());
+        assert_eq!(sm.batch_command, "uptime");
+        assert!(!sm.batch_is_running);
+        assert!(sm.batch_results.is_none());
+        assert!(sm.batch_selected_log_host.is_none());
+
+        // Switch to ActiveView::Batch
+        sm.handle_action(UserAction::SwitchView(ActiveView::Batch));
+        assert_eq!(sm.active_view, ActiveView::Batch);
+
+        // Add dummy hosts
+        let host1 = HostConfig::new("Server 1", "10.0.0.1", "root");
+        let host2 = HostConfig::new("Server 2", "10.0.0.2", "root");
+        let h1_id = host1.id.0.clone();
+        let h2_id = host2.id.0.clone();
+        sm.hosts = vec![host1, host2];
+
+        // ToggleBatchHost
+        sm.toggle_batch_host(h1_id.clone());
+        assert!(sm.batch_selected_host_ids.contains(&h1_id));
+        assert_eq!(sm.batch_selected_host_ids.len(), 1);
+
+        sm.toggle_batch_host(h1_id.clone());
+        assert!(!sm.batch_selected_host_ids.contains(&h1_id));
+        assert!(sm.batch_selected_host_ids.is_empty());
+
+        // SelectAllBatchHosts
+        sm.select_all_batch_hosts();
+        assert_eq!(sm.batch_selected_host_ids.len(), 2);
+        assert!(sm.batch_selected_host_ids.contains(&h1_id));
+        assert!(sm.batch_selected_host_ids.contains(&h2_id));
+
+        // ClearBatchHosts
+        sm.clear_batch_hosts();
+        assert!(sm.batch_selected_host_ids.is_empty());
+
+        // SetBatchCommand
+        sm.set_batch_command("df -h".to_string());
+        assert_eq!(sm.batch_command, "df -h");
+
+        // trigger_run_batch with empty selection does nothing
+        let effects = sm.trigger_run_batch();
+        assert!(effects.is_empty());
+        assert!(!sm.batch_is_running);
+
+        // trigger_run_batch with selected host emits UiEffect::RunBatch
+        sm.toggle_batch_host(h1_id.clone());
+        let effects = sm.trigger_run_batch();
+        assert_eq!(effects.len(), 1);
+        match &effects[0] {
+            UiEffect::RunBatch { host_ids, command } => {
+                assert_eq!(host_ids, &vec![h1_id.clone()]);
+                assert_eq!(command, "df -h");
+            }
+            _ => panic!("Expected RunBatch effect"),
+        }
+        assert!(sm.batch_is_running);
+
+        // SetBatchResults
+        let mut results = HashMap::new();
+        results.insert(
+            h1_id.clone(),
+            HostTaskExecution {
+                host_id: h1_id.clone(),
+                host_name: "Server 1".to_string(),
+                state: TaskState::Success,
+                stdout: "Filesystem 100G".to_string(),
+                stderr: String::new(),
+                exit_code: Some(0),
+                duration_ms: 120,
+                duration_us: 120000,
+                error: None,
+            },
+        );
+        let job = BatchJobResult {
+            job_id: "test-job".to_string(),
+            command: "df -h".to_string(),
+            hosts_results: results,
+            total_duration_ms: 125,
+            total_duration_us: 125000,
+        };
+        sm.set_batch_results(job.clone());
+        assert!(!sm.batch_is_running);
+        assert_eq!(sm.batch_results, Some(job));
+
+        // SelectBatchLogHost
+        sm.select_batch_log_host(Some(h1_id.clone()));
+        assert_eq!(sm.batch_selected_log_host, Some(h1_id));
+        sm.select_batch_log_host(None);
+        assert!(sm.batch_selected_log_host.is_none());
+    }
+
+    #[test]
+    fn test_terminal_search_state_and_actions() {
+        let mut sm = AppStateMachine::new();
+
+        assert!(!sm.terminal_search_active);
+        assert!(sm.terminal_search_query.is_empty());
+        assert_eq!(sm.terminal_search_match_count, 0);
+
+        // Append some terminal content
+        sm.handle_action(UserAction::AppendTerminal("Line 1: Error found in kernel\nLine 2: System running error-free\nLine 3: ERROR: critical".to_string()));
+
+        // ToggleTerminalSearch ON
+        sm.toggle_terminal_search();
+        assert!(sm.terminal_search_active);
+
+        // Set search query
+        sm.set_terminal_search_query("error".to_string());
+        assert_eq!(sm.terminal_search_query, "error");
+        // "Error", "error-free", "ERROR" -> 3 matches
+        assert_eq!(sm.terminal_search_match_count, 3);
+
+        // Append more content while search is active
+        sm.handle_action(UserAction::AppendTerminal("Line 4: Another Error here".to_string()));
+        assert_eq!(sm.terminal_search_match_count, 4);
+
+        // Change query
+        sm.set_terminal_search_query("kernel".to_string());
+        assert_eq!(sm.terminal_search_match_count, 1);
+
+        // Close search
+        sm.close_terminal_search();
+        assert!(!sm.terminal_search_active);
+        assert!(sm.terminal_search_query.is_empty());
+        assert_eq!(sm.terminal_search_match_count, 0);
     }
 }
