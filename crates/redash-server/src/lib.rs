@@ -11,9 +11,10 @@ use crate::state::AppState;
 
 pub fn build_router(state: AppState) -> Router {
     Router::new()
-        // Embedded Web Frontend Routes
+        // Embedded GPUI Web Frontend Routes
         .route("/", get(web_assets::serve_index))
-        .route("/assets/app.js", get(web_assets::serve_js))
+        .route("/pkg/redash_web.js", get(web_assets::serve_wasm_js))
+        .route("/pkg/redash_web_bg.wasm", get(web_assets::serve_wasm_bin))
         .route("/assets/style.css", get(web_assets::serve_css))
         // API and WebSocket Routes
         .merge(api::api_router())

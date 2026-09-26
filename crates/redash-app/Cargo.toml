@@ -6,6 +6,10 @@ rust-version.workspace = true
 license.workspace = true
 default-run = "redash"
 
+[lib]
+name = "redash_app"
+path = "src/lib.rs"
+
 [[bin]]
 name = "redash"
 path = "src/main.rs"

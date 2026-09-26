@@ -2,186 +2,97 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ReDash - High-Performance Cloud Terminal & Infrastructure</title>
-  <link rel="stylesheet" href="/assets/style.css">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>ReDash - High-Performance Cloud Terminal & Infrastructure (GPUI Web)</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #0d1117;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    #redash-gpui-canvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+      outline: none;
+      cursor: default;
+    }
+    #loading-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: #0d1117;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #00ffcc;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13.5px;
+      gap: 16px;
+      z-index: 9999;
+      transition: opacity 0.25s ease;
+    }
+    .spinner {
+      width: 38px;
+      height: 38px;
+      border: 3px solid rgba(0, 255, 204, 0.2);
+      border-top-color: #00ffcc;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
 </head>
 <body>
-  <div class="app-container">
-    <!-- Left Navigation Sidebar -->
-    <aside class="sidebar">
-      <div class="brand-icon" title="ReDash Web">R</div>
-      <div class="nav-item active" data-view="fleet" title="Fleet Pulse Matrix">
-        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
-      </div>
-      <div class="nav-item" data-view="terminal" title="Workbench Terminal">
-        <svg viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
-      </div>
-      <div class="nav-item" data-view="sftp" title="SFTP File Browser">
-        <svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
-      </div>
-      <div class="nav-spacer"></div>
-      <div class="nav-item" data-view="settings" title="Settings">
-        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
-      </div>
-    </aside>
-
-    <!-- Main Content Area -->
-    <main class="main-area">
-      <!-- Topbar -->
-      <header class="topbar">
-        <div class="topbar-left">
-          <span class="app-title">ReDash Web</span>
-          <span class="view-badge" id="current-view-badge">Fleet Pulse Matrix</span>
-        </div>
-        <div class="topbar-right">
-          <div class="live-indicator">
-            <span class="led-dot"></span>
-            <span id="gateway-status">Gateway Online</span>
-          </div>
-          <button class="btn-primary" id="btn-add-host" onclick="openAddHostModal()">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-            Add Host
-          </button>
-        </div>
-      </header>
-
-      <!-- View 1: Fleet Pulse -->
-      <section class="view-container active" id="view-fleet">
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-          <h2 style="font-size:16px; font-weight:700;">Infrastructure Fleet</h2>
-          <span style="font-size:12px; color:var(--text-secondary);" id="host-count">0 Nodes connected</span>
-        </div>
-        <div class="fleet-grid" id="fleet-hosts-grid">
-          <!-- Dynamically populated via app.js -->
-        </div>
-      </section>
-
-      <!-- View 2: Terminal Workbench -->
-      <section class="view-container" id="view-terminal">
-        <div class="terminal-view">
-          <div class="terminal-header">
-            <div style="display:flex; align-items:center; gap:12px;">
-              <select class="form-input" id="terminal-host-select" onchange="switchTerminalHost(this.value)" style="padding:4px 8px; font-size:11.5px;">
-                <option value="">Select Target Host...</option>
-              </select>
-              <span class="terminal-title" id="terminal-session-title">Disconnected</span>
-            </div>
-            <div class="agent-hud" id="agent-hud-banner" style="display:none;">
-              <span class="agent-badge" id="agent-hud-name">AI Agent Detected</span>
-              <span id="agent-hud-state" style="color:var(--text-secondary);">Thinking...</span>
-              <span id="agent-hud-metrics" style="font-family:'JetBrains Mono'; font-weight:700; color:var(--accent-cyan);">$0.00 | 0 tok</span>
-            </div>
-            <div>
-              <button class="btn-secondary" onclick="clearTerminal()">Clear</button>
-              <button class="btn-secondary" onclick="reconnectTerminal()">Reconnect</button>
-            </div>
-          </div>
-          <div class="terminal-canvas-container">
-            <pre class="terminal-screen" id="terminal-display" tabindex="0">Select a host above to establish real-time Web SSH session.</pre>
-          </div>
-        </div>
-      </section>
-
-      <!-- View 3: SFTP File Browser -->
-      <section class="view-container" id="view-sftp">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-          <div style="display:flex; align-items:center; gap:8px;">
-            <select class="form-input" id="sftp-host-select" onchange="loadSftpFiles(this.value, '.')" style="padding:4px 8px; font-size:11.5px;">
-              <option value="">Select Host for SFTP...</option>
-            </select>
-            <span style="font-family:'JetBrains Mono'; font-size:12px; color:var(--accent-cyan);" id="sftp-current-path">/</span>
-          </div>
-          <button class="btn-secondary" onclick="refreshSftp()">Refresh</button>
-        </div>
-        <div style="background:var(--bg-card); border:1px solid var(--border-default); border-radius:var(--radius-lg); overflow:hidden;">
-          <table style="width:100%; border-collapse:collapse; text-align:left; font-size:12px;">
-            <thead>
-              <tr style="border-bottom:1px solid var(--border-default); color:var(--text-secondary); background:var(--bg-input);">
-                <th style="padding:10px 14px;">Name</th>
-                <th style="padding:10px 14px;">Size</th>
-                <th style="padding:10px 14px;">Permissions</th>
-                <th style="padding:10px 14px; text-align:right;">Actions</th>
-              </tr>
-            </thead>
-            <tbody id="sftp-table-body">
-              <tr><td colspan="4" style="padding:24px; text-align:center; color:var(--text-muted);">Please select a host to explore remote files.</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <!-- View 4: Settings -->
-      <section class="view-container" id="view-settings">
-        <h2 style="font-size:16px; font-weight:700; margin-bottom:16px;">Application Settings</h2>
-        <div style="max-width:600px; display:flex; flex-direction:column; gap:16px;">
-          <div class="form-group">
-            <label class="form-label">Active Theme</label>
-            <select class="form-input" id="settings-theme">
-              <option value="Minimalist Dark Tech">Minimalist Dark Tech (Default)</option>
-              <option value="Cyberpunk Neon">Cyberpunk Neon</option>
-              <option value="Solarized Dark">Solarized Dark</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Language / 语言</label>
-            <select class="form-input" id="settings-lang">
-              <option value="zh-CN">简体中文 (Simplified Chinese)</option>
-              <option value="en-US">English (United States)</option>
-              <option value="zh-TW">繁體中文 (Traditional Chinese)</option>
-              <option value="ja-JP">日本語 (Japanese)</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Telemetry Probing Interval (seconds)</label>
-            <input type="number" class="form-input" id="settings-probe-interval" min="1" max="60" value="3">
-          </div>
-          <button class="btn-primary" onclick="saveSettings()" style="align-self:flex-start;">Save Settings</button>
-        </div>
-      </section>
-    </main>
+  <div id="loading-overlay">
+    <div class="spinner"></div>
+    <div>Loading ReDash GPUI WebAssembly Engine...</div>
   </div>
 
-  <!-- Add Host Modal -->
-  <div class="modal-overlay" id="add-host-modal">
-    <div class="modal-card">
-      <h3 style="font-size:15px; font-weight:700;">Connect New Host</h3>
-      <div class="form-group">
-        <label class="form-label">Host Display Name</label>
-        <input type="text" class="form-input" id="input-host-name" placeholder="Web-Production-01">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Hostname / IP Address</label>
-        <input type="text" class="form-input" id="input-host-ip" placeholder="192.168.1.100">
-      </div>
-      <div style="display:grid; grid-template-columns: 2fr 1fr; gap:12px;">
-        <div class="form-group">
-          <label class="form-label">Username</label>
-          <input type="text" class="form-input" id="input-host-user" value="root">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Port</label>
-          <input type="number" class="form-input" id="input-host-port" value="22">
-        </div>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Target Operating System</label>
-        <select class="form-input" id="input-host-os">
-          <option value="Linux">Linux</option>
-          <option value="Darwin">macOS (Darwin)</option>
-          <option value="Windows">Windows</option>
-        </select>
-      </div>
-      <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:10px;">
-        <button class="btn-secondary" onclick="closeAddHostModal()">Cancel</button>
-        <button class="btn-primary" onclick="submitAddHost()">Save & Connect</button>
-      </div>
-    </div>
-  </div>
+  <canvas id="redash-gpui-canvas" tabindex="0"></canvas>
 
-  <script src="/assets/app.js"></script>
+  <script type="module">
+    import init, { start_web_app } from '/pkg/redash_web.js';
+
+    async function run() {
+      try {
+        await init();
+        start_web_app('redash-gpui-canvas');
+        const overlay = document.getElementById('loading-overlay');
+        if (overlay) {
+          overlay.style.opacity = '0';
+          setTimeout(() => overlay.remove(), 260);
+        }
+      } catch (err) {
+        console.error('Failed to initialize ReDash GPUI WebAssembly:', err);
+        const overlay = document.getElementById('loading-overlay');
+        if (overlay) {
+          overlay.innerHTML = `
+            <div style="color: #f85149; text-align: center; max-width: 480px; padding: 24px; background: #161b22; border: 1px solid #30363d; border-radius: 8px;">
+              <h3 style="margin-bottom: 8px; font-weight: 700;">Engine Boot Error</h3>
+              <p style="font-size: 12px; color: #8b949e; word-break: break-all;">${err}</p>
+            </div>`;
+        }
+      }
+    }
+
+    run();
+  </script>
 </body>
 </html>

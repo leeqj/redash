@@ -21,15 +21,15 @@ async fn test_web_assets_serving() {
     assert_eq!(res.status(), StatusCode::OK);
     let body = res.into_body().collect().await.unwrap().to_bytes();
     let body_str = String::from_utf8_lossy(&body);
-    assert!(body_str.contains("ReDash Web"));
-    assert!(body_str.contains("view-fleet"));
+    assert!(body_str.contains("GPUI Web"));
+    assert!(body_str.contains("redash-gpui-canvas"));
 
-    // Test GET /assets/app.js
+    // Test GET /pkg/redash_web.js
     let res = app
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/assets/app.js")
+                .uri("/pkg/redash_web.js")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -39,14 +39,14 @@ async fn test_web_assets_serving() {
     assert_eq!(res.status(), StatusCode::OK);
     let body = res.into_body().collect().await.unwrap().to_bytes();
     let body_str = String::from_utf8_lossy(&body);
-    assert!(body_str.contains("ReDash Web Client Engine"));
+    assert!(body_str.contains("start_web_app"));
 
-    // Test GET /assets/style.css
+    // Test GET /pkg/redash_web_bg.wasm
     let res = app
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/assets/style.css")
+                .uri("/pkg/redash_web_bg.wasm")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -55,8 +55,7 @@ async fn test_web_assets_serving() {
 
     assert_eq!(res.status(), StatusCode::OK);
     let body = res.into_body().collect().await.unwrap().to_bytes();
-    let body_str = String::from_utf8_lossy(&body);
-    assert!(body_str.contains("--bg-root"));
+    assert!(body.starts_with(b"\0asm"));
 
     // Test GET non-existent page -> 404
     let res = app
