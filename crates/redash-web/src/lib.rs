@@ -92,6 +92,29 @@ pub fn start_web_app(canvas_id: &str) -> Result<(), JsValue> {
         gateway::async_load_hosts(on_loaded);
     }
 
+    // Async Fetch Settings from Server on Boot
+    {
+        let app_state_clone = app_state.clone();
+        let on_settings_loaded = Rc::new(RefCell::new(
+            move |res: Result<redash_types::settings::AppSettings, String>| match res {
+                Ok(settings) => {
+                    console::log_1(
+                        &format!(
+                            "Loaded settings from server: theme={}, lang={}, interval={}s",
+                            settings.theme_name, settings.language, settings.probe_interval_secs
+                        )
+                        .into(),
+                    );
+                    app_state_clone.borrow_mut().settings = settings;
+                }
+                Err(err) => {
+                    console::log_1(&format!("Failed to load settings from server: {}", err).into());
+                }
+            },
+        ));
+        gateway::async_load_settings(on_settings_loaded);
+    }
+
     // Register Mouse Event Listener on Canvas
     {
         let app_state_clone = app_state.clone();
@@ -170,6 +193,40 @@ pub fn start_web_app(canvas_id: &str) -> Result<(), JsValue> {
                         }));
                         gateway::async_write_sftp_file(host_id, path, content, on_done);
                     }
+                    UiAction::SaveSettings => {
+                        let app_state_save = app_state_clone.clone();
+                        let settings = app_state_save.borrow().settings.clone();
+                        let on_done = Rc::new(RefCell::new(move |res: Result<(), String>| {
+                            let mut sm = app_state_save.borrow_mut();
+                            match res {
+                                Ok(()) => {
+                                    sm.settings_save_status = Some(("设置已成功保存到云端服务器".to_string(), true));
+                                }
+                                Err(err) => {
+                                    sm.settings_save_status = Some((format!("设置保存失败: {}", err), false));
+                                }
+                            }
+                        }));
+                        gateway::async_save_settings(settings, on_done);
+                    }
+                    UiAction::ExportSettingsJson => {
+                        let json = serde_json::to_string_pretty(&state.settings).unwrap_or_default();
+                        console::log_1(&format!("Exported Settings JSON:\n{}", json).into());
+                        if let Some(window) = web_sys::window()
+                            && let Some(document) = window.document()
+                            && let Ok(element) = document.create_element("a")
+                        {
+                            let href = format!(
+                                "data:application/json;charset=utf-8,{}",
+                                js_sys::encode_uri_component(&json).as_string().unwrap_or_default()
+                            );
+                            let _ = element.set_attribute("href", &href);
+                            let _ = element.set_attribute("download", "redash-settings.json");
+                            let html_el: web_sys::HtmlElement = element.unchecked_into();
+                            html_el.click();
+                        }
+                        state.settings_save_status = Some(("已成功导出设置 JSON 文件".to_string(), true));
+                    }
                     UiAction::SaveNewHost => {
                         if let Some(new_host) = state.build_new_host() {
                             state.hosts.push(new_host);
@@ -212,6 +269,27 @@ pub fn start_web_app(canvas_id: &str) -> Result<(), JsValue> {
                             }
                         }));
                         gateway::async_write_sftp_file(host_id, path, content, on_done);
+                    }
+                    UiAction::SaveSettings => {
+                        let app_state_save = app_state_clone.clone();
+                        let settings = app_state_save.borrow().settings.clone();
+                        let on_done = Rc::new(RefCell::new(move |res: Result<(), String>| {
+                            let mut sm = app_state_save.borrow_mut();
+                            match res {
+                                Ok(()) => {
+                                    sm.settings_save_status = Some(("设置已成功保存到云端服务器".to_string(), true));
+                                }
+                                Err(err) => {
+                                    sm.settings_save_status = Some((format!("设置保存失败: {}", err), false));
+                                }
+                            }
+                        }));
+                        gateway::async_save_settings(settings, on_done);
+                    }
+                    UiAction::ExportSettingsJson => {
+                        let json = serde_json::to_string_pretty(&state.settings).unwrap_or_default();
+                        console::log_1(&format!("Exported Settings JSON:\n{}", json).into());
+                        state.settings_save_status = Some(("已成功导出设置 JSON 文件".to_string(), true));
                     }
                     UiAction::SaveNewHost => {
                         if let Some(new_host) = state.build_new_host() {

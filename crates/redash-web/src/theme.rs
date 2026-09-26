@@ -76,11 +76,31 @@ pub const SOLARIZED_DARK_THEME: ThemeColors = ThemeColors {
     status_crit: "#dc322f",
 };
 
+pub const HIGH_CONTRAST_THEME: ThemeColors = ThemeColors {
+    bg_root: "#000000",
+    bg_sidebar: "#0a0a0a",
+    bg_card: "#121212",
+    bg_card_hover: "#222222",
+    bg_input: "#050505",
+    border_default: "#555555",
+    border_muted: "#777777",
+    border_accent: "#00ffff",
+    text_primary: "#ffffff",
+    text_secondary: "#d0d0d0",
+    text_muted: "#999999",
+    accent_cyan: "#00ffff",
+    accent_purple: "#ff00ff",
+    status_online: "#00ff00",
+    status_warn: "#ffff00",
+    status_crit: "#ff0000",
+};
+
 impl ThemeColors {
     pub fn from_palette(palette: &ThemePalette) -> Self {
         match palette.name {
             "CyberpunkNeon" | "Cyberpunk" => CYBERPUNK_THEME,
             "SolarizedDark" | "Solarized" => SOLARIZED_DARK_THEME,
+            "HighContrast" | "High Contrast" => HIGH_CONTRAST_THEME,
             _ => DARK_TECH_THEME,
         }
     }

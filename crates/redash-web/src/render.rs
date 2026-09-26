@@ -1,7 +1,7 @@
 //! Canvas 2D GPUI Web Rendering Engine
 //! Renders the entire ReDash UI directly to the HTML5 Canvas in 100% Rust WASM.
 
-use crate::app::{ActiveView, AppState, ProcessSortField, WorkbenchTab};
+use crate::app::{ActiveView, AppState, ProcessSortField, SettingsCategory, WorkbenchTab};
 use crate::theme::ThemeColors;
 use redash_types::formatters::{format_bytes, format_bytes_rate};
 use redash_types::metrics::{ListeningPort, NodeMetrics, ProcessItem};
@@ -2093,39 +2093,628 @@ pub fn render_sftp_editor_modal(
     }
 }
 
+pub const SETTINGS_SIDEBAR_WIDTH: f64 = 170.0;
+
+pub const SETTINGS_CATEGORIES: [(SettingsCategory, &str, &str, &str); 5] = [
+    (SettingsCategory::Appearance, "🎨", "外观主题", "Appearance"),
+    (SettingsCategory::Terminal, ">_", "终端偏好", "Terminal"),
+    (SettingsCategory::Probe, "⚡", "探针配置", "Probe"),
+    (SettingsCategory::Alerts, "🔔", "告警阈值", "Alerts"),
+    (SettingsCategory::Backup, "💾", "备份与重置", "Backup"),
+];
+
+pub fn get_settings_category_rect(cat_idx: usize, base_x: f64, base_y: f64) -> (f64, f64, f64, f64) {
+    let item_x = base_x + 8.0;
+    let item_y = base_y + 24.0 + (cat_idx as f64) * 48.0;
+    let item_w = 154.0;
+    let item_h = 40.0;
+    (item_x, item_y, item_w, item_h)
+}
+
+pub struct ThemePresetDef {
+    pub key: &'static str,
+    pub title: &'static str,
+    pub subtitle: &'static str,
+    pub bg: &'static str,
+    pub card: &'static str,
+    pub cyan: &'static str,
+    pub purple: &'static str,
+    pub border: &'static str,
+}
+
+pub const THEME_PRESETS: [ThemePresetDef; 4] = [
+    ThemePresetDef {
+        key: "DarkTech",
+        title: "DarkTech",
+        subtitle: "赛博深空 / 默认",
+        bg: "#0b0f14",
+        card: "#161b22",
+        cyan: "#00ffcc",
+        purple: "#bd93f9",
+        border: "#21262d",
+    },
+    ThemePresetDef {
+        key: "Cyberpunk",
+        title: "Cyberpunk",
+        subtitle: "赛博朋克 / 霓虹粉紫",
+        bg: "#080614",
+        card: "#181236",
+        cyan: "#00f0ff",
+        purple: "#ff007f",
+        border: "#2f1e60",
+    },
+    ThemePresetDef {
+        key: "Solarized",
+        title: "Solarized",
+        subtitle: "复古琥珀",
+        bg: "#002b36",
+        card: "#09414f",
+        cyan: "#2aa198",
+        purple: "#6c71c4",
+        border: "#0e5a6d",
+    },
+    ThemePresetDef {
+        key: "HighContrast",
+        title: "HighContrast",
+        subtitle: "高对比度",
+        bg: "#000000",
+        card: "#121212",
+        cyan: "#00ffff",
+        purple: "#ff00ff",
+        border: "#555555",
+    },
+];
+
+pub fn get_settings_theme_card_rect(card_idx: usize, right_x: f64, sec_y: f64) -> (f64, f64, f64, f64) {
+    let card_w = 210.0;
+    let card_h = 96.0;
+    let card_gap = 14.0;
+    let col = card_idx % 2;
+    let row = card_idx / 2;
+    let cx = right_x + (col as f64) * (card_w + card_gap);
+    let cy = sec_y + 26.0 + (row as f64) * (card_h + card_gap);
+    (cx, cy, card_w, card_h)
+}
+
+pub const LANG_PRESETS: [(&str, &str); 4] = [
+    ("zh-CN", "简体中文"),
+    ("en-US", "English"),
+    ("zh-TW", "繁體中文"),
+    ("ja-JP", "日本語"),
+];
+
+pub fn get_settings_lang_pill_rect(idx: usize, right_x: f64, sec_y: f64) -> (f64, f64, f64, f64) {
+    let pill_w = 110.0;
+    let pill_h = 32.0;
+    let pill_gap = 10.0;
+    let px = right_x + (idx as f64) * (pill_w + pill_gap);
+    let py = sec_y + 26.0;
+    (px, py, pill_w, pill_h)
+}
+
+pub fn get_settings_glow_toggle_rect(right_x: f64, sec_y: f64) -> (f64, f64, f64, f64) {
+    (right_x, sec_y + 26.0, 160.0, 32.0)
+}
+
+pub const FONT_SIZES: [f32; 4] = [12.0, 13.0, 14.0, 16.0];
+
+pub fn get_settings_font_size_pill_rect(idx: usize, right_x: f64, sec_y: f64) -> (f64, f64, f64, f64) {
+    let pill_w = 80.0;
+    let pill_h = 32.0;
+    let pill_gap = 10.0;
+    let px = right_x + (idx as f64) * (pill_w + pill_gap);
+    let py = sec_y + 26.0;
+    (px, py, pill_w, pill_h)
+}
+
+pub const CURSOR_STYLES: [(&str, &str); 3] = [
+    ("Block", "Block █"),
+    ("Bar", "Bar |"),
+    ("Underline", "Underline _"),
+];
+
+pub fn get_settings_cursor_style_pill_rect(idx: usize, right_x: f64, sec_y: f64) -> (f64, f64, f64, f64) {
+    let pill_w = 110.0;
+    let pill_h = 32.0;
+    let pill_gap = 10.0;
+    let px = right_x + (idx as f64) * (pill_w + pill_gap);
+    let py = sec_y + 26.0;
+    (px, py, pill_w, pill_h)
+}
+
+pub const PROBE_INTERVALS: [u64; 4] = [1, 2, 5, 10];
+
+pub fn get_settings_probe_interval_pill_rect(idx: usize, right_x: f64, sec_y: f64) -> (f64, f64, f64, f64) {
+    let pill_w = 80.0;
+    let pill_h = 32.0;
+    let pill_gap = 10.0;
+    let px = right_x + (idx as f64) * (pill_w + pill_gap);
+    let py = sec_y + 26.0;
+    (px, py, pill_w, pill_h)
+}
+
+pub const ALERT_THRESHOLDS: [Option<f32>; 4] = [Some(70.0), Some(80.0), Some(90.0), None];
+
+pub fn get_settings_cpu_threshold_pill_rect(idx: usize, right_x: f64, sec_y: f64) -> (f64, f64, f64, f64) {
+    let pill_w = 80.0;
+    let pill_h = 32.0;
+    let pill_gap = 10.0;
+    let px = right_x + (idx as f64) * (pill_w + pill_gap);
+    let py = sec_y + 26.0;
+    (px, py, pill_w, pill_h)
+}
+
+pub fn get_settings_mem_threshold_pill_rect(idx: usize, right_x: f64, sec_y: f64) -> (f64, f64, f64, f64) {
+    let pill_w = 80.0;
+    let pill_h = 32.0;
+    let pill_gap = 10.0;
+    let px = right_x + (idx as f64) * (pill_w + pill_gap);
+    let py = sec_y + 26.0;
+    (px, py, pill_w, pill_h)
+}
+
+pub fn get_settings_export_json_btn_rect(right_x: f64, sec_y: f64) -> (f64, f64, f64, f64) {
+    (right_x, sec_y + 26.0, 180.0, 36.0)
+}
+
+pub fn get_settings_reset_btn_rect(right_x: f64, sec_y: f64) -> (f64, f64, f64, f64) {
+    (right_x, sec_y + 26.0, 180.0, 36.0)
+}
+
+pub fn is_theme_active(current: &str, preset_key: &str) -> bool {
+    if current.eq_ignore_ascii_case(preset_key) {
+        return true;
+    }
+    match preset_key {
+        "DarkTech" => current == "Minimalist Dark Tech" || current == "DarkTech",
+        "Cyberpunk" => current == "CyberpunkNeon" || current == "Cyberpunk",
+        "Solarized" => current == "SolarizedDark" || current == "Solarized",
+        "HighContrast" => current == "HighContrast" || current == "High Contrast",
+        _ => false,
+    }
+}
+
 fn render_settings_view(
     ctx: &CanvasRenderingContext2d,
     state: &AppState,
     theme: &ThemeColors,
     x: f64,
     y: f64,
-    _w: f64,
-    _h: f64,
+    w: f64,
+    h: f64,
 ) {
-    ctx.set_fill_style_str(theme.text_primary);
-    ctx.set_font("bold 16px sans-serif");
-    ctx.set_text_align("left");
-    let _ = ctx.fill_text(state.t("settings.title"), x + 24.0, y + 36.0);
+    // 1. Draw Left Category Sidebar (~160px - 170px)
+    ctx.set_fill_style_str(theme.bg_sidebar);
+    ctx.fill_rect(x, y, SETTINGS_SIDEBAR_WIDTH, h);
+    ctx.set_stroke_style_str(theme.border_default);
+    ctx.set_line_width(1.0);
+    ctx.begin_path();
+    ctx.move_to(x + SETTINGS_SIDEBAR_WIDTH, y);
+    ctx.line_to(x + SETTINGS_SIDEBAR_WIDTH, y + h);
+    ctx.stroke();
 
-    let items = [
-        (state.t("settings.theme_title"), state.settings.theme_name.as_str()),
-        (state.t("settings.language_title"), state.settings.language.as_str()),
-        (state.t("settings.interval_label"), "2s"),
-        ("Terminal Font", "JetBrains Mono (13px)"),
-        ("Render Engine", "Canvas 2D / WebGPU 120 FPS"),
-    ];
+    for (idx, (cat, icon, label_zh, _label_en)) in SETTINGS_CATEGORIES.iter().enumerate() {
+        let (ix, iy, iw, ih) = get_settings_category_rect(idx, x, y);
+        let is_active = state.active_settings_category == *cat;
 
-    let mut row_y = y + 70.0;
-    for (label, val) in items {
-        ctx.set_fill_style_str(theme.text_secondary);
-        ctx.set_font("13px sans-serif");
-        let _ = ctx.fill_text(label, x + 24.0, row_y + 16.0);
+        if is_active {
+            ctx.set_fill_style_str(theme.bg_card);
+            ctx.fill_rect(ix, iy, iw, ih);
 
-        ctx.set_fill_style_str(theme.accent_cyan);
-        ctx.set_font("13px 'JetBrains Mono', monospace");
-        let _ = ctx.fill_text(val, x + 280.0, row_y + 16.0);
+            // Active cyan indicator bar
+            ctx.set_fill_style_str(theme.accent_cyan);
+            ctx.fill_rect(ix, iy + 4.0, 3.0, ih - 8.0);
+        }
 
-        row_y += 36.0;
+        ctx.set_font(if is_active { "bold 13px sans-serif" } else { "13px sans-serif" });
+        ctx.set_fill_style_str(if is_active { theme.text_primary } else { theme.text_secondary });
+        ctx.set_text_align("left");
+        let display_label = format!("{} {}", icon, label_zh);
+        let _ = ctx.fill_text(&display_label, ix + 12.0, iy + 25.0);
+    }
+
+    // 2. Right Content Area
+    let right_x = x + SETTINGS_SIDEBAR_WIDTH + 32.0;
+    let right_y = y + 24.0;
+    let right_w = (w - SETTINGS_SIDEBAR_WIDTH - 64.0).max(400.0);
+
+    match state.active_settings_category {
+        SettingsCategory::Appearance => {
+            // Header
+            ctx.set_fill_style_str(theme.text_primary);
+            ctx.set_font("bold 18px sans-serif");
+            let _ = ctx.fill_text("🎨 外观主题与偏好设置 (Appearance)", right_x, right_y + 14.0);
+            ctx.set_fill_style_str(theme.text_secondary);
+            ctx.set_font("12px sans-serif");
+            let _ = ctx.fill_text("实时无缝切换全站色彩主题、多语言国际化及暗夜霓虹微光动效。", right_x, right_y + 34.0);
+
+            // Section 1: 主题调色板 (Theme Palette)
+            let sec1_y = right_y + 56.0;
+            ctx.set_fill_style_str(theme.text_primary);
+            ctx.set_font("bold 14px sans-serif");
+            let _ = ctx.fill_text("主题调色板 (Theme Palette)", right_x, sec1_y + 14.0);
+
+            for (idx, preset) in THEME_PRESETS.iter().enumerate() {
+                let (cx, cy, cw, ch) = get_settings_theme_card_rect(idx, right_x, sec1_y);
+                let is_active = is_theme_active(&state.settings.theme_name, preset.key);
+
+                ctx.set_fill_style_str(if is_active { theme.bg_card_hover } else { theme.bg_card });
+                ctx.fill_rect(cx, cy, cw, ch);
+
+                if is_active {
+                    ctx.set_stroke_style_str(theme.accent_cyan);
+                    ctx.set_line_width(2.0);
+                    ctx.stroke_rect(cx, cy, cw, ch);
+
+                    // Active badge
+                    ctx.set_fill_style_str(theme.accent_cyan);
+                    ctx.set_font("10px sans-serif");
+                    ctx.set_text_align("right");
+                    let _ = ctx.fill_text("● 启用中", cx + cw - 10.0, cy + 20.0);
+                    ctx.set_text_align("left");
+                } else {
+                    ctx.set_stroke_style_str(theme.border_default);
+                    ctx.set_line_width(1.0);
+                    ctx.stroke_rect(cx, cy, cw, ch);
+                }
+
+                // Title & subtitle
+                ctx.set_fill_style_str(theme.text_primary);
+                ctx.set_font("bold 13px sans-serif");
+                let _ = ctx.fill_text(preset.title, cx + 12.0, cy + 22.0);
+
+                ctx.set_fill_style_str(theme.text_secondary);
+                ctx.set_font("11px sans-serif");
+                let _ = ctx.fill_text(preset.subtitle, cx + 12.0, cy + 40.0);
+
+                // Miniature color swatches
+                let swatches = [preset.bg, preset.card, preset.cyan, preset.purple, preset.border];
+                let swatch_size = 18.0;
+                let swatch_gap = 6.0;
+                let mut sx = cx + 12.0;
+                let sy = cy + 60.0;
+                for sw in swatches {
+                    ctx.set_fill_style_str(sw);
+                    ctx.fill_rect(sx, sy, swatch_size, swatch_size);
+                    ctx.set_stroke_style_str("rgba(255, 255, 255, 0.2)");
+                    ctx.set_line_width(1.0);
+                    ctx.stroke_rect(sx, sy, swatch_size, swatch_size);
+                    sx += swatch_size + swatch_gap;
+                }
+            }
+
+            // Section 2: 语言与国际化 (Language & i18n)
+            let sec2_y = sec1_y + 240.0;
+            ctx.set_fill_style_str(theme.text_primary);
+            ctx.set_font("bold 14px sans-serif");
+            let _ = ctx.fill_text("语言与国际化 (Language & i18n)", right_x, sec2_y + 14.0);
+
+            for (idx, (code, name)) in LANG_PRESETS.iter().enumerate() {
+                let (px, py, pw, ph) = get_settings_lang_pill_rect(idx, right_x, sec2_y);
+                let is_active = state.settings.language.eq_ignore_ascii_case(code)
+                    || (*code == "zh-CN" && state.settings.language.is_empty());
+
+                ctx.set_fill_style_str(if is_active { theme.bg_card_hover } else { theme.bg_card });
+                ctx.fill_rect(px, py, pw, ph);
+
+                ctx.set_stroke_style_str(if is_active { theme.accent_cyan } else { theme.border_default });
+                ctx.set_line_width(if is_active { 1.5 } else { 1.0 });
+                ctx.stroke_rect(px, py, pw, ph);
+
+                ctx.set_fill_style_str(if is_active { theme.accent_cyan } else { theme.text_primary });
+                ctx.set_font("12px sans-serif");
+                ctx.set_text_align("center");
+                let _ = ctx.fill_text(name, px + pw / 2.0, py + 20.0);
+                ctx.set_text_align("left");
+            }
+
+            // Section 3: 赛博光晕动效 (Glow Effect)
+            let sec3_y = sec2_y + 76.0;
+            ctx.set_fill_style_str(theme.text_primary);
+            ctx.set_font("bold 14px sans-serif");
+            let _ = ctx.fill_text("赛博光晕动效 (Glow Effect)", right_x, sec3_y + 14.0);
+            ctx.set_fill_style_str(theme.text_secondary);
+            ctx.set_font("11px sans-serif");
+            let _ = ctx.fill_text("启用高精度 GPU 霓虹微光呼吸边缘与阴影光晕渲染", right_x, sec3_y + 32.0);
+
+            let (gx, gy, gw, gh) = get_settings_glow_toggle_rect(right_x, sec3_y + 16.0);
+            let glow_on = state.settings.glow_effects_enabled;
+            ctx.set_fill_style_str(if glow_on { theme.bg_card_hover } else { theme.bg_card });
+            ctx.fill_rect(gx, gy, gw, gh);
+            ctx.set_stroke_style_str(if glow_on { theme.accent_cyan } else { theme.border_default });
+            ctx.set_line_width(if glow_on { 1.5 } else { 1.0 });
+            ctx.stroke_rect(gx, gy, gw, gh);
+
+            ctx.set_fill_style_str(if glow_on { theme.accent_cyan } else { theme.text_muted });
+            ctx.set_font("bold 12px sans-serif");
+            ctx.set_text_align("center");
+            let glow_label = if glow_on { "🟢 动效已开启 (ON)" } else { "⚪ 动效已停用 (OFF)" };
+            let _ = ctx.fill_text(glow_label, gx + gw / 2.0, gy + 20.0);
+            ctx.set_text_align("left");
+        }
+        SettingsCategory::Terminal => {
+            // Header
+            ctx.set_fill_style_str(theme.text_primary);
+            ctx.set_font("bold 18px sans-serif");
+            let _ = ctx.fill_text(">_ 终端控制台偏好 (Terminal Preferences)", right_x, right_y + 14.0);
+            ctx.set_fill_style_str(theme.text_secondary);
+            ctx.set_font("12px sans-serif");
+            let _ = ctx.fill_text("自定义 Web 终端字体大小与光标形状样式。", right_x, right_y + 34.0);
+
+            // Section 1: Font Size
+            let sec1_y = right_y + 56.0;
+            ctx.set_fill_style_str(theme.text_primary);
+            ctx.set_font("bold 14px sans-serif");
+            let _ = ctx.fill_text("字体大小 (Font Size)", right_x, sec1_y + 14.0);
+
+            for (idx, size) in FONT_SIZES.iter().enumerate() {
+                let (px, py, pw, ph) = get_settings_font_size_pill_rect(idx, right_x, sec1_y);
+                let is_active = (state.settings.terminal_font_size - size).abs() < 0.1;
+
+                ctx.set_fill_style_str(if is_active { theme.bg_card_hover } else { theme.bg_card });
+                ctx.fill_rect(px, py, pw, ph);
+                ctx.set_stroke_style_str(if is_active { theme.accent_cyan } else { theme.border_default });
+                ctx.set_line_width(if is_active { 1.5 } else { 1.0 });
+                ctx.stroke_rect(px, py, pw, ph);
+
+                ctx.set_fill_style_str(if is_active { theme.accent_cyan } else { theme.text_primary });
+                ctx.set_font("12px sans-serif");
+                ctx.set_text_align("center");
+                let _ = ctx.fill_text(&format!("{}px", *size as u32), px + pw / 2.0, py + 20.0);
+                ctx.set_text_align("left");
+            }
+
+            // Section 2: Cursor Style
+            let sec2_y = sec1_y + 76.0;
+            ctx.set_fill_style_str(theme.text_primary);
+            ctx.set_font("bold 14px sans-serif");
+            let _ = ctx.fill_text("光标渲染样式 (Cursor Style)", right_x, sec2_y + 14.0);
+
+            for (idx, (style_val, style_label)) in CURSOR_STYLES.iter().enumerate() {
+                let (px, py, pw, ph) = get_settings_cursor_style_pill_rect(idx, right_x, sec2_y);
+                let is_active = state.settings.terminal_cursor_style.eq_ignore_ascii_case(style_val)
+                    || (*style_val == "Bar" && state.settings.terminal_cursor_style.eq_ignore_ascii_case("Line"));
+
+                ctx.set_fill_style_str(if is_active { theme.bg_card_hover } else { theme.bg_card });
+                ctx.fill_rect(px, py, pw, ph);
+                ctx.set_stroke_style_str(if is_active { theme.accent_cyan } else { theme.border_default });
+                ctx.set_line_width(if is_active { 1.5 } else { 1.0 });
+                ctx.stroke_rect(px, py, pw, ph);
+
+                ctx.set_fill_style_str(if is_active { theme.accent_cyan } else { theme.text_primary });
+                ctx.set_font("12px sans-serif");
+                ctx.set_text_align("center");
+                let _ = ctx.fill_text(style_label, px + pw / 2.0, py + 20.0);
+                ctx.set_text_align("left");
+            }
+
+            // Section 3: Advanced info
+            let sec3_y = sec2_y + 80.0;
+            ctx.set_fill_style_str(theme.text_primary);
+            ctx.set_font("bold 14px sans-serif");
+            let _ = ctx.fill_text("终端渲染高级参数", right_x, sec3_y + 14.0);
+
+            let box_w = 440.0;
+            let box_h = 74.0;
+            ctx.set_fill_style_str(theme.bg_card);
+            ctx.fill_rect(right_x, sec3_y + 26.0, box_w, box_h);
+            ctx.set_stroke_style_str(theme.border_default);
+            ctx.stroke_rect(right_x, sec3_y + 26.0, box_w, box_h);
+
+            ctx.set_fill_style_str(theme.text_secondary);
+            ctx.set_font("12px sans-serif");
+            let _ = ctx.fill_text(&format!("• 默认字体族: {} (内置高保真 Monospace 图标连字)", state.settings.terminal_font_family), right_x + 14.0, sec3_y + 50.0);
+            let _ = ctx.fill_text(&format!("• 回滚行数上限: {} 行 (环形终端流缓冲区)", state.settings.terminal_scrollback_lines), right_x + 14.0, sec3_y + 74.0);
+        }
+        SettingsCategory::Probe => {
+            // Header
+            ctx.set_fill_style_str(theme.text_primary);
+            ctx.set_font("bold 18px sans-serif");
+            let _ = ctx.fill_text("⚡ 实时探针与遥测采集 (Probe)", right_x, right_y + 14.0);
+            ctx.set_fill_style_str(theme.text_secondary);
+            ctx.set_font("12px sans-serif");
+            let _ = ctx.fill_text("配置主机后台资源轮询频率与网络延迟探测节点。", right_x, right_y + 34.0);
+
+            // Section 1: Telemetry Interval
+            let sec1_y = right_y + 56.0;
+            ctx.set_fill_style_str(theme.text_primary);
+            ctx.set_font("bold 14px sans-serif");
+            let _ = ctx.fill_text("遥测轮询周期 (Telemetry Interval)", right_x, sec1_y + 14.0);
+
+            for (idx, interval) in PROBE_INTERVALS.iter().enumerate() {
+                let (px, py, pw, ph) = get_settings_probe_interval_pill_rect(idx, right_x, sec1_y);
+                let is_active = state.settings.probe_interval_secs == *interval;
+
+                ctx.set_fill_style_str(if is_active { theme.bg_card_hover } else { theme.bg_card });
+                ctx.fill_rect(px, py, pw, ph);
+                ctx.set_stroke_style_str(if is_active { theme.accent_cyan } else { theme.border_default });
+                ctx.set_line_width(if is_active { 1.5 } else { 1.0 });
+                ctx.stroke_rect(px, py, pw, ph);
+
+                ctx.set_fill_style_str(if is_active { theme.accent_cyan } else { theme.text_primary });
+                ctx.set_font("12px sans-serif");
+                ctx.set_text_align("center");
+                let _ = ctx.fill_text(&format!("{}s", interval), px + pw / 2.0, py + 20.0);
+                ctx.set_text_align("left");
+            }
+
+            // Section 2: Ping Target Display & Input
+            let sec2_y = sec1_y + 76.0;
+            ctx.set_fill_style_str(theme.text_primary);
+            ctx.set_font("bold 14px sans-serif");
+            let _ = ctx.fill_text("目标网络 Ping 探测节点 (Ping Target)", right_x, sec2_y + 14.0);
+
+            let box_w = 340.0;
+            let box_h = 36.0;
+            ctx.set_fill_style_str(theme.bg_card);
+            ctx.fill_rect(right_x, sec2_y + 26.0, box_w, box_h);
+            ctx.set_stroke_style_str(theme.border_default);
+            ctx.stroke_rect(right_x, sec2_y + 26.0, box_w, box_h);
+
+            ctx.set_fill_style_str(theme.accent_cyan);
+            ctx.set_font("13px 'JetBrains Mono', monospace");
+            let _ = ctx.fill_text(&format!("🎯 {} (Cloudflare DNS)", state.ping_target), right_x + 12.0, sec2_y + 49.0);
+
+            ctx.set_fill_style_str(theme.text_secondary);
+            ctx.set_font("11px sans-serif");
+            let _ = ctx.fill_text("默认探测 Cloudflare 泛播 DNS 测量全网 RTT 延迟基准。", right_x, sec2_y + 80.0);
+        }
+        SettingsCategory::Alerts => {
+            // Header
+            ctx.set_fill_style_str(theme.text_primary);
+            ctx.set_font("bold 18px sans-serif");
+            let _ = ctx.fill_text("🔔 智能监控告警阈值 (Alerts)", right_x, right_y + 14.0);
+            ctx.set_fill_style_str(theme.text_secondary);
+            ctx.set_font("12px sans-serif");
+            let _ = ctx.fill_text("当服务器 CPU、内存负载超过预警值时触发告警提示或 Webhook 推送。", right_x, right_y + 34.0);
+
+            // Section 1: CPU Threshold
+            let sec1_y = right_y + 56.0;
+            ctx.set_fill_style_str(theme.text_primary);
+            ctx.set_font("bold 14px sans-serif");
+            let _ = ctx.fill_text("CPU 告警阈值 (CPU Threshold)", right_x, sec1_y + 14.0);
+
+            for (idx, opt) in ALERT_THRESHOLDS.iter().enumerate() {
+                let (px, py, pw, ph) = get_settings_cpu_threshold_pill_rect(idx, right_x, sec1_y);
+                let is_active = match opt {
+                    Some(val) => (state.settings.alert_cpu_threshold - val).abs() < 0.1,
+                    None => state.settings.alert_cpu_threshold <= 0.0 || state.settings.alert_cpu_threshold > 100.0,
+                };
+
+                ctx.set_fill_style_str(if is_active { theme.bg_card_hover } else { theme.bg_card });
+                ctx.fill_rect(px, py, pw, ph);
+                ctx.set_stroke_style_str(if is_active { theme.accent_cyan } else { theme.border_default });
+                ctx.set_line_width(if is_active { 1.5 } else { 1.0 });
+                ctx.stroke_rect(px, py, pw, ph);
+
+                ctx.set_fill_style_str(if is_active { theme.accent_cyan } else { theme.text_primary });
+                ctx.set_font("12px sans-serif");
+                ctx.set_text_align("center");
+                let label = opt.map(|v| format!("{}%", v as u32)).unwrap_or_else(|| "禁用".to_string());
+                let _ = ctx.fill_text(&label, px + pw / 2.0, py + 20.0);
+                ctx.set_text_align("left");
+            }
+
+            // Section 2: Memory Threshold
+            let sec2_y = sec1_y + 76.0;
+            ctx.set_fill_style_str(theme.text_primary);
+            ctx.set_font("bold 14px sans-serif");
+            let _ = ctx.fill_text("内存告警阈值 (Memory Threshold)", right_x, sec2_y + 14.0);
+
+            for (idx, opt) in ALERT_THRESHOLDS.iter().enumerate() {
+                let (px, py, pw, ph) = get_settings_mem_threshold_pill_rect(idx, right_x, sec2_y);
+                let is_active = match opt {
+                    Some(val) => (state.settings.alert_mem_threshold - val).abs() < 0.1,
+                    None => state.settings.alert_mem_threshold <= 0.0 || state.settings.alert_mem_threshold > 100.0,
+                };
+
+                ctx.set_fill_style_str(if is_active { theme.bg_card_hover } else { theme.bg_card });
+                ctx.fill_rect(px, py, pw, ph);
+                ctx.set_stroke_style_str(if is_active { theme.accent_cyan } else { theme.border_default });
+                ctx.set_line_width(if is_active { 1.5 } else { 1.0 });
+                ctx.stroke_rect(px, py, pw, ph);
+
+                ctx.set_fill_style_str(if is_active { theme.accent_cyan } else { theme.text_primary });
+                ctx.set_font("12px sans-serif");
+                ctx.set_text_align("center");
+                let label = opt.map(|v| format!("{}%", v as u32)).unwrap_or_else(|| "禁用".to_string());
+                let _ = ctx.fill_text(&label, px + pw / 2.0, py + 20.0);
+                ctx.set_text_align("left");
+            }
+
+            // Section 3: Webhook URL Preview
+            let sec3_y = sec2_y + 76.0;
+            ctx.set_fill_style_str(theme.text_primary);
+            ctx.set_font("bold 14px sans-serif");
+            let _ = ctx.fill_text("Webhook URL 机器人推送地址", right_x, sec3_y + 14.0);
+
+            let box_w = 460.0;
+            let box_h = 36.0;
+            ctx.set_fill_style_str(theme.bg_card);
+            ctx.fill_rect(right_x, sec3_y + 26.0, box_w, box_h);
+            ctx.set_stroke_style_str(theme.border_default);
+            ctx.stroke_rect(right_x, sec3_y + 26.0, box_w, box_h);
+
+            ctx.set_fill_style_str(if state.settings.alert_webhook_url.is_some() { theme.accent_cyan } else { theme.text_muted });
+            ctx.set_font("12px 'JetBrains Mono', monospace");
+            let webhook_txt = state.settings.alert_webhook_url.as_deref().unwrap_or("未配置 (默认仅桌面弹窗通知)");
+            let _ = ctx.fill_text(webhook_txt, right_x + 12.0, sec3_y + 49.0);
+        }
+        SettingsCategory::Backup => {
+            // Header
+            ctx.set_fill_style_str(theme.text_primary);
+            ctx.set_font("bold 18px sans-serif");
+            let _ = ctx.fill_text("💾 配置备份与重置 (Backup)", right_x, right_y + 14.0);
+            ctx.set_fill_style_str(theme.text_secondary);
+            ctx.set_font("12px sans-serif");
+            let _ = ctx.fill_text("导出全部系统设置配置文件或恢复出厂默认值。", right_x, right_y + 34.0);
+
+            // Section 1: Export JSON
+            let sec1_y = right_y + 56.0;
+            ctx.set_fill_style_str(theme.text_primary);
+            ctx.set_font("bold 14px sans-serif");
+            let _ = ctx.fill_text("导出设置文件", right_x, sec1_y + 14.0);
+            ctx.set_fill_style_str(theme.text_secondary);
+            ctx.set_font("11px sans-serif");
+            let _ = ctx.fill_text("将当前全站配置打包下载为 JSON 文件保存至本地", right_x, sec1_y + 32.0);
+
+            let (ex, ey, ew, eh) = get_settings_export_json_btn_rect(right_x, sec1_y + 16.0);
+            ctx.set_fill_style_str(theme.bg_card);
+            ctx.fill_rect(ex, ey, ew, eh);
+            ctx.set_stroke_style_str(theme.accent_cyan);
+            ctx.set_line_width(1.5);
+            ctx.stroke_rect(ex, ey, ew, eh);
+
+            ctx.set_fill_style_str(theme.accent_cyan);
+            ctx.set_font("bold 13px sans-serif");
+            ctx.set_text_align("center");
+            let _ = ctx.fill_text("📥 导出设置 JSON", ex + ew / 2.0, ey + 23.0);
+            ctx.set_text_align("left");
+
+            // Section 2: Reset Defaults
+            let sec2_y = sec1_y + 106.0;
+            ctx.set_fill_style_str(theme.text_primary);
+            ctx.set_font("bold 14px sans-serif");
+            let _ = ctx.fill_text("恢复出厂默认设置", right_x, sec2_y + 14.0);
+            ctx.set_fill_style_str(theme.text_secondary);
+            ctx.set_font("11px sans-serif");
+            let _ = ctx.fill_text("重置主题、语言、终端、探针和告警规则为系统初始出厂状态", right_x, sec2_y + 32.0);
+
+            let (rx, ry, rw, rh) = get_settings_reset_btn_rect(right_x, sec2_y + 16.0);
+            ctx.set_fill_style_str(theme.bg_card);
+            ctx.fill_rect(rx, ry, rw, rh);
+            ctx.set_stroke_style_str(theme.status_crit);
+            ctx.set_line_width(1.5);
+            ctx.stroke_rect(rx, ry, rw, rh);
+
+            ctx.set_fill_style_str(theme.status_crit);
+            ctx.set_font("bold 13px sans-serif");
+            ctx.set_text_align("center");
+            let _ = ctx.fill_text("🔄 恢复默认设置", rx + rw / 2.0, ry + 23.0);
+            ctx.set_text_align("left");
+        }
+    }
+
+    // 3. Bottom Status Banner for settings_save_status if present
+    if let Some((ref msg, is_success)) = state.settings_save_status {
+        let banner_x = right_x;
+        let banner_y = y + h - 50.0;
+        let banner_w = right_w;
+        let banner_h = 36.0;
+
+        let bg_color = if is_success { "rgba(63, 185, 80, 0.15)" } else { "rgba(248, 81, 73, 0.15)" };
+        let border_color = if is_success { theme.status_online } else { theme.status_crit };
+
+        ctx.set_fill_style_str(bg_color);
+        ctx.fill_rect(banner_x, banner_y, banner_w, banner_h);
+        ctx.set_stroke_style_str(border_color);
+        ctx.set_line_width(1.0);
+        ctx.stroke_rect(banner_x, banner_y, banner_w, banner_h);
+
+        ctx.set_fill_style_str(border_color);
+        ctx.set_font("bold 12px sans-serif");
+        let icon_msg = if is_success { format!("✓ {}", msg) } else { format!("✗ {}", msg) };
+        let _ = ctx.fill_text(&icon_msg, banner_x + 14.0, banner_y + 23.0);
     }
 }
 

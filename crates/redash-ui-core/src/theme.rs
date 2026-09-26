@@ -137,10 +137,32 @@ pub static SOLARIZED_DARK_PALETTE: ThemePalette = ThemePalette {
     status_crit: RgbaColor::from_hex(0xdc322f),
 };
 
+pub static HIGH_CONTRAST_PALETTE: ThemePalette = ThemePalette {
+    name: "HighContrast",
+    bg_root: RgbaColor::from_hex(0x000000),
+    bg_sidebar: RgbaColor::from_hex(0x0a0a0a),
+    bg_card: RgbaColor::from_hex(0x121212),
+    bg_card_hover: RgbaColor::from_hex(0x222222),
+    bg_input: RgbaColor::from_hex(0x050505),
+    border_default: RgbaColor::from_hex(0x555555),
+    border_muted: RgbaColor::from_hex(0x777777),
+    border_accent: RgbaColor::from_hex(0x00ffff),
+    text_primary: RgbaColor::from_hex(0xffffff),
+    text_secondary: RgbaColor::from_hex(0xd0d0d0),
+    text_muted: RgbaColor::from_hex(0x999999),
+    accent_cyan: RgbaColor::from_hex(0x00ffff),
+    accent_purple: RgbaColor::from_hex(0xff00ff),
+    accent_blue: RgbaColor::from_hex(0x0088ff),
+    status_online: RgbaColor::from_hex(0x00ff00),
+    status_warn: RgbaColor::from_hex(0xffff00),
+    status_crit: RgbaColor::from_hex(0xff0000),
+};
+
 pub fn get_palette(name: &str) -> &'static ThemePalette {
     match name {
         "CyberpunkNeon" | "Cyberpunk" => &CYBERPUNK_PALETTE,
         "SolarizedDark" | "Solarized" => &SOLARIZED_DARK_PALETTE,
+        "HighContrast" | "High Contrast" => &HIGH_CONTRAST_PALETTE,
         _ => &DARK_TECH_PALETTE,
     }
 }

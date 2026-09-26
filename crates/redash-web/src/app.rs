@@ -1,5 +1,6 @@
 pub use redash_ui_core::state::{
-    ActiveView, AppStateMachine, ProcessSortField, UiEffect, UserAction, WorkbenchTab,
+    ActiveView, AppStateMachine, ProcessSortField, SettingsCategory, UiEffect, UserAction,
+    WorkbenchTab,
 };
 
 pub type AppState = AppStateMachine;

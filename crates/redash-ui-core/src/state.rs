@@ -15,6 +15,15 @@ pub enum ActiveView {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsCategory {
+    Appearance,
+    Terminal,
+    Probe,
+    Alerts,
+    Backup,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WorkbenchTab {
     Terminal,
     Docker,
@@ -62,6 +71,18 @@ pub enum UserAction {
     CloseSftpEditor,
     RequestReadSftpFile(String),
     RequestSaveSftpFile,
+    SwitchSettingsCategory(SettingsCategory),
+    SetProbeInterval(u64),
+    SetPingTarget(String),
+    SetCpuThreshold(Option<f32>),
+    SetMemThreshold(Option<f32>),
+    SetDiskThreshold(Option<f32>),
+    SetWebhookUrl(Option<String>),
+    ToggleGlow,
+    ResetSettings,
+    SetTerminalFontSize(f32),
+    SetTerminalCursorStyle(String),
+    SetSettingsSaveStatus(Option<(String, bool)>),
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -108,6 +129,9 @@ pub struct AppStateMachine {
     pub sftp_error: Option<String>,
     pub sftp_editor: Option<(String, String)>,
     pub sftp_editor_modified: bool,
+    pub active_settings_category: SettingsCategory,
+    pub settings_save_status: Option<(String, bool)>,
+    pub ping_target: String,
 }
 
 impl Default for AppStateMachine {
@@ -155,6 +179,9 @@ impl AppStateMachine {
             sftp_error: None,
             sftp_editor: None,
             sftp_editor_modified: false,
+            active_settings_category: SettingsCategory::Appearance,
+            settings_save_status: None,
+            ping_target: "1.1.1.1".to_string(),
         }
     }
 
@@ -324,9 +351,111 @@ impl AppStateMachine {
                     });
                 }
             }
+            UserAction::SwitchSettingsCategory(cat) => {
+                self.active_settings_category = cat;
+            }
+            UserAction::SetProbeInterval(interval) => {
+                self.settings.probe_interval_secs = interval;
+                effects.push(UiEffect::SaveSettings);
+            }
+            UserAction::SetPingTarget(target) => {
+                self.ping_target = target;
+            }
+            UserAction::SetCpuThreshold(threshold) => {
+                self.settings.alert_cpu_threshold = threshold.unwrap_or(0.0);
+                effects.push(UiEffect::SaveSettings);
+            }
+            UserAction::SetMemThreshold(threshold) => {
+                self.settings.alert_mem_threshold = threshold.unwrap_or(0.0);
+                effects.push(UiEffect::SaveSettings);
+            }
+            UserAction::SetDiskThreshold(threshold) => {
+                self.settings.alert_disk_threshold = threshold.unwrap_or(0.0);
+                effects.push(UiEffect::SaveSettings);
+            }
+            UserAction::SetWebhookUrl(url) => {
+                self.settings.alert_webhook_url = url;
+                effects.push(UiEffect::SaveSettings);
+            }
+            UserAction::ToggleGlow => {
+                self.settings.glow_effects_enabled = !self.settings.glow_effects_enabled;
+                effects.push(UiEffect::SaveSettings);
+            }
+            UserAction::ResetSettings => {
+                self.settings = AppSettings::default();
+                self.ping_target = "1.1.1.1".to_string();
+                effects.push(UiEffect::SaveSettings);
+            }
+            UserAction::SetTerminalFontSize(size) => {
+                self.settings.terminal_font_size = size;
+                effects.push(UiEffect::SaveSettings);
+            }
+            UserAction::SetTerminalCursorStyle(style) => {
+                self.settings.terminal_cursor_style = style;
+                effects.push(UiEffect::SaveSettings);
+            }
+            UserAction::SetSettingsSaveStatus(status) => {
+                self.settings_save_status = status;
+            }
         }
 
         effects
+    }
+
+    pub fn switch_settings_category(&mut self, cat: SettingsCategory) {
+        self.handle_action(UserAction::SwitchSettingsCategory(cat));
+    }
+
+    pub fn set_probe_interval(&mut self, interval: u64) -> Vec<UiEffect> {
+        self.handle_action(UserAction::SetProbeInterval(interval))
+    }
+
+    pub fn set_ping_target(&mut self, target: String) -> Vec<UiEffect> {
+        self.handle_action(UserAction::SetPingTarget(target))
+    }
+
+    pub fn set_cpu_threshold(&mut self, threshold: Option<f32>) -> Vec<UiEffect> {
+        self.handle_action(UserAction::SetCpuThreshold(threshold))
+    }
+
+    pub fn set_mem_threshold(&mut self, threshold: Option<f32>) -> Vec<UiEffect> {
+        self.handle_action(UserAction::SetMemThreshold(threshold))
+    }
+
+    pub fn set_disk_threshold(&mut self, threshold: Option<f32>) -> Vec<UiEffect> {
+        self.handle_action(UserAction::SetDiskThreshold(threshold))
+    }
+
+    pub fn set_webhook_url(&mut self, url: Option<String>) -> Vec<UiEffect> {
+        self.handle_action(UserAction::SetWebhookUrl(url))
+    }
+
+    pub fn toggle_glow(&mut self) -> Vec<UiEffect> {
+        self.handle_action(UserAction::ToggleGlow)
+    }
+
+    pub fn reset_settings(&mut self) -> Vec<UiEffect> {
+        self.handle_action(UserAction::ResetSettings)
+    }
+
+    pub fn set_theme(&mut self, theme_name: String) -> Vec<UiEffect> {
+        self.handle_action(UserAction::SetTheme(theme_name))
+    }
+
+    pub fn set_locale(&mut self, locale: String) -> Vec<UiEffect> {
+        self.handle_action(UserAction::SetLocale(locale))
+    }
+
+    pub fn set_terminal_font_size(&mut self, size: f32) -> Vec<UiEffect> {
+        self.handle_action(UserAction::SetTerminalFontSize(size))
+    }
+
+    pub fn set_terminal_cursor_style(&mut self, style: String) -> Vec<UiEffect> {
+        self.handle_action(UserAction::SetTerminalCursorStyle(style))
+    }
+
+    pub fn set_settings_save_status(&mut self, status: Option<(String, bool)>) {
+        self.handle_action(UserAction::SetSettingsSaveStatus(status));
     }
 
     pub fn set_sftp_path(&mut self, path: String) -> Vec<UiEffect> {
@@ -639,5 +768,88 @@ mod tests {
             host_id: "srv-prod".to_string(),
             path: "/etc/nginx".to_string(),
         }]);
+    }
+
+    #[test]
+    fn test_settings_state_and_actions() {
+        let mut sm = AppStateMachine::new();
+        assert_eq!(sm.active_settings_category, SettingsCategory::Appearance);
+        assert_eq!(sm.settings_save_status, None);
+        assert_eq!(sm.ping_target, "1.1.1.1");
+
+        // 1. Switch categories
+        sm.switch_settings_category(SettingsCategory::Terminal);
+        assert_eq!(sm.active_settings_category, SettingsCategory::Terminal);
+        sm.switch_settings_category(SettingsCategory::Probe);
+        assert_eq!(sm.active_settings_category, SettingsCategory::Probe);
+        sm.switch_settings_category(SettingsCategory::Alerts);
+        assert_eq!(sm.active_settings_category, SettingsCategory::Alerts);
+        sm.switch_settings_category(SettingsCategory::Backup);
+        assert_eq!(sm.active_settings_category, SettingsCategory::Backup);
+
+        // 2. Theme & Locale switching emits SaveSettings
+        let effects = sm.set_theme("CyberpunkNeon".to_string());
+        assert_eq!(sm.settings.theme_name, "CyberpunkNeon");
+        assert_eq!(effects, vec![UiEffect::SaveSettings]);
+
+        let effects = sm.set_locale("en-US".to_string());
+        assert_eq!(sm.settings.language, "en-US");
+        assert_eq!(effects, vec![UiEffect::SaveSettings]);
+
+        // 3. Probe interval & Ping target
+        let effects = sm.set_probe_interval(5);
+        assert_eq!(sm.settings.probe_interval_secs, 5);
+        assert_eq!(effects, vec![UiEffect::SaveSettings]);
+
+        sm.set_ping_target("8.8.8.8".to_string());
+        assert_eq!(sm.ping_target, "8.8.8.8");
+
+        // 4. Thresholds & Webhook
+        let effects = sm.set_cpu_threshold(Some(80.0));
+        assert_eq!(sm.settings.alert_cpu_threshold, 80.0);
+        assert_eq!(effects, vec![UiEffect::SaveSettings]);
+
+        let effects = sm.set_mem_threshold(Some(75.0));
+        assert_eq!(sm.settings.alert_mem_threshold, 75.0);
+        assert_eq!(effects, vec![UiEffect::SaveSettings]);
+
+        let effects = sm.set_disk_threshold(None);
+        assert_eq!(sm.settings.alert_disk_threshold, 0.0);
+        assert_eq!(effects, vec![UiEffect::SaveSettings]);
+
+        let effects = sm.set_webhook_url(Some("https://hooks.slack.com/services/xxx".to_string()));
+        assert_eq!(
+            sm.settings.alert_webhook_url,
+            Some("https://hooks.slack.com/services/xxx".to_string())
+        );
+        assert_eq!(effects, vec![UiEffect::SaveSettings]);
+
+        // 5. Glow toggle
+        let initial_glow = sm.settings.glow_effects_enabled;
+        let effects = sm.toggle_glow();
+        assert_eq!(sm.settings.glow_effects_enabled, !initial_glow);
+        assert_eq!(effects, vec![UiEffect::SaveSettings]);
+
+        // 6. Terminal Font & Cursor
+        let effects = sm.set_terminal_font_size(14.0);
+        assert_eq!(sm.settings.terminal_font_size, 14.0);
+        assert_eq!(effects, vec![UiEffect::SaveSettings]);
+
+        let effects = sm.set_terminal_cursor_style("Bar".to_string());
+        assert_eq!(sm.settings.terminal_cursor_style, "Bar");
+        assert_eq!(effects, vec![UiEffect::SaveSettings]);
+
+        // 7. Status message
+        sm.set_settings_save_status(Some(("Saved successfully".to_string(), true)));
+        assert_eq!(
+            sm.settings_save_status,
+            Some(("Saved successfully".to_string(), true))
+        );
+
+        // 8. Reset Settings
+        let effects = sm.reset_settings();
+        assert_eq!(sm.settings, AppSettings::default());
+        assert_eq!(sm.ping_target, "1.1.1.1");
+        assert_eq!(effects, vec![UiEffect::SaveSettings]);
     }
 }

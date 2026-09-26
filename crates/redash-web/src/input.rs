@@ -1,4 +1,4 @@
-use crate::app::{ActiveView, AppState, ProcessSortField, WorkbenchTab};
+use crate::app::{ActiveView, AppState, ProcessSortField, SettingsCategory, WorkbenchTab};
 use crate::render::LAYOUT;
 
 #[allow(clippy::large_enum_variant)]
@@ -12,6 +12,8 @@ pub enum UiAction {
     FetchSftpList { host_id: String, path: String },
     ReadSftpFile { host_id: String, path: String },
     SaveSftpFile { host_id: String, path: String, content: String },
+    SaveSettings,
+    ExportSettingsJson,
 }
 
 pub fn handle_mouse_click(
@@ -395,6 +397,146 @@ pub fn handle_mouse_click(
         }
     }
 
+    // 8. Check Settings View clicks
+    if state.active_view == ActiveView::Settings {
+        let base_x = LAYOUT.sidebar_width;
+        let base_y = LAYOUT.topbar_height;
+
+        // Check Settings Category Sidebar clicks
+        for (idx, (cat, _, _, _)) in crate::render::SETTINGS_CATEGORIES.iter().enumerate() {
+            let (ix, iy, iw, ih) = crate::render::get_settings_category_rect(idx, base_x, base_y);
+            if (ix..=ix + iw).contains(&x) && (iy..=iy + ih).contains(&y) {
+                state.switch_settings_category(*cat);
+                return None;
+            }
+        }
+
+        let right_x = base_x + crate::render::SETTINGS_SIDEBAR_WIDTH + 32.0;
+        let right_y = base_y + 24.0;
+
+        match state.active_settings_category {
+            SettingsCategory::Appearance => {
+                let sec1_y = right_y + 56.0;
+
+                // Theme preset cards
+                for (idx, preset) in crate::render::THEME_PRESETS.iter().enumerate() {
+                    let (cx, cy, cw, ch) = crate::render::get_settings_theme_card_rect(idx, right_x, sec1_y);
+                    if (cx..=cx + cw).contains(&x) && (cy..=cy + ch).contains(&y) {
+                        state.set_theme(preset.key.to_string());
+                        state.settings_save_status = Some((format!("已切换主题至 {}", preset.title), true));
+                        return Some(UiAction::SaveSettings);
+                    }
+                }
+
+                // Language pills
+                let sec2_y = sec1_y + 240.0;
+                for (idx, (code, name)) in crate::render::LANG_PRESETS.iter().enumerate() {
+                    let (px, py, pw, ph) = crate::render::get_settings_lang_pill_rect(idx, right_x, sec2_y);
+                    if (px..=px + pw).contains(&x) && (py..=py + ph).contains(&y) {
+                        state.set_locale(code.to_string());
+                        state.settings_save_status = Some((format!("已切换语言至 {}", name), true));
+                        return Some(UiAction::SaveSettings);
+                    }
+                }
+
+                // Glow toggle
+                let sec3_y = sec2_y + 76.0;
+                let (gx, gy, gw, gh) = crate::render::get_settings_glow_toggle_rect(right_x, sec3_y + 16.0);
+                if (gx..=gx + gw).contains(&x) && (gy..=gy + gh).contains(&y) {
+                    state.toggle_glow();
+                    let status_txt = if state.settings.glow_effects_enabled {
+                        "微光呼吸动效已开启"
+                    } else {
+                        "微光呼吸动效已关闭"
+                    };
+                    state.settings_save_status = Some((status_txt.to_string(), true));
+                    return Some(UiAction::SaveSettings);
+                }
+            }
+            SettingsCategory::Terminal => {
+                let sec1_y = right_y + 56.0;
+
+                // Font size pills
+                for (idx, &size) in crate::render::FONT_SIZES.iter().enumerate() {
+                    let (px, py, pw, ph) = crate::render::get_settings_font_size_pill_rect(idx, right_x, sec1_y);
+                    if (px..=px + pw).contains(&x) && (py..=py + ph).contains(&y) {
+                        state.set_terminal_font_size(size);
+                        state.settings_save_status = Some((format!("终端字体大小已设置为 {}px", size as u32), true));
+                        return Some(UiAction::SaveSettings);
+                    }
+                }
+
+                // Cursor style pills
+                let sec2_y = sec1_y + 76.0;
+                for (idx, (style_val, style_label)) in crate::render::CURSOR_STYLES.iter().enumerate() {
+                    let (px, py, pw, ph) = crate::render::get_settings_cursor_style_pill_rect(idx, right_x, sec2_y);
+                    if (px..=px + pw).contains(&x) && (py..=py + ph).contains(&y) {
+                        state.set_terminal_cursor_style(style_val.to_string());
+                        state.settings_save_status = Some((format!("终端光标样式已设置为 {}", style_label), true));
+                        return Some(UiAction::SaveSettings);
+                    }
+                }
+            }
+            SettingsCategory::Probe => {
+                let sec1_y = right_y + 56.0;
+
+                // Probe interval pills
+                for (idx, &interval) in crate::render::PROBE_INTERVALS.iter().enumerate() {
+                    let (px, py, pw, ph) = crate::render::get_settings_probe_interval_pill_rect(idx, right_x, sec1_y);
+                    if (px..=px + pw).contains(&x) && (py..=py + ph).contains(&y) {
+                        state.set_probe_interval(interval);
+                        state.settings_save_status = Some((format!("遥测轮询周期已设置为 {} 秒", interval), true));
+                        return Some(UiAction::SaveSettings);
+                    }
+                }
+            }
+            SettingsCategory::Alerts => {
+                let sec1_y = right_y + 56.0;
+
+                // CPU threshold pills
+                for (idx, &opt) in crate::render::ALERT_THRESHOLDS.iter().enumerate() {
+                    let (px, py, pw, ph) = crate::render::get_settings_cpu_threshold_pill_rect(idx, right_x, sec1_y);
+                    if (px..=px + pw).contains(&x) && (py..=py + ph).contains(&y) {
+                        state.set_cpu_threshold(opt);
+                        let label = opt.map(|v| format!("{}%", v as u32)).unwrap_or_else(|| "禁用".to_string());
+                        state.settings_save_status = Some((format!("CPU 告警阈值已设置为 {}", label), true));
+                        return Some(UiAction::SaveSettings);
+                    }
+                }
+
+                // Memory threshold pills
+                let sec2_y = sec1_y + 76.0;
+                for (idx, &opt) in crate::render::ALERT_THRESHOLDS.iter().enumerate() {
+                    let (px, py, pw, ph) = crate::render::get_settings_mem_threshold_pill_rect(idx, right_x, sec2_y);
+                    if (px..=px + pw).contains(&x) && (py..=py + ph).contains(&y) {
+                        state.set_mem_threshold(opt);
+                        let label = opt.map(|v| format!("{}%", v as u32)).unwrap_or_else(|| "禁用".to_string());
+                        state.settings_save_status = Some((format!("内存告警阈值已设置为 {}", label), true));
+                        return Some(UiAction::SaveSettings);
+                    }
+                }
+            }
+            SettingsCategory::Backup => {
+                let sec1_y = right_y + 56.0;
+
+                // Export JSON button
+                let (ex, ey, ew, eh) = crate::render::get_settings_export_json_btn_rect(right_x, sec1_y + 16.0);
+                if (ex..=ex + ew).contains(&x) && (ey..=ey + eh).contains(&y) {
+                    return Some(UiAction::ExportSettingsJson);
+                }
+
+                // Reset defaults button
+                let sec2_y = sec1_y + 106.0;
+                let (rx, ry, rw, rh) = crate::render::get_settings_reset_btn_rect(right_x, sec2_y + 16.0);
+                if (rx..=rx + rw).contains(&x) && (ry..=ry + rh).contains(&y) {
+                    state.reset_settings();
+                    state.settings_save_status = Some(("已成功恢复出厂默认设置！".to_string(), true));
+                    return Some(UiAction::SaveSettings);
+                }
+            }
+        }
+    }
+
     None
 }
 
@@ -770,5 +912,138 @@ mod tests {
         let action = handle_key_down(&mut state, "Escape", false);
         assert!(action.is_none());
         assert!(state.sftp_editor.is_none());
+    }
+
+    #[test]
+    fn test_settings_view_clicks_and_actions() {
+        let mut state = AppState::new();
+        state.switch_view(ActiveView::Settings);
+        assert_eq!(state.active_view, ActiveView::Settings);
+        assert_eq!(state.active_settings_category, SettingsCategory::Appearance);
+
+        let base_x = LAYOUT.sidebar_width;
+        let base_y = LAYOUT.topbar_height;
+        let right_x = base_x + crate::render::SETTINGS_SIDEBAR_WIDTH + 32.0;
+        let right_y = base_y + 24.0;
+
+        // 1. Switch categories via category sidebar clicks
+        // Click Terminal category (idx 1)
+        let (cx, cy, cw, ch) = crate::render::get_settings_category_rect(1, base_x, base_y);
+        let action = handle_mouse_click(&mut state, cx + cw / 2.0, cy + ch / 2.0, 1200.0, 800.0);
+        assert!(action.is_none());
+        assert_eq!(state.active_settings_category, SettingsCategory::Terminal);
+
+        // Click Probe category (idx 2)
+        let (cx, cy, cw, ch) = crate::render::get_settings_category_rect(2, base_x, base_y);
+        handle_mouse_click(&mut state, cx + cw / 2.0, cy + ch / 2.0, 1200.0, 800.0);
+        assert_eq!(state.active_settings_category, SettingsCategory::Probe);
+
+        // Click Alerts category (idx 3)
+        let (cx, cy, cw, ch) = crate::render::get_settings_category_rect(3, base_x, base_y);
+        handle_mouse_click(&mut state, cx + cw / 2.0, cy + ch / 2.0, 1200.0, 800.0);
+        assert_eq!(state.active_settings_category, SettingsCategory::Alerts);
+
+        // Click Backup category (idx 4)
+        let (cx, cy, cw, ch) = crate::render::get_settings_category_rect(4, base_x, base_y);
+        handle_mouse_click(&mut state, cx + cw / 2.0, cy + ch / 2.0, 1200.0, 800.0);
+        assert_eq!(state.active_settings_category, SettingsCategory::Backup);
+
+        // Click Appearance category (idx 0)
+        let (cx, cy, cw, ch) = crate::render::get_settings_category_rect(0, base_x, base_y);
+        handle_mouse_click(&mut state, cx + cw / 2.0, cy + ch / 2.0, 1200.0, 800.0);
+        assert_eq!(state.active_settings_category, SettingsCategory::Appearance);
+
+        // 2. Appearance Tab: Theme card clicks
+        let sec1_y = right_y + 56.0;
+        // Click Cyberpunk card (idx 1)
+        let (tx, ty, tw, th) = crate::render::get_settings_theme_card_rect(1, right_x, sec1_y);
+        let action = handle_mouse_click(&mut state, tx + tw / 2.0, ty + th / 2.0, 1200.0, 800.0);
+        assert_eq!(action, Some(UiAction::SaveSettings));
+        assert_eq!(state.settings.theme_name, "Cyberpunk");
+        assert!(state.settings_save_status.is_some());
+
+        // Click HighContrast card (idx 3)
+        let (tx, ty, tw, th) = crate::render::get_settings_theme_card_rect(3, right_x, sec1_y);
+        let action = handle_mouse_click(&mut state, tx + tw / 2.0, ty + th / 2.0, 1200.0, 800.0);
+        assert_eq!(action, Some(UiAction::SaveSettings));
+        assert_eq!(state.settings.theme_name, "HighContrast");
+
+        // 3. Appearance Tab: Language pill clicks
+        let sec2_y = sec1_y + 240.0;
+        // Click English (idx 1)
+        let (lx, ly, lw, lh) = crate::render::get_settings_lang_pill_rect(1, right_x, sec2_y);
+        let action = handle_mouse_click(&mut state, lx + lw / 2.0, ly + lh / 2.0, 1200.0, 800.0);
+        assert_eq!(action, Some(UiAction::SaveSettings));
+        assert_eq!(state.settings.language, "en-US");
+
+        // Click Japanese (idx 3)
+        let (lx, ly, lw, lh) = crate::render::get_settings_lang_pill_rect(3, right_x, sec2_y);
+        let action = handle_mouse_click(&mut state, lx + lw / 2.0, ly + lh / 2.0, 1200.0, 800.0);
+        assert_eq!(action, Some(UiAction::SaveSettings));
+        assert_eq!(state.settings.language, "ja-JP");
+
+        // 4. Appearance Tab: Glow toggle
+        let sec3_y = sec2_y + 76.0;
+        let initial_glow = state.settings.glow_effects_enabled;
+        let (gx, gy, gw, gh) = crate::render::get_settings_glow_toggle_rect(right_x, sec3_y + 16.0);
+        let action = handle_mouse_click(&mut state, gx + gw / 2.0, gy + gh / 2.0, 1200.0, 800.0);
+        assert_eq!(action, Some(UiAction::SaveSettings));
+        assert_eq!(state.settings.glow_effects_enabled, !initial_glow);
+
+        // 5. Terminal Tab: Font size & Cursor style pills
+        state.switch_settings_category(SettingsCategory::Terminal);
+        let term_sec1_y = right_y + 56.0;
+        // Click 16px (idx 3)
+        let (fx, fy, fw, fh) = crate::render::get_settings_font_size_pill_rect(3, right_x, term_sec1_y);
+        let action = handle_mouse_click(&mut state, fx + fw / 2.0, fy + fh / 2.0, 1200.0, 800.0);
+        assert_eq!(action, Some(UiAction::SaveSettings));
+        assert_eq!(state.settings.terminal_font_size, 16.0);
+
+        let term_sec2_y = term_sec1_y + 76.0;
+        // Click Underline cursor (idx 2)
+        let (ux, uy, uw, uh) = crate::render::get_settings_cursor_style_pill_rect(2, right_x, term_sec2_y);
+        let action = handle_mouse_click(&mut state, ux + uw / 2.0, uy + uh / 2.0, 1200.0, 800.0);
+        assert_eq!(action, Some(UiAction::SaveSettings));
+        assert_eq!(state.settings.terminal_cursor_style, "Underline");
+
+        // 6. Probe Tab: Interval pills
+        state.switch_settings_category(SettingsCategory::Probe);
+        let probe_sec1_y = right_y + 56.0;
+        // Click 5s interval (idx 2)
+        let (ix, iy, iw, ih) = crate::render::get_settings_probe_interval_pill_rect(2, right_x, probe_sec1_y);
+        let action = handle_mouse_click(&mut state, ix + iw / 2.0, iy + ih / 2.0, 1200.0, 800.0);
+        assert_eq!(action, Some(UiAction::SaveSettings));
+        assert_eq!(state.settings.probe_interval_secs, 5);
+
+        // 7. Alerts Tab: CPU and Memory threshold pills
+        state.switch_settings_category(SettingsCategory::Alerts);
+        let alert_sec1_y = right_y + 56.0;
+        // Click 80% CPU (idx 1)
+        let (ax, ay, aw, ah) = crate::render::get_settings_cpu_threshold_pill_rect(1, right_x, alert_sec1_y);
+        let action = handle_mouse_click(&mut state, ax + aw / 2.0, ay + ah / 2.0, 1200.0, 800.0);
+        assert_eq!(action, Some(UiAction::SaveSettings));
+        assert_eq!(state.settings.alert_cpu_threshold, 80.0);
+
+        let alert_sec2_y = alert_sec1_y + 76.0;
+        // Click 禁用 Memory (idx 3)
+        let (mx, my, mw, mh) = crate::render::get_settings_mem_threshold_pill_rect(3, right_x, alert_sec2_y);
+        let action = handle_mouse_click(&mut state, mx + mw / 2.0, my + mh / 2.0, 1200.0, 800.0);
+        assert_eq!(action, Some(UiAction::SaveSettings));
+        assert_eq!(state.settings.alert_mem_threshold, 0.0);
+
+        // 8. Backup Tab: Export JSON and Reset Defaults
+        state.switch_settings_category(SettingsCategory::Backup);
+        let backup_sec1_y = right_y + 56.0;
+        // Click Export JSON
+        let (ex, ey, ew, eh) = crate::render::get_settings_export_json_btn_rect(right_x, backup_sec1_y + 16.0);
+        let action = handle_mouse_click(&mut state, ex + ew / 2.0, ey + eh / 2.0, 1200.0, 800.0);
+        assert_eq!(action, Some(UiAction::ExportSettingsJson));
+
+        // Click Reset Defaults
+        let backup_sec2_y = backup_sec1_y + 106.0;
+        let (rx, ry, rw, rh) = crate::render::get_settings_reset_btn_rect(right_x, backup_sec2_y + 16.0);
+        let action = handle_mouse_click(&mut state, rx + rw / 2.0, ry + rh / 2.0, 1200.0, 800.0);
+        assert_eq!(action, Some(UiAction::SaveSettings));
+        assert_eq!(state.settings, redash_types::settings::AppSettings::default());
     }
 }
