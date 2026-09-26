@@ -1,15 +1,5 @@
-use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
-pub struct ProcessItem {
-    pub pid: u32,
-    pub user: String,
-    pub cpu_percent: f32,
-    pub mem_percent: f32,
-    pub status: String,
-    pub rss_bytes: u64,
-    pub command: String,
-}
+pub use redash_types::metrics::ProcessItem;
 
 pub struct ProcessManager;
 

@@ -16,6 +16,7 @@ pub struct AppState {
     pub metrics: HashMap<String, NodeMetrics>,
     pub metrics_history: HashMap<String, Vec<f32>>,
     pub terminal_lines: Vec<String>,
+    pub terminal_grid: redash_ui_core::terminal::TerminalGrid,
     pub agent: Option<DetectedAgent>,
     pub settings: AppSettings,
     pub show_add_modal: bool,
@@ -30,6 +31,9 @@ pub struct AppState {
 
 impl AppState {
     pub fn new() -> Self {
+        let mut grid = redash_ui_core::terminal::TerminalGrid::new(120, 40);
+        grid.write_stream("ReDash Web Terminal [Version 0.1.0-beta]\r\nConnected to ReDash Web Gateway over high-performance WebSocket PTY.\r\n\r\n");
+
         Self {
             active_view: ActiveView::Fleet,
             hosts: Vec::new(),
@@ -41,6 +45,7 @@ impl AppState {
                 "Connected to ReDash Web Gateway over high-performance WebSocket PTY.".to_string(),
                 "".to_string(),
             ],
+            terminal_grid: grid,
             agent: None,
             settings: AppSettings::default(),
             show_add_modal: false,
@@ -63,7 +68,7 @@ impl AppState {
             .metrics_history
             .entry(host_id.clone())
             .or_default();
-        history.push(metrics.cpu_percent);
+        history.push(metrics.cpu_percent());
         if history.len() > 30 {
             history.remove(0);
         }
@@ -71,6 +76,7 @@ impl AppState {
     }
 
     pub fn append_terminal_output(&mut self, text: &str) {
+        self.terminal_grid.write_stream(text);
         for line in text.split('\n') {
             let clean = line.trim_end_matches('\r').to_string();
             self.terminal_lines.push(clean);
@@ -112,15 +118,11 @@ impl AppState {
         #[cfg(not(target_arch = "wasm32"))]
         let id_str = format!("host_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis());
 
-        Some(HostConfig {
-            id: HostId(id_str),
-            name: name.to_string(),
-            hostname: hostname.to_string(),
-            port,
-            user,
-            group: "Default".to_string(),
-            tags: vec!["web".to_string()],
-        })
+        let mut host = HostConfig::new(name, hostname, user);
+        host.id = HostId(id_str);
+        host.port = port;
+        host.tags = vec!["web".to_string()];
+        Some(host)
     }
 }
 
@@ -160,7 +162,7 @@ mod tests {
 
         for i in 0..40 {
             let mut metrics = NodeMetrics::default();
-            metrics.cpu_percent = i as f32;
+            metrics.cpu.usage_percent = i as f32;
             state.update_metrics(host_id.clone(), metrics);
         }
 

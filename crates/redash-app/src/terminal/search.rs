@@ -96,6 +96,7 @@ impl TerminalSearch {
         }
     }
 
+    #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> Option<SearchMatch> {
         if self.matches.is_empty() {
             return None;

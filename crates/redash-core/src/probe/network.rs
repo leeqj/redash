@@ -1,13 +1,5 @@
-use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
-pub struct ListeningPort {
-    pub proto: String,
-    pub bind_ip: String,
-    pub port: u16,
-    pub pid: Option<u32>,
-    pub process_name: Option<String>,
-}
+pub use redash_types::metrics::ListeningPort;
 
 pub struct NetworkDiagnostics;
 

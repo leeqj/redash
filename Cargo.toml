@@ -1,6 +1,8 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/redash-types",
+    "crates/redash-ui-core",
     "crates/redash-core",
     "crates/redash-app",
     "crates/redash-server",
@@ -14,6 +16,8 @@ rust-version = "1.96"
 license = "Apache-2.0"
 
 [workspace.dependencies]
+redash-types = { path = "crates/redash-types" }
+redash-ui-core = { path = "crates/redash-ui-core" }
 redash-core = { path = "crates/redash-core" }
 anyhow = "1.0"
 thiserror = "2.0"

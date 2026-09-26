@@ -1,4 +1,4 @@
-use redash_core::config::{AppSettings, HostConfig, HostId, HostStore};
+use redash_core::config::{AppSettings, AppSettingsExt, HostConfig, HostId, HostStore};
 use redash_core::probe::NodeMetrics;
 use redash_core::session::SessionManager;
 use std::collections::HashMap;

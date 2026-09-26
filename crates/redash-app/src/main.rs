@@ -3,6 +3,7 @@
 mod components;
 pub mod i18n;
 mod terminal;
+pub mod theme;
 mod views;
 
 #[cfg(test)]
@@ -16,7 +17,8 @@ use std::time::{Duration, Instant};
 
 use redash_core::config::alert::{AlertDispatcher, AlertRule};
 use redash_core::config::{
-    AppSettings, AuthMethod, CredentialVault, HostConfig, HostId, HostStore, TargetOs,
+    AppSettings, AppSettingsExt, AuthMethod, CredentialVault, HostConfig, HostId, HostStore,
+    TargetOs,
 };
 use redash_core::probe::ProbeScheduler;
 use redash_core::session::SessionManager;

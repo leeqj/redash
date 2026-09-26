@@ -250,8 +250,8 @@ fn render_host_card(
 
     // Metrics (if available)
     let metrics = state.metrics.get(&host.id.0);
-    let cpu_pct = metrics.map(|m| m.cpu_percent).unwrap_or(0.0);
-    let mem_pct = metrics.map(|m| m.mem_percent).unwrap_or(0.0);
+    let cpu_pct = metrics.map(|m| m.cpu_percent()).unwrap_or(0.0);
+    let mem_pct = metrics.map(|m| m.mem_percent()).unwrap_or(0.0);
 
     // CPU Gauge Bar
     ctx.set_fill_style_str(DARK_TECH_THEME.text_secondary);
@@ -282,6 +282,28 @@ fn render_host_card(
     let mem_fill_w = (bar_w * (mem_pct as f64 / 100.0)).clamp(0.0, bar_w);
     ctx.set_fill_style_str(DARK_TECH_THEME.accent_purple);
     ctx.fill_rect(cx + 16.0, cy + 108.0, mem_fill_w, 6.0);
+
+    // Live Sparkline Chart using shared redash-types math
+    if let Some(history) = state.metrics_history.get(&host.id.0)
+        && history.len() >= 2
+    {
+        let spark_x = cx + cw - 120.0;
+        let spark_y = cy + 20.0;
+        let spark_w = 100.0;
+        let spark_h = 36.0;
+
+        let points = redash_types::math::normalize_sparkline(history, spark_x, spark_y, spark_w, spark_h);
+        if points.len() >= 2 {
+            ctx.set_stroke_style_str(DARK_TECH_THEME.accent_cyan);
+            ctx.set_line_width(1.5);
+            ctx.begin_path();
+            ctx.move_to(points[0].0, points[0].1);
+            for pt in &points[1..] {
+                ctx.line_to(pt.0, pt.1);
+            }
+            ctx.stroke();
+        }
+    }
 
     // Action Buttons
     let btn_y = cy + 126.0;
@@ -327,8 +349,8 @@ fn render_terminal_view(
         let _ = ctx.fill_text(&format!("🤖 Agent Active: {}", agent.name), x + 16.0, term_y + 22.0);
 
         // Status Badge
-        ctx.set_fill_style_str(DARK_TECH_THEME.status_online);
-        let _ = ctx.fill_text(&format!("Status: {}", agent.state), x + 240.0, term_y + 22.0);
+        ctx.set_fill_style_str(agent.status.color_hex());
+        let _ = ctx.fill_text(&format!("Status: {}", agent.status.label()), x + 240.0, term_y + 22.0);
 
         // Cost / Tokens
         if let Some(cost) = agent.cost_usd {
@@ -348,29 +370,36 @@ fn render_terminal_view(
     ctx.set_fill_style_str("#090d13");
     ctx.fill_rect(x, term_y, w, term_h);
 
-    // Terminal Text Lines
-    ctx.set_fill_style_str(DARK_TECH_THEME.text_primary);
-    ctx.set_font("13px 'JetBrains Mono', monospace");
-    ctx.set_text_align("left");
-
+    // Terminal ANSI Grid Renderer (renders colors, bold, cursor from shared redash-ui-core engine)
     let line_height = 18.0;
+    let char_width = 7.8;
+    let grid_lines_count = state.terminal_grid.line_count();
     let max_visible_lines = (term_h / line_height) as usize;
-    let start_idx = if state.terminal_lines.len() > max_visible_lines {
-        state.terminal_lines.len() - max_visible_lines
-    } else {
-        0
-    };
+    let start_idx = grid_lines_count.saturating_sub(max_visible_lines);
 
     let mut line_y = term_y + 20.0;
-    for line in &state.terminal_lines[start_idx..] {
-        let _ = ctx.fill_text(line, x + 16.0, line_y);
+    for line_idx in start_idx..grid_lines_count {
+        let cells = state.terminal_grid.line_cells(line_idx);
+        let mut char_x = x + 16.0;
+        for cell in cells {
+            let color = cell.fg.to_css_color(true);
+            ctx.set_fill_style_str(color);
+            if cell.bold {
+                ctx.set_font("bold 13px 'JetBrains Mono', monospace");
+            } else {
+                ctx.set_font("13px 'JetBrains Mono', monospace");
+            }
+            let s = cell.c.to_string();
+            let _ = ctx.fill_text(&s, char_x, line_y);
+            char_x += char_width;
+        }
         line_y += line_height;
     }
 
     // Blinking Cursor
     ctx.set_fill_style_str(DARK_TECH_THEME.accent_cyan);
-    let last_line = state.terminal_lines.last().map(|s| s.as_str()).unwrap_or("");
-    let cursor_x = x + 16.0 + (last_line.len() as f64) * 7.8;
+    let last_col = state.terminal_grid.cursor_col;
+    let cursor_x = x + 16.0 + (last_col as f64) * char_width;
     ctx.fill_rect(cursor_x, line_y - line_height + 4.0, 8.0, 14.0);
 }
 

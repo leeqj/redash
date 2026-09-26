@@ -5,8 +5,7 @@ pub mod micro_meter;
 pub mod status_led;
 pub mod status_ribbon;
 
-#[path = "../theme.rs"]
-pub mod theme;
+pub use crate::theme;
 
 #[allow(unused_imports)]
 pub use chart::*;

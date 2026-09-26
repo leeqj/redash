@@ -3,7 +3,7 @@ use crate::components::theme::{DarkTechTheme, ThemePalette};
 use crate::i18n::{I18n, Locale};
 use gpui::prelude::FluentBuilder;
 use gpui::*;
-use redash_core::config::{AlertDispatcher, AlertEvent, AppSettings, HostStore};
+use redash_core::config::{AlertDispatcher, AlertEvent, AppSettings, AppSettingsExt, HostStore};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsCategory {

@@ -1,5 +1,4 @@
-//! DarkTechTheme Design Tokens & Colors
-//! Exactly matches crates/redash-app/src/theme.rs
+pub use redash_ui_core::theme::*;
 
 pub struct ThemeColors {
     pub bg_root: &'static str,
@@ -21,7 +20,7 @@ pub struct ThemeColors {
 }
 
 pub const DARK_TECH_THEME: ThemeColors = ThemeColors {
-    bg_root: "#0d1117",
+    bg_root: "#0b0f14",
     bg_sidebar: "#13171e",
     bg_card: "#161b22",
     bg_card_hover: "#1c2129",

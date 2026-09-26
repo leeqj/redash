@@ -7,6 +7,8 @@ license.workspace = true
 description = "ReDash Web Server & WebSocket SSH/SFTP/Metrics Gateway"
 
 [dependencies]
+redash-types = { workspace = true }
+redash-ui-core = { workspace = true }
 redash-core = { workspace = true }
 tokio = { workspace = true }
 axum = { workspace = true }

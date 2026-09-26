@@ -1,18 +1,5 @@
-use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
-pub struct DockerContainerDetail {
-    pub id: String,
-    pub name: String,
-    pub image: String,
-    pub status: String,
-    pub state: String,
-    pub created: String,
-    pub ports: Vec<String>,
-    pub cpu_percent: f32,
-    pub mem_usage_bytes: u64,
-    pub mem_limit_bytes: u64,
-}
+pub use redash_types::metrics::DockerContainerDetail;
 
 #[derive(Debug, Clone, Default)]
 struct ContainerStats {

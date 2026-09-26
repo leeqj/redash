@@ -6559,6 +6559,8 @@ dependencies = [
  "gpui-component",
  "log",
  "redash-core",
+ "redash-types",
+ "redash-ui-core",
  "russh-sftp",
  "serde",
  "serde_json",
@@ -6579,6 +6581,8 @@ dependencies = [
  "keyring",
  "log",
  "rand 0.10.3",
+ "redash-types",
+ "redash-ui-core",
  "russh",
  "russh-sftp",
  "serde",
@@ -6601,6 +6605,8 @@ dependencies = [
  "http-body-util",
  "log",
  "redash-core",
+ "redash-types",
+ "redash-ui-core",
  "russh-sftp",
  "serde",
  "serde_json",
@@ -6612,6 +6618,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "redash-types"
+version = "0.1.0-beta"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "uuid",
+]
+
+[[package]]
+name = "redash-ui-core"
+version = "0.1.0-beta"
+dependencies = [
+ "redash-types",
+ "serde",
+ "serde_json",
+ "unicode-width",
+]
+
+[[package]]
 name = "redash-web"
 version = "0.1.0-beta"
 dependencies = [
@@ -6620,6 +6646,8 @@ dependencies = [
  "futures",
  "js-sys",
  "log",
+ "redash-types",
+ "redash-ui-core",
  "serde",
  "serde_json",
  "thiserror 2.0.21",

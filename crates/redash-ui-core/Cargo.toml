@@ -1,0 +1,15 @@
+[package]
+name = "redash-ui-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Headless UI primitives, design tokens, multi-language dictionaries, and ANSI terminal grid for ReDash"
+
+[dependencies]
+redash-types = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+unicode-width = { workspace = true }
+
+[dev-dependencies]

@@ -15,9 +15,11 @@ name = "redash"
 path = "src/main.rs"
 
 [dependencies]
-redash-core.workspace = true
-russh-sftp.workspace = true
-gpui.workspace = true
+redash-types = { workspace = true }
+redash-ui-core = { workspace = true }
+redash-core = { workspace = true }
+russh-sftp = { workspace = true }
+gpui = { workspace = true }
 gpui-component.workspace = true
 anyhow.workspace = true
 thiserror.workspace = true

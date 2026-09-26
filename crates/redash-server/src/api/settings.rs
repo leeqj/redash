@@ -2,7 +2,7 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::Json;
-use redash_core::config::AppSettings;
+use redash_core::config::{AppSettings, AppSettingsExt};
 
 use super::hosts::ApiResponse;
 use crate::state::AppState;

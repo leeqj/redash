@@ -74,9 +74,21 @@ impl GatewayClient {
                         cost_usd,
                         tokens,
                     } => {
+                        let status = if state.contains("Thinking") || state.contains("思考") {
+                            redash_types::AgentStatus::Thinking
+                        } else if state.contains("NeedsInput") || state.contains("等待") {
+                            redash_types::AgentStatus::NeedsInput
+                        } else if state.contains("Done") || state.contains("完成") {
+                            redash_types::AgentStatus::Done
+                        } else {
+                            redash_types::AgentStatus::Idle
+                        };
                         on_agent(crate::models::DetectedAgent {
+                            id: "active-agent".to_string(),
                             name,
-                            state,
+                            category: "AI".to_string(),
+                            status,
+                            detail: state,
                             cost_usd,
                             tokens,
                         });
