@@ -5,3 +5,28 @@
 .vscode/
 *.swp
 .agents/
+
+# Logs & Temporary Files
+*.log
+/dist/
+/dist-server/
+
+# Secrets, Credentials & Keys
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+id_ecdsa*
+*.keystore
+
+# Local Environment & Configs
+.env
+.env.*
+!.env.example
+*.local
+hosts.json
+settings.json
+credentials.json
+
