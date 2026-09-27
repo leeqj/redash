@@ -1124,7 +1124,7 @@ impl Render for TerminalView {
                                                     .with_size(px(10.0))
                                                     .with_color(DarkTechTheme::text_secondary()),
                                             )
-                                            .child("清屏"),
+                                            .child(crate::t!("term.clear")),
                                     ),
                             )
                             // Pill 2: Copy Selection (if available)
@@ -1175,7 +1175,7 @@ impl Render for TerminalView {
                                                     DarkTechTheme::text_secondary()
                                                 },
                                             ))
-                                            .child("复制"),
+                                            .child(crate::t!("term.copy")),
                                     ),
                             )
                             // Pill 3: Paste
@@ -1212,7 +1212,7 @@ impl Render for TerminalView {
                                                     .with_size(px(10.0))
                                                     .with_color(DarkTechTheme::text_secondary()),
                                             )
-                                            .child("粘贴"),
+                                            .child(crate::t!("term.paste")),
                                     ),
                             )
                             // Pill 4: In-Terminal Search Toggle
@@ -1268,7 +1268,7 @@ impl Render for TerminalView {
                                                     DarkTechTheme::text_secondary()
                                                 },
                                             ))
-                                            .child("搜索"),
+                                            .child(crate::t!("term.search")),
                                     ),
                             )
                             // Pill 5: Scroll to bottom
@@ -1304,7 +1304,7 @@ impl Render for TerminalView {
                                                     .with_size(px(10.0))
                                                     .with_color(DarkTechTheme::text_secondary()),
                                             )
-                                            .child("到底部"),
+                                            .child(crate::t!("term.to_bottom")),
                                     ),
                             ),
                     ),
@@ -1351,7 +1351,7 @@ impl Render for TerminalView {
                                             DarkTechTheme::text_primary()
                                         })
                                         .child(if self.search.query.is_empty() {
-                                            "输入关键词搜索...".to_string()
+                                            crate::t!("term.search_placeholder").to_string()
                                         } else {
                                             self.search.query.clone()
                                         }),
@@ -1543,7 +1543,7 @@ impl Render for TerminalView {
                                         }
                                         cx.notify();
                                     }))
-                                    .child("🟢 允许 (Y) - ⌘Y"),
+                                    .child(crate::t!("term.allow_y")),
                             )
                             // Reject button (N / Cmd+N)
                             .child(
@@ -1570,7 +1570,7 @@ impl Render for TerminalView {
                                         }
                                         cx.notify();
                                     }))
-                                    .child("🔴 拒绝 (N) - ⌘N"),
+                                    .child(crate::t!("term.deny_n")),
                             ),
                     )
                 } else {

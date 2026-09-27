@@ -362,7 +362,7 @@ impl SettingsView {
                                     .text_size(px(11.5))
                                     .font_family("Menlo")
                                     .text_color(DarkTechTheme::text_accent())
-                                    .child(format!("{} 秒/次", draft.probe_interval_secs)),
+                                    .child(crate::t_fmt!("settings.opt_per_sec", secs = draft.probe_interval_secs)),
                             ),
                     )
                     .child(
@@ -444,7 +444,7 @@ impl SettingsView {
                                     .text_size(px(11.5))
                                     .font_family("Menlo")
                                     .text_color(DarkTechTheme::text_accent())
-                                    .child(format!("{} 秒", draft.probe_timeout_secs)),
+                                    .child(crate::t_fmt!("settings.opt_secs", secs = draft.probe_timeout_secs)),
                             ),
                     )
                     .child(
@@ -454,7 +454,7 @@ impl SettingsView {
                             .gap_2()
                             .child(Self::render_option_pill(
                                 "probe_timeout",
-                                "3s (严苛)",
+                                crate::t!("settings.opt_timeout_3s"),
                                 3u64,
                                 &draft.probe_timeout_secs,
                                 |v, this, cx| {
@@ -465,7 +465,7 @@ impl SettingsView {
                             ))
                             .child(Self::render_option_pill(
                                 "probe_timeout",
-                                "5s (默认)",
+                                crate::t!("settings.opt_timeout_5s"),
                                 5u64,
                                 &draft.probe_timeout_secs,
                                 |v, this, cx| {
@@ -476,7 +476,7 @@ impl SettingsView {
                             ))
                             .child(Self::render_option_pill(
                                 "probe_timeout",
-                                "10s (宽松)",
+                                crate::t!("settings.opt_timeout_10s"),
                                 10u64,
                                 &draft.probe_timeout_secs,
                                 |v, this, cx| {
@@ -487,7 +487,7 @@ impl SettingsView {
                             ))
                             .child(Self::render_option_pill(
                                 "probe_timeout",
-                                "15s (高延迟网络)",
+                                crate::t!("settings.opt_timeout_15s"),
                                 15u64,
                                 &draft.probe_timeout_secs,
                                 |v, this, cx| {
@@ -519,14 +519,14 @@ impl SettingsView {
                                     .text_size(px(12.5))
                                     .font_weight(FontWeight::MEDIUM)
                                     .text_color(DarkTechTheme::text_primary())
-                                    .child("脉搏历史点数 (Sparkline Buffer Points)"),
+                                    .child(crate::t!("settings.sparkline_points")),
                             )
                             .child(
                                 div()
                                     .text_size(px(11.5))
                                     .font_family("Menlo")
                                     .text_color(DarkTechTheme::text_accent())
-                                    .child(format!("{} 点", draft.history_points)),
+                                    .child(crate::t_fmt!("settings.opt_points_val", pts = draft.history_points)),
                             ),
                     )
                     .child(
@@ -536,7 +536,7 @@ impl SettingsView {
                             .gap_2()
                             .child(Self::render_option_pill(
                                 "history_points",
-                                "20 点 (极简)",
+                                crate::t!("settings.opt_points_20"),
                                 20usize,
                                 &draft.history_points,
                                 |v, this, cx| {
@@ -547,7 +547,7 @@ impl SettingsView {
                             ))
                             .child(Self::render_option_pill(
                                 "history_points",
-                                "30 点 (标准)",
+                                crate::t!("settings.opt_points_30"),
                                 30usize,
                                 &draft.history_points,
                                 |v, this, cx| {
@@ -558,7 +558,7 @@ impl SettingsView {
                             ))
                             .child(Self::render_option_pill(
                                 "history_points",
-                                "60 点 (精细)",
+                                crate::t!("settings.opt_points_60"),
                                 60usize,
                                 &draft.history_points,
                                 |v, this, cx| {
@@ -569,7 +569,7 @@ impl SettingsView {
                             ))
                             .child(Self::render_option_pill(
                                 "history_points",
-                                "120 点 (全景)",
+                                crate::t!("settings.opt_points_120"),
                                 120usize,
                                 &draft.history_points,
                                 |v, this, cx| {
@@ -583,8 +583,8 @@ impl SettingsView {
             // 4. 自动刷新开关
             .child(Self::render_toggle(
                 draft.auto_refresh,
-                "后台自动执行实时探针探测",
-                "开启后将在后台定期采集 CPU、内存、磁盘与网络吞吐指标，关闭后仅在手动刷新时探测。",
+                &crate::t!("settings.auto_probe_title"),
+                &crate::t!("settings.auto_probe_desc"),
                 |v, this, cx| {
                     this.draft.auto_refresh = v;
                     cx.notify();
@@ -616,7 +616,7 @@ impl SettingsView {
                         div()
                             .text_size(px(11.5))
                             .text_color(DarkTechTheme::text_muted())
-                            .child("定制 SSH PTY 终端字体族、字号规格、光标形态与回滚缓冲限制。"),
+                            .child(crate::t!("settings.terminal_desc")),
                     ),
             )
             // 1. 字体选择
@@ -736,7 +736,7 @@ impl SettingsView {
                             ))
                             .child(Self::render_option_pill(
                                 "term_size",
-                                "12 px (推荐)",
+                                crate::t!("settings.opt_font_size_12"),
                                 12.0f32,
                                 &draft.terminal_font_size,
                                 |v, this, cx| {
@@ -796,7 +796,7 @@ impl SettingsView {
                             .text_size(px(12.5))
                             .font_weight(FontWeight::MEDIUM)
                             .text_color(DarkTechTheme::text_primary())
-                            .child("光标样式 (Cursor Style)"),
+                            .child(crate::t!("settings.cursor_style")),
                     )
                     .child(
                         div()
@@ -805,7 +805,7 @@ impl SettingsView {
                             .gap_2()
                             .child(Self::render_option_pill(
                                 "term_cursor",
-                                "█ 块状方块 (Block)",
+                                crate::t!("settings.cursor_block"),
                                 "Block".to_string(),
                                 &draft.terminal_cursor_style,
                                 |v, this, cx| {
@@ -816,7 +816,7 @@ impl SettingsView {
                             ))
                             .child(Self::render_option_pill(
                                 "term_cursor",
-                                "| 细竖线 (Line)",
+                                crate::t!("settings.cursor_line"),
                                 "Line".to_string(),
                                 &draft.terminal_cursor_style,
                                 |v, this, cx| {
@@ -827,7 +827,7 @@ impl SettingsView {
                             ))
                             .child(Self::render_option_pill(
                                 "term_cursor",
-                                "_ 下划线 (Underline)",
+                                crate::t!("settings.cursor_underline"),
                                 "Underline".to_string(),
                                 &draft.terminal_cursor_style,
                                 |v, this, cx| {
@@ -870,7 +870,7 @@ impl SettingsView {
                                             .text_size(px(10.5))
                                             .text_color(DarkTechTheme::text_accent())
                                             .font_weight(FontWeight::BOLD)
-                                            .child("实时终端渲染预览 (Live Preview)"),
+                                            .child(crate::t!("settings.terminal_preview")),
                                     ),
                             ),
                     )
@@ -933,8 +933,8 @@ impl SettingsView {
             // 5. 选中文本自动复制开关
             .child(Self::render_toggle(
                 draft.terminal_copy_on_select,
-                "光标选中文本时自动复制到剪贴板 (Copy on Select)",
-                "在终端中拖拽鼠标选择文字内容时，自动将其复制到操作系统系统剪贴板。",
+                &crate::t!("settings.copy_on_select_title"),
+                &crate::t!("settings.copy_on_select_desc"),
                 |v, this, cx| {
                     this.draft.terminal_copy_on_select = v;
                     cx.notify();
@@ -964,7 +964,7 @@ impl SettingsView {
                         div()
                             .text_size(px(11.5))
                             .text_color(DarkTechTheme::text_muted())
-                            .child("管理深色科技调色板、1px 微发光边框状态与大盘卡片密度。"),
+                            .child(crate::t!("settings.theme_desc")),
                     ),
             )
             // 1. 主题方案 (支持即时换肤与实时预览)
@@ -1010,7 +1010,7 @@ impl SettingsView {
                                                 div()
                                                     .text_size(px(11.0))
                                                     .text_color(DarkTechTheme::text_accent())
-                                                    .child("无需重启，点击方案即刻全局实时预览"),
+                                                    .child(crate::t!("settings.theme_instant_hint")),
                                             ),
                                     ),
                             ),
@@ -1066,7 +1066,7 @@ impl SettingsView {
                 div()
                     .text_sm()
                     .text_color(DarkTechTheme::text_muted())
-                    .child("发光特效与紧凑布局尚未支持，暂不提供设置。"),
+                    .child(crate::t!("settings.appearance_unsupported_hint")),
             )
     }
 
@@ -1205,7 +1205,7 @@ impl SettingsView {
                                         .text_size(px(10.0))
                                         .font_weight(FontWeight::BOLD)
                                         .text_color(DarkTechTheme::bg_root())
-                                        .child("实时预览中"),
+                                        .child(crate::t!("settings.badge_previewing")),
                                 )
                             })
                             .when(is_saved, |d| {
@@ -1218,7 +1218,7 @@ impl SettingsView {
                                         .text_size(px(10.0))
                                         .font_weight(FontWeight::BOLD)
                                         .text_color(DarkTechTheme::bg_root())
-                                        .child("当前配置"),
+                                        .child(crate::t!("settings.badge_current")),
                                 )
                             }),
                     )
@@ -1344,7 +1344,7 @@ impl SettingsView {
                                                                     DarkTechTheme::status_online(),
                                                                 ),
                                                             )
-                                                            .child("当前使用"),
+                                                            .child(crate::t!("settings.badge_in_use")),
                                                     ),
                                             )
                                             })
@@ -1358,16 +1358,23 @@ impl SettingsView {
                                                         .text_size(px(9.5))
                                                         .font_weight(FontWeight::BOLD)
                                                         .text_color(DarkTechTheme::status_warn())
-                                                        .child("● 实时预览中 (未保存)"),
+                                                        .child(crate::t!("settings.badge_previewing_unsaved")),
                                                 )
                                             }),
                                     )
-                                    .child(
+                                    .child({
+                                        let theme_desc = match p.name {
+                                            "Minimalist Dark Tech" => crate::t!("settings.theme_darktech_desc"),
+                                            "Cyberpunk Neon" => crate::t!("settings.theme_cyberpunk_desc"),
+                                            "Monokai Pro" => crate::t!("settings.theme_monokai_desc"),
+                                            "GitHub Dark" => crate::t!("settings.theme_github_desc"),
+                                            _ => p.description,
+                                        };
                                         div()
                                             .text_size(px(11.0))
                                             .text_color(DarkTechTheme::text_muted())
-                                            .child(p.description),
-                                    ),
+                                            .child(theme_desc)
+                                    }),
                             ),
                     )
                     // Right: 4-color palette swatch preview
@@ -1432,7 +1439,7 @@ impl SettingsView {
                         div()
                             .text_size(px(11.5))
                             .text_color(DarkTechTheme::text_muted())
-                            .child("实时监控指标超标、节点离线故障自动化检测，支持 macOS 原生桌面通知与 Webhook 机器人消息分发。"),
+                            .child(crate::t!("settings.alerts_desc")),
                     ),
             )
             // 1. CPU 阈值
@@ -1479,11 +1486,11 @@ impl SettingsView {
                                 this.draft.alert_cpu_threshold = v;
                                 cx.notify();
                             }, cx))
-                            .child(Self::render_option_pill("alert_cpu", "90% (推荐)", 90.0f32, &draft.alert_cpu_threshold, |v, this, cx| {
+                            .child(Self::render_option_pill("alert_cpu", crate::t!("settings.opt_cpu_90"), 90.0f32, &draft.alert_cpu_threshold, |v, this, cx| {
                                 this.draft.alert_cpu_threshold = v;
                                 cx.notify();
                             }, cx))
-                            .child(Self::render_option_pill("alert_cpu", "95% (严苛)", 95.0f32, &draft.alert_cpu_threshold, |v, this, cx| {
+                            .child(Self::render_option_pill("alert_cpu", crate::t!("settings.opt_cpu_95"), 95.0f32, &draft.alert_cpu_threshold, |v, this, cx| {
                                 this.draft.alert_cpu_threshold = v;
                                 cx.notify();
                             }, cx)),
@@ -1533,11 +1540,11 @@ impl SettingsView {
                                 this.draft.alert_mem_threshold = v;
                                 cx.notify();
                             }, cx))
-                            .child(Self::render_option_pill("alert_mem", "95% (推荐)", 95.0f32, &draft.alert_mem_threshold, |v, this, cx| {
+                            .child(Self::render_option_pill("alert_mem", crate::t!("settings.opt_mem_95"), 95.0f32, &draft.alert_mem_threshold, |v, this, cx| {
                                 this.draft.alert_mem_threshold = v;
                                 cx.notify();
                             }, cx))
-                            .child(Self::render_option_pill("alert_mem", "98% (极高)", 98.0f32, &draft.alert_mem_threshold, |v, this, cx| {
+                            .child(Self::render_option_pill("alert_mem", crate::t!("settings.opt_mem_98"), 98.0f32, &draft.alert_mem_threshold, |v, this, cx| {
                                 this.draft.alert_mem_threshold = v;
                                 cx.notify();
                             }, cx)),
@@ -1587,11 +1594,11 @@ impl SettingsView {
                                 this.draft.alert_disk_threshold = v;
                                 cx.notify();
                             }, cx))
-                            .child(Self::render_option_pill("alert_disk", "90% (推荐)", 90.0f32, &draft.alert_disk_threshold, |v, this, cx| {
+                            .child(Self::render_option_pill("alert_disk", crate::t!("settings.opt_cpu_90"), 90.0f32, &draft.alert_disk_threshold, |v, this, cx| {
                                 this.draft.alert_disk_threshold = v;
                                 cx.notify();
                             }, cx))
-                            .child(Self::render_option_pill("alert_disk", "95% (紧迫)", 95.0f32, &draft.alert_disk_threshold, |v, this, cx| {
+                            .child(Self::render_option_pill("alert_disk", crate::t!("settings.opt_disk_95"), 95.0f32, &draft.alert_disk_threshold, |v, this, cx| {
                                 this.draft.alert_disk_threshold = v;
                                 cx.notify();
                             }, cx)),
@@ -1601,7 +1608,7 @@ impl SettingsView {
             .child(Self::render_toggle(
                 draft.alert_notify_offline,
                 crate::t!("settings.notify_offline"),
-                "当纳管服务器出现网络不可达、SSH 认证失败或连续探针超时无响应时立即发出告警预警。",
+                &crate::t!("settings.notify_offline_desc"),
                 |v, this, cx| {
                     this.draft.alert_notify_offline = v;
                     cx.notify();
@@ -1612,7 +1619,7 @@ impl SettingsView {
             .child(Self::render_toggle(
                 draft.alert_macos_notification,
                 crate::t!("settings.notify_macos"),
-                "发生过载或故障时，调用 macOS 系统通知中心弹出横幅提醒与提示音。",
+                &crate::t!("settings.notify_macos_desc"),
                 |v, this, cx| {
                     this.draft.alert_macos_notification = v;
                     cx.notify();
@@ -1655,7 +1662,7 @@ impl SettingsView {
                                             .border_color(DarkTechTheme::border_active())
                                             .text_size(px(10.5))
                                             .text_color(DarkTechTheme::text_accent())
-                                            .child("🤖 飞书群自定义机器人 (已适配交互卡片)")
+                                            .child(crate::t!("settings.webhook_feishu_card"))
                                     } else {
                                         div()
                                             .px_2()
@@ -1666,7 +1673,7 @@ impl SettingsView {
                                             .border_color(DarkTechTheme::border_muted())
                                             .text_size(px(10.5))
                                             .text_color(DarkTechTheme::text_secondary())
-                                            .child("🌐 通用 Webhook (JSON)")
+                                            .child(crate::t!("settings.webhook_generic"))
                                     }
                                 } else {
                                     div()
@@ -1676,7 +1683,7 @@ impl SettingsView {
                                         .bg(DarkTechTheme::bg_input())
                                         .text_size(px(10.5))
                                         .text_color(DarkTechTheme::text_muted())
-                                        .child("未启用")
+                                        .child(crate::t!("settings.webhook_disabled"))
                                 },
                             ),
                     )
@@ -1708,7 +1715,7 @@ impl SettingsView {
                                     .child(if let Some(ref url) = draft.alert_webhook_url {
                                         url.clone()
                                     } else {
-                                        "https://open.feishu.cn/open-apis/bot/v2/hook/... (支持直接从剪贴板粘贴)".to_string()
+                                        crate::t!("settings.webhook_placeholder").to_string()
                                     }),
                             ),
                     )
@@ -1740,15 +1747,15 @@ impl SettingsView {
                                             let trimmed = text.trim();
                                             if !trimmed.is_empty() {
                                                 this.draft.alert_webhook_url = Some(trimmed.to_string());
-                                                this.status_message = Some(("已从剪贴板粘贴 Webhook 地址".to_string(), true));
+                                                this.status_message = Some((crate::t!("settings.status_webhook_pasted").to_string(), true));
                                                 cx.notify();
                                                 return;
                                             }
                                         }
-                                        this.status_message = Some(("剪贴板中未发现有效文本内容".to_string(), false));
+                                        this.status_message = Some((crate::t!("settings.status_webhook_empty_clipboard").to_string(), false));
                                         cx.notify();
                                     }))
-                                    .child("📋 从剪贴板粘贴 Webhook"),
+                                    .child(crate::t!("settings.btn_paste_webhook")),
                             )
                             // 填入飞书机器人示例
                             .child(
@@ -1766,10 +1773,10 @@ impl SettingsView {
                                     .hover(|s| s.border_color(DarkTechTheme::border_active()).text_color(DarkTechTheme::text_accent()))
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.draft.alert_webhook_url = Some("https://open.feishu.cn/open-apis/bot/v2/hook/demo-test".to_string());
-                                        this.status_message = Some(("已填入飞书自定义机器人 Webhook 示例".to_string(), true));
+                                        this.status_message = Some((crate::t!("settings.status_webhook_pasted").to_string(), true));
                                         cx.notify();
                                     }))
-                                    .child("🤖 填入飞书示例"),
+                                    .child(crate::t!("settings.btn_fill_feishu")),
                             )
                             // 清空 Webhook
                             .child(
@@ -1787,10 +1794,10 @@ impl SettingsView {
                                     .hover(|s| s.text_color(DarkTechTheme::status_crit()))
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.draft.alert_webhook_url = None;
-                                        this.status_message = Some(("已清除 Webhook 地址".to_string(), true));
+                                        this.status_message = Some((crate::t!("settings.status_webhook_cleared").to_string(), true));
                                         cx.notify();
                                     }))
-                                    .child("清空 Webhook"),
+                                    .child(crate::t!("settings.btn_clear_webhook")),
                             )
                             // 测试飞书/Webhook 消息发送
                             .child(
@@ -1807,7 +1814,7 @@ impl SettingsView {
                                     .hover(|s| s.bg(DarkTechTheme::accent_cyan()))
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         let Some(ref url) = this.draft.alert_webhook_url else {
-                                            this.status_message = Some(("请先配置或粘贴 Webhook 地址再进行测试".to_string(), false));
+                                            this.status_message = Some((crate::t!("settings.status_webhook_need_url").to_string(), false));
                                             cx.notify();
                                             return;
                                         };
@@ -1817,7 +1824,7 @@ impl SettingsView {
                                             host_id: "test-node-01".to_string(),
                                             host_name: "ReDash-Prod-Server".to_string(),
                                             alert_type: "cpu".to_string(),
-                                            message: "这是一条来自 ReDash 桌面运维工作台的告警测试通知，指标监控与机器人通道运转正常。".to_string(),
+                                            message: crate::t!("settings.status_webhook_test_msg").to_string(),
                                             timestamp: std::time::SystemTime::now()
                                                 .duration_since(std::time::UNIX_EPOCH)
                                                 .unwrap_or_default()
@@ -1828,11 +1835,12 @@ impl SettingsView {
                                             let _ = this.update(cx, |this, cx| {
                                                 match res {
                                                     Ok(()) => {
-                                                        let target = if is_feishu { "飞书群机器人" } else { "Webhook" };
-                                                        this.status_message = Some((format!("{} 测试消息推送成功！", target), true));
+                                                        let target = if is_feishu { crate::t!("settings.feishu_bot_label") } else { "Webhook" };
+                                                        this.status_message = Some((crate::t_fmt!("settings.status_webhook_success", target = target), true));
                                                     }
                                                     Err(err) => {
-                                                        this.status_message = Some((format!("Webhook 推送失败: {:#}", err), false));
+                                                        let err_str = format!("{:#}", err);
+                                                        this.status_message = Some((crate::t_fmt!("settings.status_webhook_failed", error = err_str), false));
                                                     }
                                                 }
                                                 cx.notify();
@@ -1847,7 +1855,7 @@ impl SettingsView {
                                             .items_center()
                                             .gap_1p5()
                                             .child(Icon::play().with_size(px(11.0)))
-                                            .child("测试 Webhook/飞书推送"),
+                                            .child(crate::t!("settings.btn_test_webhook")),
                                     ),
                             )
                             // 测试原生系统桌面通知
@@ -1867,15 +1875,15 @@ impl SettingsView {
                                     .on_click(cx.listener(|_this, _, _, cx| {
                                         cx.spawn(async move |this, cx| {
                                             let res = AlertDispatcher::send_macos_notification(
-                                                "ReDash 告警测试",
-                                                "这是一个自动化告警测试通知，指标监控系统运转正常。",
+                                                &crate::t!("settings.status_macos_notify_title"),
+                                                &crate::t!("settings.status_macos_notify_body"),
                                             )
                                             .await;
                                             let _ = this.update(cx, |this, cx| {
                                                 if res.is_ok() {
-                                                    this.status_message = Some(("已发送系统桌面测试通知".to_string(), true));
+                                                    this.status_message = Some((crate::t!("settings.status_macos_notify_success").to_string(), true));
                                                 } else {
-                                                    this.status_message = Some(("发送系统桌面测试通知失败".to_string(), false));
+                                                    this.status_message = Some((crate::t!("settings.status_macos_notify_failed").to_string(), false));
                                                 }
                                                 cx.notify();
                                             });
@@ -1920,7 +1928,7 @@ impl SettingsView {
                         div()
                             .text_size(px(11.5))
                             .text_color(DarkTechTheme::text_muted())
-                            .child("查看本地配置文件路径、凭据安全隔离机制与数据备份恢复。"),
+                            .child(crate::t!("settings.storage_desc")),
                     ),
             )
             // 1. 本地存储路径卡片
@@ -1954,7 +1962,7 @@ impl SettingsView {
                                         div()
                                             .text_size(px(11.0))
                                             .text_color(DarkTechTheme::text_muted())
-                                            .child("服务器主机配置文件 (hosts.json)"),
+                                            .child(crate::t!("settings.storage_hosts_title")),
                                     ),
                             ),
                             )
@@ -1990,7 +1998,7 @@ impl SettingsView {
                                         div()
                                             .text_size(px(11.0))
                                             .text_color(DarkTechTheme::text_muted())
-                                            .child("系统首选项配置文件 (settings.json)"),
+                                            .child(crate::t!("settings.storage_settings_title")),
                                     ),
                             ),
                             )
@@ -2032,14 +2040,14 @@ impl SettingsView {
                                     .text_size(px(12.5))
                                     .font_weight(FontWeight::BOLD)
                                     .text_color(DarkTechTheme::status_online())
-                                    .child("操作系统级密钥安全保管库 (Credential Vault)"),
+                                    .child(crate::t!("settings.vault_title")),
                             ),
                     )
                     .child(
                         div()
                             .text_size(px(11.0))
                             .text_color(DarkTechTheme::text_secondary())
-                            .child("服务器 SSH 密码及私钥口令默认托管于系统底层安全钥匙串（macOS Keychain / Linux Secret Service / Windows Credential Manager），杜绝在磁盘明文存储任何核心鉴权口令。"),
+                            .child(crate::t!("settings.vault_desc")),
                     ),
             )
             // 3. 运维操作按钮群
@@ -2058,7 +2066,7 @@ impl SettingsView {
                             .text_size(px(12.5))
                             .font_weight(FontWeight::MEDIUM)
                             .text_color(DarkTechTheme::text_primary())
-                            .child("配置备份与数据维护 (Backup & Maintenance)"),
+                            .child(crate::t!("settings.backup_header")),
                     )
                     .child(
                         div()
@@ -2245,7 +2253,7 @@ impl SettingsView {
                             .text_size(px(12.5))
                             .font_weight(FontWeight::MEDIUM)
                             .text_color(DarkTechTheme::text_primary())
-                            .child("底层架构与驱动引擎 (Architecture & Tech Stack)"),
+                            .child(crate::t!("settings.about_tech_title")),
                     )
                     .child(
                         div()
@@ -2367,7 +2375,7 @@ impl SettingsView {
                             .text_size(px(12.5))
                             .font_weight(FontWeight::MEDIUM)
                             .text_color(DarkTechTheme::text_primary())
-                            .child("本地主机运行环境 (Host Environment)"),
+                            .child(crate::t!("settings.about_host_env")),
                     )
                     .child(
                         div()
@@ -2383,7 +2391,7 @@ impl SettingsView {
                                     .child(
                                         div()
                                             .text_color(DarkTechTheme::text_muted())
-                                            .child("操作系统 / 平台:"),
+                                            .child(crate::t!("settings.about_os_platform")),
                                     )
                                     .child(
                                         div()
@@ -2401,7 +2409,7 @@ impl SettingsView {
                                     .child(
                                         div()
                                             .text_color(DarkTechTheme::text_muted())
-                                            .child("CPU 架构 / 目标指令集:"),
+                                            .child(crate::t!("settings.about_cpu_arch")),
                                     )
                                     .child(
                                         div()
@@ -2419,7 +2427,7 @@ impl SettingsView {
                                     .child(
                                         div()
                                             .text_color(DarkTechTheme::text_muted())
-                                            .child("协议支持:"),
+                                            .child(crate::t!("settings.about_protocols")),
                                     )
                                     .child(
                                         div()

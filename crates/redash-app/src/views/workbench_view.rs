@@ -76,7 +76,7 @@ impl WorkbenchView {
             let _ = term_entity.update(cx, |view, cx| match result {
                 Ok(pty) => view.attach_pty(Arc::new(pty), cx),
                 Err(error) => {
-                    view.connection_error = Some(format!("终端连接失败：{error:#}"));
+                    view.connection_error = Some(crate::t_fmt!("workbench.term_conn_failed", error = format!("{error:#}")));
                     cx.notify();
                 }
             });
@@ -176,7 +176,7 @@ impl WorkbenchView {
             let _ = term_entity.update(cx, |view, cx| match result {
                 Ok(pty) => view.attach_pty(Arc::new(pty), cx),
                 Err(error) => {
-                    view.connection_error = Some(format!("终端连接失败：{error:#}"));
+                    view.connection_error = Some(crate::t_fmt!("workbench.term_conn_failed", error = format!("{error:#}")));
                     cx.notify();
                 }
             });
@@ -207,7 +207,7 @@ impl WorkbenchView {
             let _ = terminal.update(cx, |view, cx| match result {
                 Ok(pty) => view.attach_pty(Arc::new(pty), cx),
                 Err(error) => {
-                    view.connection_error = Some(format!("终端连接失败：{error:#}"));
+                    view.connection_error = Some(crate::t_fmt!("workbench.term_conn_failed", error = format!("{error:#}")));
                     cx.notify();
                 }
             });
@@ -819,13 +819,13 @@ impl Render for WorkbenchView {
                 let net = if m.net_rates_available {
                     format!("↓ {:.0}KB/s  ↑ {:.0}KB/s", rx_kb, tx_kb)
                 } else {
-                    "网络速率：未采集".into()
+                    crate::t!("workbench.net_rate_uncollected").into()
                 };
                 let (rtt_t, rtt_c) = match m.rtt_ms {
                     Some(ms) if ms < 80 => (format!("{}ms", ms), DarkTechTheme::accent_emerald()),
                     Some(ms) if ms < 250 => (format!("{}ms", ms), DarkTechTheme::status_warn()),
                     Some(ms) => (format!("{}ms", ms), DarkTechTheme::status_crit()),
-                    None => ("未知".to_string(), DarkTechTheme::accent_cyan()),
+                    None => (crate::t!("workbench.unknown").to_string(), DarkTechTheme::accent_cyan()),
                 };
                 (
                     cpu,
@@ -839,9 +839,9 @@ impl Render for WorkbenchView {
                 )
             } else {
                 (
-                    "未知".to_string(),
-                    "未采集".to_string(),
-                    "未采集".to_string(),
+                    crate::t!("workbench.unknown").to_string(),
+                    crate::t!("workbench.uncollected").to_string(),
+                    crate::t!("workbench.uncollected").to_string(),
                     false,
                     0.0,
                     0.0,
@@ -856,9 +856,9 @@ impl Render for WorkbenchView {
 
         div()
             .id("workbench_root")
-            .child(div().id("reconnect_terminal").px_2().text_sm().text_color(DarkTechTheme::accent_cyan()).cursor_pointer().child("重新连接当前终端")
+            .child(div().id("reconnect_terminal").px_2().text_sm().text_color(DarkTechTheme::accent_cyan()).cursor_pointer().child(crate::t!("workbench.reconnect_terminal"))
                 .on_click(cx.listener(|this, _, window, cx| this.reconnect_terminal(window, cx))))
-            .children(self.probe_error.as_ref().map(|error| div().p_2().text_sm().text_color(DarkTechTheme::status_warn()).child(format!("采集失败，以下为上次数据：{error}"))))
+            .children(self.probe_error.as_ref().map(|error| div().p_2().text_sm().text_color(DarkTechTheme::status_warn()).child(crate::t_fmt!("workbench.probe_error_last_data", error = error.to_string()))))
             .children(self.metrics.as_ref().filter(|m| !m.collection_errors.is_empty()).map(|m| div().px_2().text_xs().text_color(DarkTechTheme::text_muted()).child(m.collection_errors.join(" · "))))
             .size_full()
             .bg(DarkTechTheme::bg_root())
@@ -1179,7 +1179,7 @@ impl Render for WorkbenchView {
                                     .justify_center()
                                     .text_size(px(12.0))
                                     .text_color(DarkTechTheme::text_muted())
-                                    .child("正在建立 SFTP 连接...")
+                                    .child(crate::t!("workbench.sftp_connecting"))
                                     .into_any_element()
                             }
                         }

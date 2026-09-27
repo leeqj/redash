@@ -7,7 +7,7 @@ use crate::components::icon::Icon;
 use crate::components::micro_meter::MicroMeter;
 use crate::components::status_led::{HostLedState, StatusLed};
 use crate::components::theme::DarkTechTheme;
-use crate::t;
+use crate::{t, t_fmt};
 use redash_core::config::{HostConfig, HostId, MissingCredential, TargetOs};
 use redash_core::probe::NodeMetrics;
 
@@ -23,9 +23,9 @@ impl ProbeFailure {
         let needs_credentials = error.downcast_ref::<MissingCredential>().is_some();
         Self {
             message: if needs_credentials {
-                "登录凭据缺失，请重新保存"
+                t!("fleet.needs_credentials")
             } else {
-                "连接或采集失败，请查看详情"
+                t!("fleet.probe_failed")
             },
             details: format!("{error:#}"),
             needs_credentials,
@@ -764,7 +764,7 @@ impl Render for FleetView {
                                 rgba(0xef444422),
                             ),
                             None if is_online => (
-                                "未知".to_string(),
+                                t!("fleet.status_unknown").to_string(),
                                 DarkTechTheme::accent_cyan(),
                                 rgba(0x06b6d422),
                             ),
@@ -1019,8 +1019,8 @@ impl Render for FleetView {
                                             .text_size(px(10.0)).text_color(DarkTechTheme::status_warn())
                                             .child(failure.message)
                                             .child(div().text_color(DarkTechTheme::text_muted()).child(
-                                                metric.map(|m| format!("上次采集成功：{} 秒前", now.saturating_sub(m.timestamp)))
-                                                    .unwrap_or_else(|| "尚无成功采集".into())
+                                                metric.map(|m| t_fmt!("fleet.last_probe_success", secs = now.saturating_sub(m.timestamp)))
+                                                    .unwrap_or_else(|| t!("fleet.no_probe_yet").into())
                                             ))
                                             .child(div().flex().gap_3()
                                                 .when(failure.needs_credentials, |row| row.child(
@@ -1031,15 +1031,15 @@ impl Render for FleetView {
                                                                 callback(FleetAction::EditHost(host.clone()), window, cx);
                                                             }
                                                         }))
-                                                        .child("编辑凭据")
+                                                        .child(t!("fleet.edit_credentials"))
                                                 ))
                                                 .child(div().id(ElementId::Name(format!("probe_details_{}", host_id.0).into()))
                                                     .cursor_pointer().text_color(DarkTechTheme::text_secondary())
                                                     .on_click(cx.listener(move |_, _, window, cx| {
-                                                        let answer = window.prompt(PromptLevel::Warning, "连接或采集失败", Some(&details), &["关闭"], cx);
+                                                        let answer = window.prompt(PromptLevel::Warning, t!("fleet.probe_failed_title"), Some(&details), &[t!("common.close")], cx);
                                                         cx.spawn(async move |_, _| { let _ = answer.await; }).detach();
                                                     }))
-                                                    .child("详情")))
+                                                    .child(t!("common.details"))))
                                     }))
                                     // Row 3: Precision Telemetry MicroMeters & Interactive Sparkline HUD
                                     .child({
@@ -1081,7 +1081,7 @@ impl Render for FleetView {
                                                                     this.set_card_metric(&host_id, CardMetricType::Cpu, cx);
                                                                 }
                                                             }))
-                                                            .child(if metric.is_some() { MicroMeter::cpu(cpu_val).into_any_element() } else { div().text_sm().text_color(DarkTechTheme::text_secondary()).child("CPU：未采集").into_any_element() }),
+                                                            .child(if metric.is_some() { MicroMeter::cpu(cpu_val).into_any_element() } else { div().text_sm().text_color(DarkTechTheme::text_secondary()).child(t!("fleet.cpu_not_collected")).into_any_element() }),
                                                     )
                                                     // RAM row
                                                     .child(
@@ -1106,7 +1106,7 @@ impl Render for FleetView {
                                                             .child(if metric.is_some() {
                                                                 MicroMeter::memory(mem_used_gb, mem_total_gb, mem_val).into_any_element()
                                                             } else {
-                                                                div().text_sm().text_color(DarkTechTheme::text_secondary()).child("内存：未采集").into_any_element()
+                                                                div().text_sm().text_color(DarkTechTheme::text_secondary()).child(t!("fleet.mem_not_collected")).into_any_element()
                                                             }),
                                                     )
                                                     // DISK row
@@ -1129,7 +1129,7 @@ impl Render for FleetView {
                                                                     this.set_card_metric(&host_id, CardMetricType::Disk, cx);
                                                                 }
                                                             }))
-                                                            .child(if metric.is_some_and(|m| !m.disks.is_empty()) { MicroMeter::disk(disk_val).into_any_element() } else { div().text_sm().text_color(DarkTechTheme::text_secondary()).child("磁盘：未采集").into_any_element() }),
+                                                            .child(if metric.is_some_and(|m| !m.disks.is_empty()) { MicroMeter::disk(disk_val).into_any_element() } else { div().text_sm().text_color(DarkTechTheme::text_secondary()).child(t!("fleet.disk_not_collected")).into_any_element() }),
                                                     ),
                                             )
                                             // Right Column: Interactive Sparkline HUD Box
@@ -1305,17 +1305,17 @@ impl Render for FleetView {
                                                             .min_h(px(0.0))
                                                             .child(match active_metric {
                                                                 CardMetricType::Cpu => SparklineChart::tech(cpu_history)
-                                                                    .with_value(if metric.is_some() { format!("{:.1}%", cpu_val) } else { "未采集".into() })
+                                                                    .with_value(if metric.is_some() { format!("{:.1}%", cpu_val) } else { t!("fleet.not_collected").into() })
                                                                     .with_scale_labels(true)
                                                                     .with_range(true)
                                                                     .with_pulse_dot(true),
                                                                 CardMetricType::Memory => SparklineChart::new(mem_history, DarkTechTheme::accent_indigo())
-                                                                    .with_value(if metric.is_some() { format!("{:.1}G ({:.0}%)", mem_used_gb, mem_val) } else { "未采集".into() })
+                                                                    .with_value(if metric.is_some() { format!("{:.1}G ({:.0}%)", mem_used_gb, mem_val) } else { t!("fleet.not_collected").into() })
                                                                     .with_scale_labels(true)
                                                                     .with_range(true)
                                                                     .with_pulse_dot(true),
                                                                 CardMetricType::Disk => SparklineChart::new(disk_history, DarkTechTheme::status_warn())
-                                                                    .with_value(if metric.is_some_and(|m| !m.disks.is_empty()) { format!("{:.0}%", disk_val) } else { "未采集".into() })
+                                                                    .with_value(if metric.is_some_and(|m| !m.disks.is_empty()) { format!("{:.0}%", disk_val) } else { t!("fleet.not_collected").into() })
                                                                     .with_scale_labels(true)
                                                                     .with_range(true)
                                                                     .with_pulse_dot(true),
@@ -1324,7 +1324,7 @@ impl Render for FleetView {
                                                                     SparklineSeries::new("RAM", mem_history, DarkTechTheme::accent_indigo()),
                                                                     SparklineSeries::new("DISK", disk_history, DarkTechTheme::status_warn()),
                                                                 ])
-                                                                .with_value(if metric.is_some() { format!("{:.0}%/{:.0}%/{:.0}%", cpu_val, mem_val, disk_val) } else { "未采集".into() })
+                                                                .with_value(if metric.is_some() { format!("{:.0}%/{:.0}%/{:.0}%", cpu_val, mem_val, disk_val) } else { t!("fleet.not_collected").into() })
                                                                 .with_scale_labels(true)
                                                                 .with_pulse_dot(true),
                                                             }),
@@ -1332,7 +1332,7 @@ impl Render for FleetView {
                                             )
                                     })
                                     .child(div().text_xs().text_color(DarkTechTheme::text_muted())
-                                        .child(if metric.is_some_and(|m| m.net_available) { format!("接口累计流量: {net_used_gb:.1} GiB（非月度用量）") } else { "接口累计流量：未采集".into() })),
+                                        .child(if metric.is_some_and(|m| m.net_available) { t_fmt!("fleet.traffic_total", gb = format!("{net_used_gb:.1}")) } else { t!("fleet.traffic_not_collected").into() })),
                             )
                             // Row 4: Card Action Toolbar (Terminal, SFTP, Edit, Clone, Move Up, Move Down, Delete)
                             .child(
@@ -1593,7 +1593,7 @@ impl Render for FleetView {
                                 .text_size(px(13.0))
                                 .text_color(DarkTechTheme::text_primary())
                                 .font_weight(FontWeight::BOLD)
-                                .child(format!("已选中 {} 台服务器", selected_count)),
+                                .child(t_fmt!("fleet.selected_hosts", count = selected_count)),
                         )
                         .child(
                             div()
@@ -1639,7 +1639,7 @@ impl Render for FleetView {
                                                         .with_size(px(12.0))
                                                         .with_color(DarkTechTheme::text_primary()),
                                                 )
-                                                .child(format!("批量删除 (已选 {} 台)", selected_count)),
+                                                .child(t_fmt!("fleet.batch_delete_selected", count = selected_count)),
                                         )
                                 })
                                 // Batch Run Command Button

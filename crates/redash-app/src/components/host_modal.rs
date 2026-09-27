@@ -179,7 +179,7 @@ impl HostModal {
         self.credential_missing = missing;
         if missing {
             self.error_msg =
-                Some("已保存的登录凭据不存在，请重新填写密码或私钥口令，也可更改认证方式。".into());
+                Some(crate::t!("host.auth_missing_cred").into());
             self.active_field = match self.auth_type {
                 AuthTypeSelection::Password => HostModalField::Password,
                 AuthTypeSelection::PrivateKey => HostModalField::Passphrase,
@@ -351,7 +351,7 @@ impl HostModal {
             return Err(crate::t!("host.val_name_empty").to_string());
         }
         if trimmed_name.chars().count() > 64 {
-            return Err("服务器名称长度不能超过 64 个字符".to_string());
+            return Err(crate::t!("host.val_name_too_long").to_string());
         }
 
         let trimmed_hostname = self.hostname.trim();
@@ -365,7 +365,7 @@ impl HostModal {
             .parse::<u16>()
             .map_err(|_| crate::t!("host.val_port_invalid").to_string())?;
         if port_num == 0 {
-            return Err("端口不能为 0".to_string());
+            return Err(crate::t!("host.val_port_zero").to_string());
         }
 
         let trimmed_user = self.user.trim();
@@ -384,7 +384,7 @@ impl HostModal {
         let auth = match self.auth_type {
             AuthTypeSelection::Password => {
                 if self.credential_missing && self.password.is_empty() {
-                    return Err("登录密码缺失，请重新填写密码后保存。".into());
+                    return Err(crate::t!("host.val_password_missing").into());
                 }
                 if self.password.is_empty()
                     && !matches!(&self.mode, HostModalMode::Edit(host) if matches!(host.auth, AuthMethod::Password { .. }))
@@ -437,7 +437,7 @@ impl HostModal {
                 };
                 if self.credential_missing && self.passphrase.is_empty() && passphrase_id.is_some()
                 {
-                    return Err("私钥口令缺失，请重新填写口令后保存。".into());
+                    return Err(crate::t!("host.val_passphrase_missing").into());
                 }
                 AuthMethod::PrivateKey {
                     key_path: PathBuf::from(trimmed_key),
@@ -480,7 +480,7 @@ impl HostModal {
                 .parse::<u8>()
                 .map_err(|_| crate::t!("host.val_reset_day_invalid").to_string())?;
             if !(1..=31).contains(&val) {
-                return Err("流量重置日必须在 1~31 之间".to_string());
+                return Err(crate::t!("host.val_reset_day").to_string());
             }
             Some(val)
         };
@@ -927,7 +927,7 @@ impl Render for HostModal {
                                 div()
                                     .text_size(px(10.0))
                                     .text_color(DarkTechTheme::text_muted())
-                                    .child("快速分组:"),
+                                    .child(crate::t!("host.quick_group")),
                             )
                             .children(
                                 ["Production", "Staging", "Database", "Default"]
@@ -1363,7 +1363,7 @@ impl Render for HostModal {
                                                     this.show_password = !this.show_password;
                                                     cx.notify();
                                                 }))
-                                                .child(if show { "隐藏密码" } else { "显示密码" }),
+                                                .child(if show { crate::t!("host.hide_password") } else { crate::t!("host.show_password") }),
                                         ),
                                 )
                                 .child(self.render_input_box(
@@ -1471,14 +1471,14 @@ impl Render for HostModal {
                                                             this.show_passphrase = !this.show_passphrase;
                                                             cx.notify();
                                                         }))
-                                                        .child(if show_pass { "隐藏口令" } else { "显示口令" }),
+                                                        .child(if show_pass { crate::t!("host.hide_passphrase") } else { crate::t!("host.show_passphrase") }),
                                                 ),
                                         )
                                         .child(self.render_input_box(
                                             HostModalField::Passphrase,
                                             &self.passphrase,
                                             !show_pass,
-                                            "私钥无口令请留空",
+                                            crate::t!("host.passphrase_empty_hint"),
                                             cx,
                                         )),
                                 )
@@ -1501,7 +1501,7 @@ impl Render for HostModal {
                                     div()
                                         .text_size(px(11.0))
                                         .text_color(DarkTechTheme::accent_emerald())
-                                        .child("将自动使用本地系统 SSH Agent ($SSH_AUTH_SOCK) 凭据连接"),
+                                        .child(crate::t!("host.agent_hint")),
                                 )
                         }
                     })
@@ -1517,17 +1517,17 @@ impl Render for HostModal {
                                     .text_size(px(11.0))
                                     .text_color(DarkTechTheme::text_secondary())
                                     .font_weight(FontWeight::BOLD)
-                                    .child("分类标签 (Tags)"),
+                                    .child(crate::t!("host.tags_label")),
                             )
                             .child(self.render_input_box(
                                 HostModalField::Tags,
                                 &self.tags_input,
                                 false,
-                                "例如: web, prod, nginx (以逗号分隔)",
+                                crate::t!("host.tags_placeholder"),
                                 cx,
                             )),
                     )
-                    // 9. Row 6: VPS 月度流量额度监控
+                    // 9. Row 6: VPS Bandwidth quota
                     .child(
                         div()
                             .w_full()
@@ -1551,7 +1551,7 @@ impl Render for HostModal {
                                         HostModalField::BandwidthLimit,
                                         &self.bandwidth_limit_gb,
                                         false,
-                                        "例如: 1000 (代表 1TB)",
+                                        crate::t!("host.quota_placeholder"),
                                         cx,
                                     )),
                             )
@@ -1661,7 +1661,7 @@ impl Render for HostModal {
                                             div()
                                                 .text_size(px(10.0))
                                                 .text_color(DarkTechTheme::text_muted())
-                                                .child("Tab 循环切输入框 | Enter 保存 | Esc 取消"),
+                                                .child(crate::t!("host.modal_shortcuts")),
                                         )
                                     }),
                             )

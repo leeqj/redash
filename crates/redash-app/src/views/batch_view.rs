@@ -261,11 +261,11 @@ impl BatchView {
         for exec in self.active_executions.values_mut() {
             if exec.state == TaskState::Running || exec.state == TaskState::Pending {
                 exec.state = TaskState::Failed;
-                exec.error = Some("用户取消执行".to_string());
+                exec.error = Some(crate::t!("batch.cancelled_user").to_string());
             }
         }
         self.toast_message =
-            Some("已停止本地任务并请求关闭远端信道；脱离会话的进程可能仍在运行".to_string());
+            Some(crate::t!("batch.cancelled_status").to_string());
         cx.notify();
     }
 
@@ -666,7 +666,7 @@ impl Render for BatchView {
                                             .items_center()
                                             .gap_1()
                                             .child(Icon::zap().with_size(px(10.0)).with_color(rgb(0xf0f9ff)))
-                                            .child(format!("正在执行: {}", running_count)),
+                                            .child(crate::t_fmt!("batch.running_count", count = running_count)),
                                     )
                                 )
                             })
@@ -675,7 +675,7 @@ impl Render for BatchView {
                                     div()
                                         .px_2().py_1().bg(rgb(0x1e2030)).border_1().border_color(rgb(0x313244)).rounded_md().text_size(px(10.5))
                                         .text_color(rgb(0xa6adc8))
-                                        .child(format!("等待中: {}", pending_count))
+                                        .child(crate::t_fmt!("batch.pending_count", count = pending_count))
                                 )
                             })
                             .when(success_count > 0, |d| {
@@ -683,7 +683,7 @@ impl Render for BatchView {
                                     div()
                                         .px_2().py_1().bg(rgb(0x064e3b)).rounded_md().text_size(px(10.5))
                                         .text_color(rgb(0x6ee7b7)).font_weight(FontWeight::BOLD)
-                                        .child(format!("成功: {}", success_count))
+                                        .child(crate::t_fmt!("batch.success_count", count = success_count))
                                 )
                             })
                             .when(failed_count > 0, |d| {
@@ -693,7 +693,7 @@ impl Render for BatchView {
                                         .text_color(rgb(0xfca5a5)).font_weight(FontWeight::BOLD)
                                         .flex().flex_row().items_center().gap_1()
                                         .child(Icon::close().with_size(px(10.0)).with_color(rgb(0xfca5a5)))
-                                        .child(format!("失败: {}", failed_count))
+                                        .child(crate::t_fmt!("batch.failed_count", count = failed_count))
                                 )
                             })
                             // Total duration badge
@@ -704,7 +704,7 @@ impl Render for BatchView {
                                         .text_color(rgb(0x38bdf8))
                                         .flex().flex_row().items_center().gap_1()
                                         .child(Icon::clock().with_size(px(11.0)).with_color(rgb(0x38bdf8)))
-                                        .child(format!("总耗时: {}", format_duration_detailed(job.total_duration_ms, job.total_duration_us)))
+                                        .child(crate::t_fmt!("batch.total_duration", duration = format_duration_detailed(job.total_duration_ms, job.total_duration_us)))
                                 )
                             })
                             // View Mode Toggle
@@ -840,20 +840,20 @@ impl Render for BatchView {
                                             .text_size(px(11.5))
                                             .font_weight(FontWeight::BOLD)
                                             .text_color(rgb(0x94a3b8))
-                                            .child("SHELL COMMAND (自由交互键入)")
+                                            .child(crate::t!("batch.shell_header"))
                                     )
                                     .child(
                                         div()
                                             .text_size(px(10.0))
                                             .text_color(rgb(0x475569))
-                                            .child("· 焦点已就绪，直接打字输入，支持 Enter 执行与 Cmd+V 粘贴")
+                                            .child(crate::t!("batch.shell_hint"))
                                     )
                             )
                             .child(
                                 div()
                                     .text_size(px(10.5))
                                     .text_color(rgb(0x64748b))
-                                    .child(format!("字符数: {} | 光标位置: {}", total_chars, safe_cursor))
+                                    .child(crate::t_fmt!("batch.shell_stats", chars = total_chars, cursor = safe_cursor))
                             )
                     )
                     // Interactive Command Line Input Box
@@ -1008,7 +1008,16 @@ impl Render for BatchView {
                                             .on_click(cx.listener(move |this, _, window, cx| {
                                                 this.apply_preset(cmd_str, window, cx);
                                             }))
-                                            .child(preset.label)
+                                            .child(match preset.label {
+                                                "系统概要" => crate::t!("batch.preset_sys_summary"),
+                                                "磁盘空间" => crate::t!("batch.preset_disk_space"),
+                                                "磁盘深度清理" => crate::t!("batch.preset_disk_clean"),
+                                                "容器健康检查" => crate::t!("batch.preset_docker_health"),
+                                                "Top 资源消耗" => crate::t!("batch.preset_top_proc"),
+                                                "监听端口" => crate::t!("batch.preset_ports"),
+                                                "内存诊断" => crate::t!("batch.preset_memory"),
+                                                other => other,
+                                            })
                                     }))
                             )
                     )
@@ -1030,7 +1039,7 @@ impl Render for BatchView {
                                         div()
                                             .text_size(px(11.0))
                                             .text_color(rgb(0x64748b))
-                                            .child("超时设定: 30 秒 | 异步 PTY 高性能并发引擎 | 支持管道符与复合命令")
+                                            .child(crate::t!("batch.engine_banner"))
                                     )
                                     .when(self.last_result.is_some() || !self.active_executions.is_empty(), |d| {
                                         d.child(
@@ -1144,7 +1153,7 @@ impl Render for BatchView {
                                     .text_size(px(11.0))
                                     .font_weight(FontWeight::BOLD)
                                     .text_color(rgb(0x64748b))
-                                    .child("结果筛选:")
+                                    .child(crate::t!("batch.filter_label"))
                             )
                             .child(
                                 div()
@@ -1156,7 +1165,7 @@ impl Render for BatchView {
                                         this.filter = ResultFilter::All;
                                         cx.notify();
                                     }))
-                                    .child("全部显示")
+                                    .child(crate::t!("batch.filter_all"))
                             )
                             .child(
                                 div()
@@ -1168,7 +1177,7 @@ impl Render for BatchView {
                                         this.filter = ResultFilter::SuccessOnly;
                                         cx.notify();
                                     }))
-                                    .child("仅成功")
+                                    .child(crate::t!("batch.filter_success"))
                             )
                             .child(
                                 div()
@@ -1180,14 +1189,14 @@ impl Render for BatchView {
                                         this.filter = ResultFilter::FailedOnly;
                                         cx.notify();
                                     }))
-                                    .child("仅失败")
+                                    .child(crate::t!("batch.filter_failed"))
                             )
                     )
                     .child(
                         div()
                             .text_size(px(11.0))
                             .text_color(rgb(0x475569))
-                            .child(format!("显示结果: {} 项", display_items.len()))
+                            .child(crate::t_fmt!("batch.filter_display_count", count = display_items.len()))
                     )
             )
             // Execution Results Container
@@ -1222,7 +1231,7 @@ impl Render for BatchView {
                                     div()
                                         .text_size(px(12.5))
                                         .text_color(rgb(0x64748b))
-                                        .child("就绪中 · 点击上方预设或输入 Shell 命令后按 Enter 即可启动并发任务")
+                                        .child(crate::t!("batch.ready_hint"))
                                 )
                         } else if current_view_mode == BatchViewMode::SplitGrid {
                             // Split-screen comparison (2-Column Grid)
@@ -1270,21 +1279,21 @@ impl BatchView {
                 rgb(0x1e2030),
                 rgb(0x313244),
                 rgb(0xa6adc8),
-                "等待中 (Pending)",
+                crate::t!("batch.state_pending"),
             ),
             TaskState::Running => (
                 rgb(0x0c4a6e),
                 rgb(0x38bdf8),
                 rgb(0x38bdf8),
-                "执行中 (Running)",
+                crate::t!("batch.state_running"),
             ),
             TaskState::Success => (
                 rgb(0x064e3b),
                 rgb(0x10b981),
                 rgb(0x34d399),
-                "成功 (Success)",
+                crate::t!("batch.state_success"),
             ),
-            TaskState::Failed => (rgb(0x7f1d1d), rgb(0xef4444), rgb(0xf87171), "失败 (Failed)"),
+            TaskState::Failed => (rgb(0x7f1d1d), rgb(0xef4444), rgb(0xf87171), crate::t!("batch.state_failed")),
         };
 
         let duration_display = format_duration_detailed(res.duration_ms, res.duration_us);
@@ -1296,11 +1305,11 @@ impl BatchView {
         } else if let Some(err) = &res.error {
             err.clone()
         } else if res.state == TaskState::Running {
-            "正在向目标节点发送指令并流式接收输出...".to_string()
+            crate::t!("batch.streaming_output").to_string()
         } else if res.state == TaskState::Pending {
-            "排队等待网络连接与执行会话分配...".to_string()
+            crate::t!("batch.queued_connecting").to_string()
         } else {
-            "(命令执行完毕，标准输出与标准错误为空)".to_string()
+            crate::t!("batch.empty_output").to_string()
         };
 
         let host_name_str = res.host_name.clone();
@@ -1449,10 +1458,7 @@ impl BatchView {
                                         cx.write_to_clipboard(ClipboardItem::new_string(
                                             copy_text.clone(),
                                         ));
-                                        this.toast_message = Some(format!(
-                                            "已复制 {} 的控制台输出至剪贴板",
-                                            host_name_str
-                                        ));
+                                        this.toast_message = Some(crate::t_fmt!("batch.copied_clipboard", host = host_name_str));
                                         cx.notify();
                                     }))
                                     .child(
