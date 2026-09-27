@@ -1,10 +1,12 @@
 use gpui::prelude::FluentBuilder;
 use gpui::*;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use crate::components::icon::Icon;
 use crate::components::theme::DarkTechTheme;
 use redash_core::config::{AuthMethod, HostConfig, HostId, TargetOs};
+use redash_core::session::manager::SessionManager;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HostModalMode {
@@ -71,6 +73,9 @@ pub struct HostModal {
     pub active_field: HostModalField,
     pub cursor_pos: usize,
     pub error_msg: Option<String>,
+    pub session_mgr: Option<Arc<SessionManager>>,
+    pub is_testing_connection: bool,
+    pub test_connection_result: Option<(String, bool)>,
     pub focus_handle: Option<FocusHandle>,
     pub on_action: Option<HostModalCallback>,
 }
@@ -98,6 +103,9 @@ impl HostModal {
             active_field: HostModalField::Name,
             cursor_pos: 0,
             error_msg: None,
+            session_mgr: None,
+            is_testing_connection: false,
+            test_connection_result: None,
             focus_handle: None,
             on_action: None,
         }
@@ -158,9 +166,17 @@ impl HostModal {
             active_field: HostModalField::Name,
             cursor_pos: name_len,
             error_msg: None,
+            session_mgr: None,
+            is_testing_connection: false,
+            test_connection_result: None,
             focus_handle: None,
             on_action: None,
         }
+    }
+
+    pub fn with_session_manager(mut self, session_mgr: Arc<SessionManager>) -> Self {
+        self.session_mgr = Some(session_mgr);
+        self
     }
 
     pub fn set_on_action<F>(&mut self, callback: F)
@@ -282,6 +298,7 @@ impl HostModal {
         text.insert(byte_idx, ch);
         self.cursor_pos += 1;
         self.error_msg = None;
+        self.test_connection_result = None;
     }
 
     pub fn insert_str(&mut self, s: &str) {
@@ -292,6 +309,7 @@ impl HostModal {
         text.insert_str(byte_idx, s);
         self.cursor_pos += s.chars().count();
         self.error_msg = None;
+        self.test_connection_result = None;
     }
 
     pub fn backspace(&mut self) {
@@ -304,6 +322,7 @@ impl HostModal {
             let end = Self::char_to_byte_index(text, pos + 1);
             text.replace_range(start..end, "");
             self.error_msg = None;
+            self.test_connection_result = None;
         }
     }
 
@@ -317,6 +336,7 @@ impl HostModal {
             let end = Self::char_to_byte_index(text, pos + 1);
             text.replace_range(start..end, "");
             self.error_msg = None;
+            self.test_connection_result = None;
         }
     }
 
@@ -525,6 +545,66 @@ impl HostModal {
             Err(e) => {
                 self.error_msg = Some(e);
                 None
+            }
+        }
+    }
+
+    pub fn test_connection(&mut self, cx: &mut Context<Self>) {
+        if self.is_testing_connection {
+            return;
+        }
+
+        match self.validate_and_build() {
+            Ok((host, password, passphrase)) => {
+                let Some(session_mgr) = self.session_mgr.clone() else {
+                    self.test_connection_result = Some((
+                        crate::t!("host.test_session_unavailable").to_string(),
+                        false,
+                    ));
+                    cx.notify();
+                    return;
+                };
+
+                self.is_testing_connection = true;
+                self.error_msg = None;
+                self.test_connection_result = None;
+                cx.notify();
+
+                let pwd_override = password;
+                let pass_override = passphrase;
+
+                cx.spawn(async move |this, cx| {
+                    let result = session_mgr
+                        .test_connection_with_credentials(
+                            &host,
+                            pwd_override.as_deref(),
+                            pass_override.as_deref(),
+                        )
+                        .await;
+
+                    let _ = this.update(cx, |modal, cx| {
+                        modal.is_testing_connection = false;
+                        match result {
+                            Ok(duration) => {
+                                let ms = duration.as_millis();
+                                let msg = crate::t_fmt!("host.test_conn_success", ms = ms);
+                                modal.test_connection_result = Some((msg, true));
+                            }
+                            Err(e) => {
+                                let err_str = e.to_string();
+                                let msg = crate::t_fmt!("host.test_conn_failed", error = err_str);
+                                modal.test_connection_result = Some((msg, false));
+                            }
+                        }
+                        cx.notify();
+                    });
+                })
+                .detach();
+            }
+            Err(e) => {
+                self.error_msg = Some(e);
+                self.test_connection_result = None;
+                cx.notify();
             }
         }
     }
@@ -861,6 +941,39 @@ impl Render for HostModal {
                                     .text_size(px(12.0))
                                     .text_color(DarkTechTheme::status_crit())
                                     .child(err.clone()),
+                            )
+                    }))
+                    // Test Connection Result Banner
+                    .children(self.test_connection_result.as_ref().map(|(msg, success)| {
+                        let (bg_color, border_color, text_color) = if *success {
+                            (rgba(0x10b98122), DarkTechTheme::status_online(), DarkTechTheme::status_online())
+                        } else {
+                            (rgba(0xef444422), DarkTechTheme::status_crit(), DarkTechTheme::status_crit())
+                        };
+                        div()
+                            .w_full()
+                            .bg(bg_color)
+                            .border_1()
+                            .border_color(border_color)
+                            .rounded_md()
+                            .px_3()
+                            .py_2()
+                            .flex()
+                            .flex_row()
+                            .items_center()
+                            .gap_2()
+                            .child(
+                                if *success {
+                                    Icon::check().with_size(px(12.0)).with_color(text_color)
+                                } else {
+                                    Icon::close().with_size(px(12.0)).with_color(text_color)
+                                }
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(12.0))
+                                    .text_color(text_color)
+                                    .child(msg.clone()),
                             )
                     }))
                     // 3. Row 1: Host Name & Group
@@ -1673,6 +1786,57 @@ impl Render for HostModal {
                                     .gap_2()
                                     .child(
                                         div()
+                                            .id("btn_modal_test_connection")
+                                            .flex()
+                                            .flex_row()
+                                            .items_center()
+                                            .gap_1p5()
+                                            .px_3()
+                                            .py_1p5()
+                                            .rounded_md()
+                                            .bg(if self.is_testing_connection {
+                                                DarkTechTheme::bg_input()
+                                            } else {
+                                                DarkTechTheme::bg_panel_hover()
+                                            })
+                                            .border_1()
+                                            .border_color(if self.is_testing_connection {
+                                                DarkTechTheme::accent_cyan()
+                                            } else {
+                                                DarkTechTheme::border_default()
+                                            })
+                                            .text_size(px(12.0))
+                                            .text_color(if self.is_testing_connection {
+                                                DarkTechTheme::accent_cyan()
+                                            } else {
+                                                DarkTechTheme::text_secondary()
+                                            })
+                                            .hover(|s| {
+                                                s.bg(DarkTechTheme::bg_input())
+                                                    .text_color(DarkTechTheme::accent_cyan())
+                                                    .border_color(DarkTechTheme::accent_cyan())
+                                            })
+                                            .cursor_pointer()
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                this.test_connection(cx);
+                                            }))
+                                            .child(
+                                                Icon::zap()
+                                                    .with_size(px(12.0))
+                                                    .with_color(if self.is_testing_connection {
+                                                        DarkTechTheme::accent_cyan()
+                                                    } else {
+                                                        DarkTechTheme::text_secondary()
+                                                    }),
+                                            )
+                                            .child(if self.is_testing_connection {
+                                                crate::t!("host.testing_connection")
+                                            } else {
+                                                crate::t!("host.test_connection")
+                                            }),
+                                    )
+                                    .child(
+                                        div()
                                             .id("btn_modal_cancel")
                                             .px_4()
                                             .py_1p5()
@@ -1956,5 +2120,23 @@ mod tests {
         // Test invalid reset day > 31
         modal.bandwidth_reset_day = "32".to_string();
         assert!(modal.validate_and_build().is_err());
+    }
+
+    #[core::prelude::v1::test]
+    fn test_host_modal_session_manager_and_test_connection_state() {
+        let mgr = Arc::new(SessionManager::new());
+        let mut modal = HostModal::new_create().with_session_manager(mgr);
+        assert!(modal.session_mgr.is_some());
+        assert!(!modal.is_testing_connection);
+        assert!(modal.test_connection_result.is_none());
+
+        // Test that editing fields clears test_connection_result
+        modal.test_connection_result = Some(("Test message".to_string(), true));
+        modal.insert_char('a');
+        assert!(modal.test_connection_result.is_none());
+
+        modal.test_connection_result = Some(("Test message".to_string(), false));
+        modal.backspace();
+        assert!(modal.test_connection_result.is_none());
     }
 }

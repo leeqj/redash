@@ -168,17 +168,29 @@ impl SessionManager {
         handle: &mut Handle<ClientHandler>,
         host: &HostConfig,
     ) -> Result<()> {
+        Self::authenticate_handle_with_override(handle, host, None, None).await
+    }
+
+    async fn authenticate_handle_with_override(
+        handle: &mut Handle<ClientHandler>,
+        host: &HostConfig,
+        password_override: Option<&str>,
+        passphrase_override: Option<&str>,
+    ) -> Result<()> {
         let authenticated = tokio::time::timeout(Duration::from_secs(15), async {
             let authed: Result<bool> = async {
                 match &host.auth {
                     AuthMethod::Password { credential_id } => {
-                        let password =
+                        let password = if let Some(pwd) = password_override {
+                            pwd.to_string()
+                        } else {
                             CredentialVault::get_secret(credential_id).with_context(|| {
                                 format!(
                                     "Failed to get password for credential id: {}",
                                     credential_id
                                 )
-                            })?;
+                            })?
+                        };
                         let auth_res = handle
                             .authenticate_password(&host.user, password)
                             .await
@@ -189,7 +201,13 @@ impl SessionManager {
                         key_path,
                         passphrase_id,
                     } => {
-                        let passphrase = if let Some(pid) = passphrase_id {
+                        let passphrase = if let Some(pp) = passphrase_override {
+                            if pp.is_empty() {
+                                None
+                            } else {
+                                Some(pp.to_string())
+                            }
+                        } else if let Some(pid) = passphrase_id {
                             Some(CredentialVault::get_secret(pid)?)
                         } else {
                             None
@@ -275,6 +293,77 @@ impl SessionManager {
         }
 
         Ok(())
+    }
+
+    /// Test connection and authentication to a host with optional in-memory password/passphrase overrides.
+    ///
+    /// Useful for verifying connectivity and credentials when creating or editing a host before saving.
+    /// Returns the connection latency if successful.
+    pub async fn test_connection_with_credentials(
+        &self,
+        host: &HostConfig,
+        password_override: Option<&str>,
+        passphrase_override: Option<&str>,
+    ) -> Result<Duration> {
+        let start = std::time::Instant::now();
+        let timeout = Duration::from_secs(15);
+        tokio::time::timeout(timeout, async {
+            let route = self.connection_route(host)?;
+            let config = Arc::new(client::Config {
+                inactivity_timeout: None,
+                keepalive_interval: Some(Duration::from_secs(10)),
+                keepalive_max: 2,
+                ..Default::default()
+            });
+            let handler = ClientHandler::new(&host.hostname, host.port)?;
+            let mut handle = if route.len() > 1 {
+                let proxy = Box::pin(self.connect_route(&route[1..])).await?;
+                let channel = proxy
+                    .channel_open_direct_tcpip(&host.hostname, u32::from(host.port), "127.0.0.1", 0)
+                    .await?;
+                client::connect_stream(config, channel.into_stream(), handler).await?
+            } else {
+                client::connect(
+                    config,
+                    (host.hostname.trim_matches(['[', ']']), host.port),
+                    handler,
+                )
+                .await
+                .with_context(|| {
+                    format!(
+                        "无法连接至目标 SSH 地址 {}:{}",
+                        host.hostname, host.port
+                    )
+                })?
+            };
+
+            Self::authenticate_handle_with_override(
+                &mut handle,
+                host,
+                password_override,
+                passphrase_override,
+            )
+            .await?;
+
+            // Open an exec session channel to ensure command capability
+            let channel = handle
+                .channel_open_session()
+                .await
+                .context("SSH 会话通道打开失败")?;
+            channel
+                .exec(true, "true")
+                .await
+                .context("SSH 验证指令执行失败")?;
+
+            Ok(start.elapsed())
+        })
+        .await
+        .map_err(|_| anyhow::anyhow!("SSH 连接或认证超时 (15s)"))?
+    }
+
+    /// Convenience method to test an already saved host's connection.
+    pub async fn test_connection(&self, host: &HostConfig) -> Result<Duration> {
+        self.test_connection_with_credentials(host, None, None).await
     }
 
     pub async fn open_pty(

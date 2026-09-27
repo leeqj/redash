@@ -353,7 +353,11 @@ impl ReDashApp {
     fn open_add_host_modal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let fh = cx.focus_handle();
         let fh_clone = fh.clone();
-        let modal_entity = cx.new(|_cx| HostModal::new_create().with_focus_handle(fh_clone));
+        let modal_entity = cx.new(|_cx| {
+            HostModal::new_create()
+                .with_session_manager(Arc::clone(&self.session_mgr))
+                .with_focus_handle(fh_clone)
+        });
         let app_entity = cx.entity().downgrade();
         modal_entity.update(cx, |modal, _cx| {
             modal.set_on_action(move |action, window, cx| {
@@ -390,6 +394,7 @@ impl ReDashApp {
             .is_some_and(|failure| failure.needs_credentials);
         let modal_entity = cx.new(|_cx| {
             HostModal::new_edit(host)
+                .with_session_manager(Arc::clone(&self.session_mgr))
                 .with_missing_credential(credential_missing)
                 .with_focus_handle(fh_clone)
         });
