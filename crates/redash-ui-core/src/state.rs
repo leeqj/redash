@@ -84,6 +84,8 @@ pub enum UserAction {
     ResetSettings,
     SetTerminalFontSize(f32),
     SetTerminalCursorStyle(String),
+    SetTerminalFontFamily(String),
+    SetTerminalScrollback(usize),
     SetSettingsSaveStatus(Option<(String, bool)>),
     ToggleBatchHost(String),
     SelectAllBatchHosts,
@@ -444,6 +446,14 @@ impl AppStateMachine {
                 self.settings.terminal_cursor_style = style;
                 effects.push(UiEffect::SaveSettings);
             }
+            UserAction::SetTerminalFontFamily(font) => {
+                self.settings.terminal_font_family = font;
+                effects.push(UiEffect::SaveSettings);
+            }
+            UserAction::SetTerminalScrollback(lines) => {
+                self.settings.terminal_scrollback_lines = lines;
+                effects.push(UiEffect::SaveSettings);
+            }
             UserAction::SetSettingsSaveStatus(status) => {
                 self.settings_save_status = status;
             }
@@ -636,6 +646,14 @@ impl AppStateMachine {
 
     pub fn set_terminal_cursor_style(&mut self, style: String) -> Vec<UiEffect> {
         self.handle_action(UserAction::SetTerminalCursorStyle(style))
+    }
+
+    pub fn set_terminal_font_family(&mut self, font: String) -> Vec<UiEffect> {
+        self.handle_action(UserAction::SetTerminalFontFamily(font))
+    }
+
+    pub fn set_terminal_scrollback(&mut self, lines: usize) -> Vec<UiEffect> {
+        self.handle_action(UserAction::SetTerminalScrollback(lines))
     }
 
     pub fn set_settings_save_status(&mut self, status: Option<(String, bool)>) {

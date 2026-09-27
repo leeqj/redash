@@ -14,6 +14,9 @@ pub enum UiAction {
     SaveSftpFile { host_id: String, path: String, content: String },
     SaveSettings,
     ExportSettingsJson,
+    ImportSettingsJson,
+    PromptPingTarget,
+    PromptWebhookUrl,
     RunBatch { host_ids: Vec<String>, command: String },
     ApplyAgentSuggestion,
     AbortAgentTask,
@@ -545,11 +548,13 @@ pub fn handle_mouse_click(
         let base_y = LAYOUT.topbar_height;
 
         // Check Settings Category Sidebar clicks
-        for (idx, (cat, _, _, _)) in crate::render::SETTINGS_CATEGORIES.iter().enumerate() {
-            let (ix, iy, iw, ih) = crate::render::get_settings_category_rect(idx, base_x, base_y);
-            if (ix..=ix + iw).contains(&x) && (iy..=iy + ih).contains(&y) {
-                state.switch_settings_category(*cat);
-                return None;
+        if x >= base_x && x <= base_x + crate::render::SETTINGS_SIDEBAR_WIDTH {
+            for (idx, (cat, _, _, _)) in crate::render::SETTINGS_CATEGORIES.iter().enumerate() {
+                let (ix, iy, iw, ih) = crate::render::get_settings_category_rect(idx, base_x, base_y);
+                if (ix..=ix + iw).contains(&x) && (iy..=iy + ih).contains(&y) {
+                    state.switch_settings_category(*cat);
+                    return None;
+                }
             }
         }
 
@@ -618,6 +623,28 @@ pub fn handle_mouse_click(
                         return Some(UiAction::SaveSettings);
                     }
                 }
+
+                // Font family pills
+                let sec3_y = sec2_y + 76.0;
+                for (idx, &font) in crate::render::FONT_FAMILIES.iter().enumerate() {
+                    let (px, py, pw, ph) = crate::render::get_settings_font_family_pill_rect(idx, right_x, sec3_y);
+                    if (px..=px + pw).contains(&x) && (py..=py + ph).contains(&y) {
+                        state.set_terminal_font_family(font.to_string());
+                        state.settings_save_status = Some((format!("终端字体族已设置为 {}", font), true));
+                        return Some(UiAction::SaveSettings);
+                    }
+                }
+
+                // Scrollback lines pills
+                let sec4_y = sec3_y + 76.0;
+                for (idx, &lines) in crate::render::SCROLLBACK_OPTIONS.iter().enumerate() {
+                    let (px, py, pw, ph) = crate::render::get_settings_scrollback_pill_rect(idx, right_x, sec4_y);
+                    if (px..=px + pw).contains(&x) && (py..=py + ph).contains(&y) {
+                        state.set_terminal_scrollback(lines);
+                        state.settings_save_status = Some((format!("终端回滚上限已设置为 {} 行", lines), true));
+                        return Some(UiAction::SaveSettings);
+                    }
+                }
             }
             SettingsCategory::Probe => {
                 let sec1_y = right_y + 56.0;
@@ -630,6 +657,23 @@ pub fn handle_mouse_click(
                         state.settings_save_status = Some((format!("遥测轮询周期已设置为 {} 秒", interval), true));
                         return Some(UiAction::SaveSettings);
                     }
+                }
+
+                // Ping target preset pills
+                let sec2_y = sec1_y + 76.0;
+                for (idx, (ip, _)) in crate::render::PING_PRESETS.iter().enumerate() {
+                    let (px, py, pw, ph) = crate::render::get_settings_ping_preset_pill_rect(idx, right_x, sec2_y);
+                    if (px..=px + pw).contains(&x) && (py..=py + ph).contains(&y) {
+                        state.set_ping_target(ip.to_string());
+                        state.settings_save_status = Some((format!("探测节点已切换为 {}", ip), true));
+                        return None;
+                    }
+                }
+
+                // Ping custom target button
+                let (cx, cy, cw, ch) = crate::render::get_settings_ping_custom_btn_rect(right_x, sec2_y);
+                if (cx..=cx + cw).contains(&x) && (cy..=cy + ch).contains(&y) {
+                    return Some(UiAction::PromptPingTarget);
                 }
             }
             SettingsCategory::Alerts => {
@@ -657,6 +701,32 @@ pub fn handle_mouse_click(
                         return Some(UiAction::SaveSettings);
                     }
                 }
+
+                // Disk threshold pills
+                let sec3_y = sec2_y + 76.0;
+                for (idx, &opt) in crate::render::ALERT_THRESHOLDS.iter().enumerate() {
+                    let (px, py, pw, ph) = crate::render::get_settings_disk_threshold_pill_rect(idx, right_x, sec3_y);
+                    if (px..=px + pw).contains(&x) && (py..=py + ph).contains(&y) {
+                        state.set_disk_threshold(opt);
+                        let label = opt.map(|v| format!("{}%", v as u32)).unwrap_or_else(|| "禁用".to_string());
+                        state.settings_save_status = Some((format!("磁盘告警阈值已设置为 {}", label), true));
+                        return Some(UiAction::SaveSettings);
+                    }
+                }
+
+                // Webhook buttons: Set & Clear
+                let sec4_y = sec3_y + 76.0;
+                let (wx, wy, ww, wh) = crate::render::get_settings_webhook_set_btn_rect(right_x, sec4_y);
+                if (wx..=wx + ww).contains(&x) && (wy..=wy + wh).contains(&y) {
+                    return Some(UiAction::PromptWebhookUrl);
+                }
+
+                let (cx, cy, cw, ch) = crate::render::get_settings_webhook_clear_btn_rect(right_x, sec4_y);
+                if (cx..=cx + cw).contains(&x) && (cy..=cy + ch).contains(&y) {
+                    state.set_webhook_url(None);
+                    state.settings_save_status = Some(("已清除 Webhook 推送地址".to_string(), true));
+                    return Some(UiAction::SaveSettings);
+                }
             }
             SettingsCategory::Backup => {
                 let sec1_y = right_y + 56.0;
@@ -665,6 +735,12 @@ pub fn handle_mouse_click(
                 let (ex, ey, ew, eh) = crate::render::get_settings_export_json_btn_rect(right_x, sec1_y + 16.0);
                 if (ex..=ex + ew).contains(&x) && (ey..=ey + eh).contains(&y) {
                     return Some(UiAction::ExportSettingsJson);
+                }
+
+                // Import JSON button
+                let (ix, iy, iw, ih) = crate::render::get_settings_import_json_btn_rect(right_x, sec1_y + 16.0);
+                if (ix..=ix + iw).contains(&x) && (iy..=iy + ih).contains(&y) {
+                    return Some(UiAction::ImportSettingsJson);
                 }
 
                 // Reset defaults button
@@ -1231,7 +1307,7 @@ mod tests {
         assert_eq!(action, Some(UiAction::SaveSettings));
         assert_eq!(state.settings.glow_effects_enabled, !initial_glow);
 
-        // 5. Terminal Tab: Font size & Cursor style pills
+        // 5. Terminal Tab: Font size, Cursor style, Font Family, Scrollback pills
         state.switch_settings_category(SettingsCategory::Terminal);
         let term_sec1_y = right_y + 56.0;
         // Click 16px (idx 3)
@@ -1247,7 +1323,21 @@ mod tests {
         assert_eq!(action, Some(UiAction::SaveSettings));
         assert_eq!(state.settings.terminal_cursor_style, "Underline");
 
-        // 6. Probe Tab: Interval pills
+        let term_sec3_y = term_sec2_y + 76.0;
+        // Click Fira Code font (idx 1)
+        let (ffx, ffy, ffw, ffh) = crate::render::get_settings_font_family_pill_rect(1, right_x, term_sec3_y);
+        let action = handle_mouse_click(&mut state, ffx + ffw / 2.0, ffy + ffh / 2.0, 1200.0, 800.0);
+        assert_eq!(action, Some(UiAction::SaveSettings));
+        assert_eq!(state.settings.terminal_font_family, "Fira Code");
+
+        let term_sec4_y = term_sec3_y + 76.0;
+        // Click 50000 scrollback (idx 3)
+        let (sx, sy, sw, sh) = crate::render::get_settings_scrollback_pill_rect(3, right_x, term_sec4_y);
+        let action = handle_mouse_click(&mut state, sx + sw / 2.0, sy + sh / 2.0, 1200.0, 800.0);
+        assert_eq!(action, Some(UiAction::SaveSettings));
+        assert_eq!(state.settings.terminal_scrollback_lines, 50000);
+
+        // 6. Probe Tab: Interval pills, Ping presets, Custom button
         state.switch_settings_category(SettingsCategory::Probe);
         let probe_sec1_y = right_y + 56.0;
         // Click 5s interval (idx 2)
@@ -1256,7 +1346,19 @@ mod tests {
         assert_eq!(action, Some(UiAction::SaveSettings));
         assert_eq!(state.settings.probe_interval_secs, 5);
 
-        // 7. Alerts Tab: CPU and Memory threshold pills
+        let probe_sec2_y = probe_sec1_y + 76.0;
+        // Click 8.8.8.8 Ping preset (idx 1)
+        let (px, py, pw, ph) = crate::render::get_settings_ping_preset_pill_rect(1, right_x, probe_sec2_y);
+        let action = handle_mouse_click(&mut state, px + pw / 2.0, py + ph / 2.0, 1200.0, 800.0);
+        assert!(action.is_none());
+        assert_eq!(state.ping_target, "8.8.8.8");
+
+        // Click Custom Ping target button
+        let (cx, cy, cw, ch) = crate::render::get_settings_ping_custom_btn_rect(right_x, probe_sec2_y);
+        let action = handle_mouse_click(&mut state, cx + cw / 2.0, cy + ch / 2.0, 1200.0, 800.0);
+        assert_eq!(action, Some(UiAction::PromptPingTarget));
+
+        // 7. Alerts Tab: CPU, Memory, Disk thresholds, Webhook buttons
         state.switch_settings_category(SettingsCategory::Alerts);
         let alert_sec1_y = right_y + 56.0;
         // Click 80% CPU (idx 1)
@@ -1272,13 +1374,38 @@ mod tests {
         assert_eq!(action, Some(UiAction::SaveSettings));
         assert_eq!(state.settings.alert_mem_threshold, 0.0);
 
-        // 8. Backup Tab: Export JSON and Reset Defaults
+        let alert_sec3_y = alert_sec2_y + 76.0;
+        // Click 90% Disk (idx 2)
+        let (dx, dy, dw, dh) = crate::render::get_settings_disk_threshold_pill_rect(2, right_x, alert_sec3_y);
+        let action = handle_mouse_click(&mut state, dx + dw / 2.0, dy + dh / 2.0, 1200.0, 800.0);
+        assert_eq!(action, Some(UiAction::SaveSettings));
+        assert_eq!(state.settings.alert_disk_threshold, 90.0);
+
+        let alert_sec4_y = alert_sec3_y + 76.0;
+        // Click Set Webhook button
+        let (wx, wy, ww, wh) = crate::render::get_settings_webhook_set_btn_rect(right_x, alert_sec4_y);
+        let action = handle_mouse_click(&mut state, wx + ww / 2.0, wy + wh / 2.0, 1200.0, 800.0);
+        assert_eq!(action, Some(UiAction::PromptWebhookUrl));
+
+        // Click Clear Webhook button
+        state.settings.alert_webhook_url = Some("https://example.com/webhook".to_string());
+        let (cx, cy, cw, ch) = crate::render::get_settings_webhook_clear_btn_rect(right_x, alert_sec4_y);
+        let action = handle_mouse_click(&mut state, cx + cw / 2.0, cy + ch / 2.0, 1200.0, 800.0);
+        assert_eq!(action, Some(UiAction::SaveSettings));
+        assert!(state.settings.alert_webhook_url.is_none());
+
+        // 8. Backup Tab: Export JSON, Import JSON, Reset Defaults
         state.switch_settings_category(SettingsCategory::Backup);
         let backup_sec1_y = right_y + 56.0;
         // Click Export JSON
         let (ex, ey, ew, eh) = crate::render::get_settings_export_json_btn_rect(right_x, backup_sec1_y + 16.0);
         let action = handle_mouse_click(&mut state, ex + ew / 2.0, ey + eh / 2.0, 1200.0, 800.0);
         assert_eq!(action, Some(UiAction::ExportSettingsJson));
+
+        // Click Import JSON
+        let (ix, iy, iw, ih) = crate::render::get_settings_import_json_btn_rect(right_x, backup_sec1_y + 16.0);
+        let action = handle_mouse_click(&mut state, ix + iw / 2.0, iy + ih / 2.0, 1200.0, 800.0);
+        assert_eq!(action, Some(UiAction::ImportSettingsJson));
 
         // Click Reset Defaults
         let backup_sec2_y = backup_sec1_y + 106.0;

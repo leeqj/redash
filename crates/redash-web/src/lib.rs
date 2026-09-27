@@ -238,6 +238,90 @@ pub fn start_web_app(canvas_id: &str) -> Result<(), JsValue> {
                         }
                         state.settings_save_status = Some(("已成功导出设置 JSON 文件".to_string(), true));
                     }
+                    UiAction::PromptPingTarget => {
+                        if let Some(window) = web_sys::window() {
+                            let current = &state.ping_target;
+                            if let Ok(Some(val)) = window.prompt_with_message_and_default(
+                                "请输入网络探测 Ping 目标地址 (IP 或域名):",
+                                current,
+                            ) {
+                                let trimmed = val.trim();
+                                if !trimmed.is_empty() {
+                                    state.set_ping_target(trimmed.to_string());
+                                    state.settings_save_status = Some((format!("探测节点已更新为 {}", trimmed), true));
+                                }
+                            }
+                        }
+                    }
+                    UiAction::PromptWebhookUrl => {
+                        if let Some(window) = web_sys::window() {
+                            let current = state.settings.alert_webhook_url.as_deref().unwrap_or("");
+                            if let Ok(Some(val)) = window.prompt_with_message_and_default(
+                                "请输入 Webhook 机器人告警推送地址 (钉钉 / 企微 / 飞书):",
+                                current,
+                            ) {
+                                let trimmed = val.trim();
+                                if trimmed.is_empty() {
+                                    state.set_webhook_url(None);
+                                    state.settings_save_status = Some(("已清除 Webhook 推送地址".to_string(), true));
+                                } else {
+                                    state.set_webhook_url(Some(trimmed.to_string()));
+                                    state.settings_save_status = Some(("已更新 Webhook 推送地址".to_string(), true));
+                                }
+                                let settings = state.settings.clone();
+                                let app_state_save = app_state_clone.clone();
+                                let on_done = Rc::new(RefCell::new(move |_| {
+                                    app_state_save.borrow_mut().settings_save_status = Some(("Webhook 地址已成功保存".to_string(), true));
+                                }));
+                                gateway::async_save_settings(settings, on_done);
+                            }
+                        }
+                    }
+                    UiAction::ImportSettingsJson => {
+                        if let Some(window) = web_sys::window()
+                            && let Some(document) = window.document()
+                            && let Ok(element) = document.create_element("input")
+                            && let Ok(input_el) = element.dyn_into::<web_sys::HtmlInputElement>()
+                        {
+                            input_el.set_type("file");
+                            let _ = input_el.set_attribute("accept", ".json");
+                            let app_state_import = app_state_clone.clone();
+                            let input_clone = input_el.clone();
+                            let on_change = Closure::<dyn FnMut()>::new(move || {
+                                if let Some(files) = input_clone.files()
+                                    && let Some(file) = files.get(0)
+                                    && let Ok(reader) = web_sys::FileReader::new()
+                                {
+                                    let reader_clone = reader.clone();
+                                    let app_state_reader = app_state_import.clone();
+                                    let on_load = Closure::<dyn FnMut()>::new(move || {
+                                        if let Ok(val) = reader_clone.result()
+                                            && let Some(json_text) = val.as_string()
+                                        {
+                                            match serde_json::from_str::<redash_types::settings::AppSettings>(&json_text) {
+                                                Ok(imported) => {
+                                                    let mut sm = app_state_reader.borrow_mut();
+                                                    sm.settings = imported.clone();
+                                                    sm.settings_save_status = Some(("已成功导入设置配置！".to_string(), true));
+                                                    let on_done = Rc::new(RefCell::new(move |_| {}));
+                                                    gateway::async_save_settings(imported, on_done);
+                                                }
+                                                Err(e) => {
+                                                    app_state_reader.borrow_mut().settings_save_status = Some((format!("JSON 格式解析失败: {}", e), false));
+                                                }
+                                            }
+                                        }
+                                    });
+                                    reader.set_onload(Some(on_load.as_ref().unchecked_ref()));
+                                    on_load.forget();
+                                    let _ = reader.read_as_text(&file);
+                                }
+                            });
+                            input_el.set_onchange(Some(on_change.as_ref().unchecked_ref()));
+                            on_change.forget();
+                            input_el.click();
+                        }
+                    }
                     UiAction::SaveNewHost => {
                         if let Some(new_host) = state.build_new_host() {
                             state.hosts.push(new_host.clone());

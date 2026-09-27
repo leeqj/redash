@@ -2429,8 +2429,78 @@ pub fn get_settings_mem_threshold_pill_rect(idx: usize, right_x: f64, sec_y: f64
     (px, py, pill_w, pill_h)
 }
 
+pub fn get_settings_disk_threshold_pill_rect(idx: usize, right_x: f64, sec_y: f64) -> (f64, f64, f64, f64) {
+    let pill_w = 80.0;
+    let pill_h = 32.0;
+    let pill_gap = 10.0;
+    let px = right_x + (idx as f64) * (pill_w + pill_gap);
+    let py = sec_y + 26.0;
+    (px, py, pill_w, pill_h)
+}
+
+pub const PING_PRESETS: [(&str, &str); 4] = [
+    ("1.1.1.1", "1.1.1.1 (CF)"),
+    ("8.8.8.8", "8.8.8.8 (Google)"),
+    ("114.114.114.114", "114.114.114.114"),
+    ("223.5.5.5", "223.5.5.5 (AliDNS)"),
+];
+
+pub fn get_settings_ping_preset_pill_rect(idx: usize, right_x: f64, sec_y: f64) -> (f64, f64, f64, f64) {
+    let pill_w = 115.0;
+    let pill_h = 32.0;
+    let pill_gap = 10.0;
+    let px = right_x + (idx as f64) * (pill_w + pill_gap);
+    let py = sec_y + 26.0;
+    (px, py, pill_w, pill_h)
+}
+
+pub fn get_settings_ping_custom_btn_rect(right_x: f64, sec_y: f64) -> (f64, f64, f64, f64) {
+    let px = right_x + 4.0 * (115.0 + 10.0);
+    let py = sec_y + 26.0;
+    (px, py, 110.0, 32.0)
+}
+
+pub fn get_settings_webhook_set_btn_rect(right_x: f64, sec_y: f64) -> (f64, f64, f64, f64) {
+    (right_x + 470.0, sec_y + 26.0, 130.0, 36.0)
+}
+
+pub fn get_settings_webhook_clear_btn_rect(right_x: f64, sec_y: f64) -> (f64, f64, f64, f64) {
+    (right_x + 610.0, sec_y + 26.0, 70.0, 36.0)
+}
+
+pub const FONT_FAMILIES: [&str; 4] = [
+    "JetBrains Mono",
+    "Fira Code",
+    "SF Mono",
+    "monospace",
+];
+
+pub fn get_settings_font_family_pill_rect(idx: usize, right_x: f64, sec_y: f64) -> (f64, f64, f64, f64) {
+    let pill_w = 115.0;
+    let pill_h = 32.0;
+    let pill_gap = 10.0;
+    let px = right_x + (idx as f64) * (pill_w + pill_gap);
+    let py = sec_y + 26.0;
+    (px, py, pill_w, pill_h)
+}
+
+pub const SCROLLBACK_OPTIONS: [usize; 4] = [1000, 5000, 10000, 50000];
+
+pub fn get_settings_scrollback_pill_rect(idx: usize, right_x: f64, sec_y: f64) -> (f64, f64, f64, f64) {
+    let pill_w = 95.0;
+    let pill_h = 32.0;
+    let pill_gap = 10.0;
+    let px = right_x + (idx as f64) * (pill_w + pill_gap);
+    let py = sec_y + 26.0;
+    (px, py, pill_w, pill_h)
+}
+
 pub fn get_settings_export_json_btn_rect(right_x: f64, sec_y: f64) -> (f64, f64, f64, f64) {
     (right_x, sec_y + 26.0, 180.0, 36.0)
+}
+
+pub fn get_settings_import_json_btn_rect(right_x: f64, sec_y: f64) -> (f64, f64, f64, f64) {
+    (right_x + 195.0, sec_y + 26.0, 180.0, 36.0)
 }
 
 pub fn get_settings_reset_btn_rect(right_x: f64, sec_y: f64) -> (f64, f64, f64, f64) {
@@ -2469,7 +2539,7 @@ fn render_settings_view(
     ctx.line_to(x + SETTINGS_SIDEBAR_WIDTH, y + h);
     ctx.stroke();
 
-    for (idx, (cat, icon, label_zh, _label_en)) in SETTINGS_CATEGORIES.iter().enumerate() {
+    for (idx, (cat, icon, _, _)) in SETTINGS_CATEGORIES.iter().enumerate() {
         let (ix, iy, iw, ih) = get_settings_category_rect(idx, x, y);
         let is_active = state.active_settings_category == *cat;
 
@@ -2485,7 +2555,14 @@ fn render_settings_view(
         ctx.set_font(if is_active { "bold 13px sans-serif" } else { "13px sans-serif" });
         ctx.set_fill_style_str(if is_active { theme.text_primary } else { theme.text_secondary });
         ctx.set_text_align("left");
-        let display_label = format!("{} {}", icon, label_zh);
+        let cat_label = match cat {
+            SettingsCategory::Appearance => state.t("settings.cat_appearance"),
+            SettingsCategory::Terminal => state.t("settings.cat_terminal"),
+            SettingsCategory::Probe => state.t("settings.cat_probe"),
+            SettingsCategory::Alerts => state.t("settings.cat_alerts"),
+            SettingsCategory::Backup => state.t("settings.cat_storage"),
+        };
+        let display_label = format!("{} {}", icon, cat_label);
         let _ = ctx.fill_text(&display_label, ix + 12.0, iy + 25.0);
     }
 
@@ -2499,7 +2576,7 @@ fn render_settings_view(
             // Header
             ctx.set_fill_style_str(theme.text_primary);
             ctx.set_font("bold 18px sans-serif");
-            let _ = ctx.fill_text("🎨 外观主题与偏好设置 (Appearance)", right_x, right_y + 14.0);
+            let _ = ctx.fill_text(&format!("🎨 {} (Appearance)", state.t("settings.cat_appearance")), right_x, right_y + 14.0);
             ctx.set_fill_style_str(theme.text_secondary);
             ctx.set_font("12px sans-serif");
             let _ = ctx.fill_text("实时无缝切换全站色彩主题、多语言国际化及暗夜霓虹微光动效。", right_x, right_y + 34.0);
@@ -2508,7 +2585,7 @@ fn render_settings_view(
             let sec1_y = right_y + 56.0;
             ctx.set_fill_style_str(theme.text_primary);
             ctx.set_font("bold 14px sans-serif");
-            let _ = ctx.fill_text("主题调色板 (Theme Palette)", right_x, sec1_y + 14.0);
+            let _ = ctx.fill_text(&format!("{} (Theme Palette)", state.t("settings.theme_title")), right_x, sec1_y + 14.0);
 
             for (idx, preset) in THEME_PRESETS.iter().enumerate() {
                 let (cx, cy, cw, ch) = get_settings_theme_card_rect(idx, right_x, sec1_y);
@@ -2563,7 +2640,7 @@ fn render_settings_view(
             let sec2_y = sec1_y + 240.0;
             ctx.set_fill_style_str(theme.text_primary);
             ctx.set_font("bold 14px sans-serif");
-            let _ = ctx.fill_text("语言与国际化 (Language & i18n)", right_x, sec2_y + 14.0);
+            let _ = ctx.fill_text(&format!("{} (Language & i18n)", state.t("settings.language_title")), right_x, sec2_y + 14.0);
 
             for (idx, (code, name)) in LANG_PRESETS.iter().enumerate() {
                 let (px, py, pw, ph) = get_settings_lang_pill_rect(idx, right_x, sec2_y);
@@ -2588,7 +2665,7 @@ fn render_settings_view(
             let sec3_y = sec2_y + 76.0;
             ctx.set_fill_style_str(theme.text_primary);
             ctx.set_font("bold 14px sans-serif");
-            let _ = ctx.fill_text("赛博光晕动效 (Glow Effect)", right_x, sec3_y + 14.0);
+            let _ = ctx.fill_text(&format!("{} (Glow Effect)", state.t("settings.glow_title")), right_x, sec3_y + 14.0);
             ctx.set_fill_style_str(theme.text_secondary);
             ctx.set_font("11px sans-serif");
             let _ = ctx.fill_text("启用高精度 GPU 霓虹微光呼吸边缘与阴影光晕渲染", right_x, sec3_y + 32.0);
@@ -2612,16 +2689,16 @@ fn render_settings_view(
             // Header
             ctx.set_fill_style_str(theme.text_primary);
             ctx.set_font("bold 18px sans-serif");
-            let _ = ctx.fill_text(">_ 终端控制台偏好 (Terminal Preferences)", right_x, right_y + 14.0);
+            let _ = ctx.fill_text(&format!(">_ {} (Terminal Preferences)", state.t("settings.cat_terminal")), right_x, right_y + 14.0);
             ctx.set_fill_style_str(theme.text_secondary);
             ctx.set_font("12px sans-serif");
-            let _ = ctx.fill_text("自定义 Web 终端字体大小与光标形状样式。", right_x, right_y + 34.0);
+            let _ = ctx.fill_text("自定义 Web 终端字体族、字号大小、光标形状与回滚历史缓冲区。", right_x, right_y + 34.0);
 
             // Section 1: Font Size
             let sec1_y = right_y + 56.0;
             ctx.set_fill_style_str(theme.text_primary);
             ctx.set_font("bold 14px sans-serif");
-            let _ = ctx.fill_text("字体大小 (Font Size)", right_x, sec1_y + 14.0);
+            let _ = ctx.fill_text(&format!("{} (Font Size)", state.t("settings.font_size")), right_x, sec1_y + 14.0);
 
             for (idx, size) in FONT_SIZES.iter().enumerate() {
                 let (px, py, pw, ph) = get_settings_font_size_pill_rect(idx, right_x, sec1_y);
@@ -2664,29 +2741,57 @@ fn render_settings_view(
                 ctx.set_text_align("left");
             }
 
-            // Section 3: Advanced info
-            let sec3_y = sec2_y + 80.0;
+            // Section 3: Font Family
+            let sec3_y = sec2_y + 76.0;
             ctx.set_fill_style_str(theme.text_primary);
             ctx.set_font("bold 14px sans-serif");
-            let _ = ctx.fill_text("终端渲染高级参数", right_x, sec3_y + 14.0);
+            let _ = ctx.fill_text(&format!("{} (Font Family)", state.t("settings.font_family")), right_x, sec3_y + 14.0);
 
-            let box_w = 440.0;
-            let box_h = 74.0;
-            ctx.set_fill_style_str(theme.bg_card);
-            ctx.fill_rect(right_x, sec3_y + 26.0, box_w, box_h);
-            ctx.set_stroke_style_str(theme.border_default);
-            ctx.stroke_rect(right_x, sec3_y + 26.0, box_w, box_h);
+            for (idx, font) in FONT_FAMILIES.iter().enumerate() {
+                let (px, py, pw, ph) = get_settings_font_family_pill_rect(idx, right_x, sec3_y);
+                let is_active = state.settings.terminal_font_family.eq_ignore_ascii_case(font);
 
-            ctx.set_fill_style_str(theme.text_secondary);
-            ctx.set_font("12px sans-serif");
-            let _ = ctx.fill_text(&format!("• 默认字体族: {} (内置高保真 Monospace 图标连字)", state.settings.terminal_font_family), right_x + 14.0, sec3_y + 50.0);
-            let _ = ctx.fill_text(&format!("• 回滚行数上限: {} 行 (环形终端流缓冲区)", state.settings.terminal_scrollback_lines), right_x + 14.0, sec3_y + 74.0);
+                ctx.set_fill_style_str(if is_active { theme.bg_card_hover } else { theme.bg_card });
+                ctx.fill_rect(px, py, pw, ph);
+                ctx.set_stroke_style_str(if is_active { theme.accent_cyan } else { theme.border_default });
+                ctx.set_line_width(if is_active { 1.5 } else { 1.0 });
+                ctx.stroke_rect(px, py, pw, ph);
+
+                ctx.set_fill_style_str(if is_active { theme.accent_cyan } else { theme.text_primary });
+                ctx.set_font("12px 'JetBrains Mono', monospace");
+                ctx.set_text_align("center");
+                let _ = ctx.fill_text(font, px + pw / 2.0, py + 20.0);
+                ctx.set_text_align("left");
+            }
+
+            // Section 4: Scrollback Lines
+            let sec4_y = sec3_y + 76.0;
+            ctx.set_fill_style_str(theme.text_primary);
+            ctx.set_font("bold 14px sans-serif");
+            let _ = ctx.fill_text(&format!("{} (Scrollback Buffer)", state.t("settings.scrollback")), right_x, sec4_y + 14.0);
+
+            for (idx, &lines) in SCROLLBACK_OPTIONS.iter().enumerate() {
+                let (px, py, pw, ph) = get_settings_scrollback_pill_rect(idx, right_x, sec4_y);
+                let is_active = state.settings.terminal_scrollback_lines == lines;
+
+                ctx.set_fill_style_str(if is_active { theme.bg_card_hover } else { theme.bg_card });
+                ctx.fill_rect(px, py, pw, ph);
+                ctx.set_stroke_style_str(if is_active { theme.accent_cyan } else { theme.border_default });
+                ctx.set_line_width(if is_active { 1.5 } else { 1.0 });
+                ctx.stroke_rect(px, py, pw, ph);
+
+                ctx.set_fill_style_str(if is_active { theme.accent_cyan } else { theme.text_primary });
+                ctx.set_font("12px sans-serif");
+                ctx.set_text_align("center");
+                let _ = ctx.fill_text(&format!("{} 行", lines), px + pw / 2.0, py + 20.0);
+                ctx.set_text_align("left");
+            }
         }
         SettingsCategory::Probe => {
             // Header
             ctx.set_fill_style_str(theme.text_primary);
             ctx.set_font("bold 18px sans-serif");
-            let _ = ctx.fill_text("⚡ 实时探针与遥测采集 (Probe)", right_x, right_y + 14.0);
+            let _ = ctx.fill_text(&format!("⚡ {} (Probe)", state.t("settings.cat_probe")), right_x, right_y + 14.0);
             ctx.set_fill_style_str(theme.text_secondary);
             ctx.set_font("12px sans-serif");
             let _ = ctx.fill_text("配置主机后台资源轮询频率与网络延迟探测节点。", right_x, right_y + 34.0);
@@ -2695,7 +2800,7 @@ fn render_settings_view(
             let sec1_y = right_y + 56.0;
             ctx.set_fill_style_str(theme.text_primary);
             ctx.set_font("bold 14px sans-serif");
-            let _ = ctx.fill_text("遥测轮询周期 (Telemetry Interval)", right_x, sec1_y + 14.0);
+            let _ = ctx.fill_text(&format!("{} (Telemetry Interval)", state.t("settings.interval_label")), right_x, sec1_y + 14.0);
 
             for (idx, interval) in PROBE_INTERVALS.iter().enumerate() {
                 let (px, py, pw, ph) = get_settings_probe_interval_pill_rect(idx, right_x, sec1_y);
@@ -2714,41 +2819,55 @@ fn render_settings_view(
                 ctx.set_text_align("left");
             }
 
-            // Section 2: Ping Target Display & Input
+            // Section 2: Ping Target Display & Presets
             let sec2_y = sec1_y + 76.0;
             ctx.set_fill_style_str(theme.text_primary);
             ctx.set_font("bold 14px sans-serif");
-            let _ = ctx.fill_text("目标网络 Ping 探测节点 (Ping Target)", right_x, sec2_y + 14.0);
+            let _ = ctx.fill_text(&format!("目标网络 Ping 探测节点 (当前: {})", state.ping_target), right_x, sec2_y + 14.0);
 
-            let box_w = 340.0;
-            let box_h = 36.0;
+            for (idx, (ip, label)) in PING_PRESETS.iter().enumerate() {
+                let (px, py, pw, ph) = get_settings_ping_preset_pill_rect(idx, right_x, sec2_y);
+                let is_active = state.ping_target == *ip;
+
+                ctx.set_fill_style_str(if is_active { theme.bg_card_hover } else { theme.bg_card });
+                ctx.fill_rect(px, py, pw, ph);
+                ctx.set_stroke_style_str(if is_active { theme.accent_cyan } else { theme.border_default });
+                ctx.set_line_width(if is_active { 1.5 } else { 1.0 });
+                ctx.stroke_rect(px, py, pw, ph);
+
+                ctx.set_fill_style_str(if is_active { theme.accent_cyan } else { theme.text_primary });
+                ctx.set_font("12px 'JetBrains Mono', monospace");
+                ctx.set_text_align("center");
+                let _ = ctx.fill_text(label, px + pw / 2.0, py + 20.0);
+                ctx.set_text_align("left");
+            }
+
+            let (cx, cy, cw, ch) = get_settings_ping_custom_btn_rect(right_x, sec2_y);
             ctx.set_fill_style_str(theme.bg_card);
-            ctx.fill_rect(right_x, sec2_y + 26.0, box_w, box_h);
-            ctx.set_stroke_style_str(theme.border_default);
-            ctx.stroke_rect(right_x, sec2_y + 26.0, box_w, box_h);
-
-            ctx.set_fill_style_str(theme.accent_cyan);
-            ctx.set_font("13px 'JetBrains Mono', monospace");
-            let _ = ctx.fill_text(&format!("🎯 {} (Cloudflare DNS)", state.ping_target), right_x + 12.0, sec2_y + 49.0);
-
-            ctx.set_fill_style_str(theme.text_secondary);
-            ctx.set_font("11px sans-serif");
-            let _ = ctx.fill_text("默认探测 Cloudflare 泛播 DNS 测量全网 RTT 延迟基准。", right_x, sec2_y + 80.0);
+            ctx.fill_rect(cx, cy, cw, ch);
+            ctx.set_stroke_style_str(theme.accent_purple);
+            ctx.set_line_width(1.0);
+            ctx.stroke_rect(cx, cy, cw, ch);
+            ctx.set_fill_style_str(theme.accent_purple);
+            ctx.set_font("12px sans-serif");
+            ctx.set_text_align("center");
+            let _ = ctx.fill_text("✏️ 自定义目标", cx + cw / 2.0, cy + 20.0);
+            ctx.set_text_align("left");
         }
         SettingsCategory::Alerts => {
             // Header
             ctx.set_fill_style_str(theme.text_primary);
             ctx.set_font("bold 18px sans-serif");
-            let _ = ctx.fill_text("🔔 智能监控告警阈值 (Alerts)", right_x, right_y + 14.0);
+            let _ = ctx.fill_text(&format!("🔔 {} (Alerts)", state.t("settings.cat_alerts")), right_x, right_y + 14.0);
             ctx.set_fill_style_str(theme.text_secondary);
             ctx.set_font("12px sans-serif");
-            let _ = ctx.fill_text("当服务器 CPU、内存负载超过预警值时触发告警提示或 Webhook 推送。", right_x, right_y + 34.0);
+            let _ = ctx.fill_text("当服务器 CPU、内存或磁盘负载超过预警值时触发告警提示或 Webhook 推送。", right_x, right_y + 34.0);
 
             // Section 1: CPU Threshold
             let sec1_y = right_y + 56.0;
             ctx.set_fill_style_str(theme.text_primary);
             ctx.set_font("bold 14px sans-serif");
-            let _ = ctx.fill_text("CPU 告警阈值 (CPU Threshold)", right_x, sec1_y + 14.0);
+            let _ = ctx.fill_text(&format!("{} (CPU Threshold)", state.t("settings.cpu_threshold")), right_x, sec1_y + 14.0);
 
             for (idx, opt) in ALERT_THRESHOLDS.iter().enumerate() {
                 let (px, py, pw, ph) = get_settings_cpu_threshold_pill_rect(idx, right_x, sec1_y);
@@ -2775,7 +2894,7 @@ fn render_settings_view(
             let sec2_y = sec1_y + 76.0;
             ctx.set_fill_style_str(theme.text_primary);
             ctx.set_font("bold 14px sans-serif");
-            let _ = ctx.fill_text("内存告警阈值 (Memory Threshold)", right_x, sec2_y + 14.0);
+            let _ = ctx.fill_text(&format!("{} (Memory Threshold)", state.t("settings.mem_threshold")), right_x, sec2_y + 14.0);
 
             for (idx, opt) in ALERT_THRESHOLDS.iter().enumerate() {
                 let (px, py, pw, ph) = get_settings_mem_threshold_pill_rect(idx, right_x, sec2_y);
@@ -2798,41 +2917,91 @@ fn render_settings_view(
                 ctx.set_text_align("left");
             }
 
-            // Section 3: Webhook URL Preview
+            // Section 3: Disk Threshold
             let sec3_y = sec2_y + 76.0;
             ctx.set_fill_style_str(theme.text_primary);
             ctx.set_font("bold 14px sans-serif");
-            let _ = ctx.fill_text("Webhook URL 机器人推送地址", right_x, sec3_y + 14.0);
+            let _ = ctx.fill_text(&format!("{} (Disk Threshold)", state.t("settings.disk_threshold")), right_x, sec3_y + 14.0);
 
-            let box_w = 460.0;
+            for (idx, opt) in ALERT_THRESHOLDS.iter().enumerate() {
+                let (px, py, pw, ph) = get_settings_disk_threshold_pill_rect(idx, right_x, sec3_y);
+                let is_active = match opt {
+                    Some(val) => (state.settings.alert_disk_threshold - val).abs() < 0.1,
+                    None => state.settings.alert_disk_threshold <= 0.0 || state.settings.alert_disk_threshold > 100.0,
+                };
+
+                ctx.set_fill_style_str(if is_active { theme.bg_card_hover } else { theme.bg_card });
+                ctx.fill_rect(px, py, pw, ph);
+                ctx.set_stroke_style_str(if is_active { theme.accent_cyan } else { theme.border_default });
+                ctx.set_line_width(if is_active { 1.5 } else { 1.0 });
+                ctx.stroke_rect(px, py, pw, ph);
+
+                ctx.set_fill_style_str(if is_active { theme.accent_cyan } else { theme.text_primary });
+                ctx.set_font("12px sans-serif");
+                ctx.set_text_align("center");
+                let label = opt.map(|v| format!("{}%", v as u32)).unwrap_or_else(|| "禁用".to_string());
+                let _ = ctx.fill_text(&label, px + pw / 2.0, py + 20.0);
+                ctx.set_text_align("left");
+            }
+
+            // Section 4: Webhook URL & Buttons
+            let sec4_y = sec3_y + 76.0;
+            ctx.set_fill_style_str(theme.text_primary);
+            ctx.set_font("bold 14px sans-serif");
+            let _ = ctx.fill_text(&format!("{} (Webhook URL)", state.t("settings.notify_webhook")), right_x, sec4_y + 14.0);
+
+            let box_w = 450.0;
             let box_h = 36.0;
             ctx.set_fill_style_str(theme.bg_card);
-            ctx.fill_rect(right_x, sec3_y + 26.0, box_w, box_h);
+            ctx.fill_rect(right_x, sec4_y + 26.0, box_w, box_h);
             ctx.set_stroke_style_str(theme.border_default);
-            ctx.stroke_rect(right_x, sec3_y + 26.0, box_w, box_h);
+            ctx.stroke_rect(right_x, sec4_y + 26.0, box_w, box_h);
 
             ctx.set_fill_style_str(if state.settings.alert_webhook_url.is_some() { theme.accent_cyan } else { theme.text_muted });
             ctx.set_font("12px 'JetBrains Mono', monospace");
-            let webhook_txt = state.settings.alert_webhook_url.as_deref().unwrap_or("未配置 (默认仅桌面弹窗通知)");
-            let _ = ctx.fill_text(webhook_txt, right_x + 12.0, sec3_y + 49.0);
+            let webhook_txt = state.settings.alert_webhook_url.as_deref().unwrap_or("未配置 (默认仅桌面通知)");
+            let _ = ctx.fill_text(webhook_txt, right_x + 12.0, sec4_y + 49.0);
+
+            let (wx, wy, ww, wh) = get_settings_webhook_set_btn_rect(right_x, sec4_y);
+            ctx.set_fill_style_str(theme.bg_card);
+            ctx.fill_rect(wx, wy, ww, wh);
+            ctx.set_stroke_style_str(theme.accent_cyan);
+            ctx.set_line_width(1.0);
+            ctx.stroke_rect(wx, wy, ww, wh);
+            ctx.set_fill_style_str(theme.accent_cyan);
+            ctx.set_font("12px sans-serif");
+            ctx.set_text_align("center");
+            let _ = ctx.fill_text("🔗 设置 Webhook", wx + ww / 2.0, wy + 23.0);
+
+            let (cx, cy, cw, ch) = get_settings_webhook_clear_btn_rect(right_x, sec4_y);
+            ctx.set_fill_style_str(theme.bg_card);
+            ctx.fill_rect(cx, cy, cw, ch);
+            ctx.set_stroke_style_str(theme.border_muted);
+            ctx.set_line_width(1.0);
+            ctx.stroke_rect(cx, cy, cw, ch);
+            ctx.set_fill_style_str(theme.text_secondary);
+            ctx.set_font("12px sans-serif");
+            ctx.set_text_align("center");
+            let _ = ctx.fill_text("✕ 清空", cx + cw / 2.0, cy + 23.0);
+            ctx.set_text_align("left");
         }
         SettingsCategory::Backup => {
             // Header
             ctx.set_fill_style_str(theme.text_primary);
             ctx.set_font("bold 18px sans-serif");
-            let _ = ctx.fill_text("💾 配置备份与重置 (Backup)", right_x, right_y + 14.0);
+            let _ = ctx.fill_text(&format!("💾 {} (Backup & Storage)", state.t("settings.cat_storage")), right_x, right_y + 14.0);
             ctx.set_fill_style_str(theme.text_secondary);
             ctx.set_font("12px sans-serif");
-            let _ = ctx.fill_text("导出全部系统设置配置文件或恢复出厂默认值。", right_x, right_y + 34.0);
+            let _ = ctx.fill_text("导出全部系统设置配置文件、导入备份配置或恢复出厂默认值。", right_x, right_y + 34.0);
 
-            // Section 1: Export JSON
+            // Section 1: Export & Import JSON
             let sec1_y = right_y + 56.0;
             ctx.set_fill_style_str(theme.text_primary);
             ctx.set_font("bold 14px sans-serif");
-            let _ = ctx.fill_text("导出设置文件", right_x, sec1_y + 14.0);
+            let _ = ctx.fill_text("配置备份与迁移", right_x, sec1_y + 14.0);
             ctx.set_fill_style_str(theme.text_secondary);
             ctx.set_font("11px sans-serif");
-            let _ = ctx.fill_text("将当前全站配置打包下载为 JSON 文件保存至本地", right_x, sec1_y + 32.0);
+            let _ = ctx.fill_text("将当前全站配置打包下载为 JSON 文件，或从本地上传恢复配置", right_x, sec1_y + 32.0);
 
             let (ex, ey, ew, eh) = get_settings_export_json_btn_rect(right_x, sec1_y + 16.0);
             ctx.set_fill_style_str(theme.bg_card);
@@ -2845,6 +3014,18 @@ fn render_settings_view(
             ctx.set_font("bold 13px sans-serif");
             ctx.set_text_align("center");
             let _ = ctx.fill_text("📥 导出设置 JSON", ex + ew / 2.0, ey + 23.0);
+
+            let (ix, iy, iw, ih) = get_settings_import_json_btn_rect(right_x, sec1_y + 16.0);
+            ctx.set_fill_style_str(theme.bg_card);
+            ctx.fill_rect(ix, iy, iw, ih);
+            ctx.set_stroke_style_str(theme.accent_purple);
+            ctx.set_line_width(1.5);
+            ctx.stroke_rect(ix, iy, iw, ih);
+
+            ctx.set_fill_style_str(theme.accent_purple);
+            ctx.set_font("bold 13px sans-serif");
+            ctx.set_text_align("center");
+            let _ = ctx.fill_text("📤 导入设置 JSON", ix + iw / 2.0, iy + 23.0);
             ctx.set_text_align("left");
 
             // Section 2: Reset Defaults
@@ -3733,7 +3914,138 @@ pub fn is_interactive_element(x: f64, y: f64, width: f64, height: f64, state: &A
             }
         }
         ActiveView::Settings => {
-            return (true, "pointer");
+            let base_x = LAYOUT.sidebar_width;
+            let base_y = LAYOUT.topbar_height;
+            // 1. Check Settings Category Sidebar items
+            if x >= base_x && x <= base_x + SETTINGS_SIDEBAR_WIDTH {
+                for idx in 0..SETTINGS_CATEGORIES.len() {
+                    let (ix, iy, iw, ih) = get_settings_category_rect(idx, base_x, base_y);
+                    if (ix..=ix + iw).contains(&x) && (iy..=iy + ih).contains(&y) {
+                        return (true, "pointer");
+                    }
+                }
+            }
+
+            let right_x = base_x + SETTINGS_SIDEBAR_WIDTH + 32.0;
+            let right_y = base_y + 24.0;
+            let sec1_y = right_y + 56.0;
+
+            match state.active_settings_category {
+                SettingsCategory::Appearance => {
+                    for idx in 0..THEME_PRESETS.len() {
+                        let (cx, cy, cw, ch) = get_settings_theme_card_rect(idx, right_x, sec1_y);
+                        if (cx..=cx + cw).contains(&x) && (cy..=cy + ch).contains(&y) {
+                            return (true, "pointer");
+                        }
+                    }
+                    let sec2_y = sec1_y + 240.0;
+                    for idx in 0..LANG_PRESETS.len() {
+                        let (px, py, pw, ph) = get_settings_lang_pill_rect(idx, right_x, sec2_y);
+                        if (px..=px + pw).contains(&x) && (py..=py + ph).contains(&y) {
+                            return (true, "pointer");
+                        }
+                    }
+                    let sec3_y = sec2_y + 76.0;
+                    let (gx, gy, gw, gh) = get_settings_glow_toggle_rect(right_x, sec3_y + 16.0);
+                    if (gx..=gx + gw).contains(&x) && (gy..=gy + gh).contains(&y) {
+                        return (true, "pointer");
+                    }
+                }
+                SettingsCategory::Terminal => {
+                    for idx in 0..FONT_SIZES.len() {
+                        let (px, py, pw, ph) = get_settings_font_size_pill_rect(idx, right_x, sec1_y);
+                        if (px..=px + pw).contains(&x) && (py..=py + ph).contains(&y) {
+                            return (true, "pointer");
+                        }
+                    }
+                    let sec2_y = sec1_y + 76.0;
+                    for idx in 0..CURSOR_STYLES.len() {
+                        let (px, py, pw, ph) = get_settings_cursor_style_pill_rect(idx, right_x, sec2_y);
+                        if (px..=px + pw).contains(&x) && (py..=py + ph).contains(&y) {
+                            return (true, "pointer");
+                        }
+                    }
+                    let sec3_y = sec2_y + 76.0;
+                    for idx in 0..FONT_FAMILIES.len() {
+                        let (px, py, pw, ph) = get_settings_font_family_pill_rect(idx, right_x, sec3_y);
+                        if (px..=px + pw).contains(&x) && (py..=py + ph).contains(&y) {
+                            return (true, "pointer");
+                        }
+                    }
+                    let sec4_y = sec3_y + 76.0;
+                    for idx in 0..SCROLLBACK_OPTIONS.len() {
+                        let (px, py, pw, ph) = get_settings_scrollback_pill_rect(idx, right_x, sec4_y);
+                        if (px..=px + pw).contains(&x) && (py..=py + ph).contains(&y) {
+                            return (true, "pointer");
+                        }
+                    }
+                }
+                SettingsCategory::Probe => {
+                    for idx in 0..PROBE_INTERVALS.len() {
+                        let (px, py, pw, ph) = get_settings_probe_interval_pill_rect(idx, right_x, sec1_y);
+                        if (px..=px + pw).contains(&x) && (py..=py + ph).contains(&y) {
+                            return (true, "pointer");
+                        }
+                    }
+                    let sec2_y = sec1_y + 76.0;
+                    for idx in 0..PING_PRESETS.len() {
+                        let (px, py, pw, ph) = get_settings_ping_preset_pill_rect(idx, right_x, sec2_y);
+                        if (px..=px + pw).contains(&x) && (py..=py + ph).contains(&y) {
+                            return (true, "pointer");
+                        }
+                    }
+                    let (cx, cy, cw, ch) = get_settings_ping_custom_btn_rect(right_x, sec2_y);
+                    if (cx..=cx + cw).contains(&x) && (cy..=cy + ch).contains(&y) {
+                        return (true, "pointer");
+                    }
+                }
+                SettingsCategory::Alerts => {
+                    for idx in 0..ALERT_THRESHOLDS.len() {
+                        let (px, py, pw, ph) = get_settings_cpu_threshold_pill_rect(idx, right_x, sec1_y);
+                        if (px..=px + pw).contains(&x) && (py..=py + ph).contains(&y) {
+                            return (true, "pointer");
+                        }
+                    }
+                    let sec2_y = sec1_y + 76.0;
+                    for idx in 0..ALERT_THRESHOLDS.len() {
+                        let (px, py, pw, ph) = get_settings_mem_threshold_pill_rect(idx, right_x, sec2_y);
+                        if (px..=px + pw).contains(&x) && (py..=py + ph).contains(&y) {
+                            return (true, "pointer");
+                        }
+                    }
+                    let sec3_y = sec2_y + 76.0;
+                    for idx in 0..ALERT_THRESHOLDS.len() {
+                        let (px, py, pw, ph) = get_settings_disk_threshold_pill_rect(idx, right_x, sec3_y);
+                        if (px..=px + pw).contains(&x) && (py..=py + ph).contains(&y) {
+                            return (true, "pointer");
+                        }
+                    }
+                    let sec4_y = sec3_y + 76.0;
+                    let (wx, wy, ww, wh) = get_settings_webhook_set_btn_rect(right_x, sec4_y);
+                    if (wx..=wx + ww).contains(&x) && (wy..=wy + wh).contains(&y) {
+                        return (true, "pointer");
+                    }
+                    let (cx, cy, cw, ch) = get_settings_webhook_clear_btn_rect(right_x, sec4_y);
+                    if (cx..=cx + cw).contains(&x) && (cy..=cy + ch).contains(&y) {
+                        return (true, "pointer");
+                    }
+                }
+                SettingsCategory::Backup => {
+                    let (ex, ey, ew, eh) = get_settings_export_json_btn_rect(right_x, sec1_y + 16.0);
+                    if (ex..=ex + ew).contains(&x) && (ey..=ey + eh).contains(&y) {
+                        return (true, "pointer");
+                    }
+                    let (ix, iy, iw, ih) = get_settings_import_json_btn_rect(right_x, sec1_y + 16.0);
+                    if (ix..=ix + iw).contains(&x) && (iy..=iy + ih).contains(&y) {
+                        return (true, "pointer");
+                    }
+                    let sec2_y = sec1_y + 106.0;
+                    let (rx, ry, rw, rh) = get_settings_reset_btn_rect(right_x, sec2_y + 16.0);
+                    if (rx..=rx + rw).contains(&x) && (ry..=ry + rh).contains(&y) {
+                        return (true, "pointer");
+                    }
+                }
+            }
         }
     }
 

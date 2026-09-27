@@ -3,10 +3,10 @@
 export const memory: WebAssembly.Memory;
 export const start_web_app: (a: number, b: number) => [number, number];
 export const wasm_bindgen__convert__closures_____invoke__h6c08f74e76e6565b: (a: number, b: number, c: any) => [number, number];
-export const wasm_bindgen__convert__closures_____invoke__h094a000fa166b1f6: (a: number, b: number, c: any) => void;
-export const wasm_bindgen__convert__closures_____invoke__h094a000fa166b1f6_3: (a: number, b: number, c: any) => void;
-export const wasm_bindgen__convert__closures_____invoke__h094a000fa166b1f6_4: (a: number, b: number, c: any) => void;
-export const wasm_bindgen__convert__closures_____invoke__h23273e4d6bd37f21: (a: number, b: number) => void;
+export const wasm_bindgen__convert__closures_____invoke__h048ffdcd9e3222d9: (a: number, b: number, c: any) => void;
+export const wasm_bindgen__convert__closures_____invoke__h048ffdcd9e3222d9_3: (a: number, b: number, c: any) => void;
+export const wasm_bindgen__convert__closures_____invoke__h048ffdcd9e3222d9_4: (a: number, b: number, c: any) => void;
+export const wasm_bindgen__convert__closures_____invoke__hb314773b9571455e: (a: number, b: number) => void;
 export const __wbindgen_malloc: (a: number, b: number) => number;
 export const __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
 export const __wbindgen_exn_store: (a: number) => void;
