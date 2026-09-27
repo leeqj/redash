@@ -155,6 +155,11 @@ impl TerminalGrid {
         self.cursor_row = 0;
     }
 
+    pub fn resize(&mut self, cols: usize, rows: usize) {
+        self.cols = cols.max(10);
+        self.rows = rows.max(5);
+    }
+
     pub fn write_stream(&mut self, text: &str) {
         let mut chars = text.chars().peekable();
 
@@ -214,6 +219,14 @@ impl TerminalGrid {
     }
 
     fn push_char(&mut self, ch: char) {
+        if self.cursor_col >= self.cols {
+            self.cursor_col = 0;
+            self.lines.push(Vec::new());
+            if self.lines.len() > self.max_scrollback {
+                self.lines.remove(0);
+            }
+        }
+
         let cell = TerminalCell {
             c: ch,
             fg: self.current_fg,

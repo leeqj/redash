@@ -14,7 +14,7 @@
   <img src="https://img.shields.io/badge/Rust-1.96.0-orange?style=flat-square" alt="Rust 1.96.0">
   <img src="https://img.shields.io/badge/架构-GPUI%20%7C%20WASM-blue?style=flat-square" alt="GPUI + WASM">
   <a href="LICENSE"><img src="https://img.shields.io/badge/开源协议-Apache--2.0-blue?style=flat-square" alt="License"></a>
-  <img src="https://img.shields.io/badge/版本-0.1.0--beta-purple?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/版本-0.1.1--beta-purple?style=flat-square" alt="Version">
 </p>
 
 <p align="center">

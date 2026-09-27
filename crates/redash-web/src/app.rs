@@ -41,8 +41,8 @@ mod tests {
         }
 
         let history = state.metrics_history.get(&host_id).unwrap();
-        // Buffer max length is capped at 30
-        assert_eq!(history.len(), 30);
+        // Buffer preserves up to 1800 points (supporting 60m time range)
+        assert_eq!(history.len(), 40);
         assert_eq!(*history.last().unwrap(), 39.0);
     }
 

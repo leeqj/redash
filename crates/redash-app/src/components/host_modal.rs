@@ -194,8 +194,7 @@ impl HostModal {
     pub fn with_missing_credential(mut self, missing: bool) -> Self {
         self.credential_missing = missing;
         if missing {
-            self.error_msg =
-                Some(crate::t!("host.auth_missing_cred").into());
+            self.error_msg = Some(crate::t!("host.auth_missing_cred").into());
             self.active_field = match self.auth_type {
                 AuthTypeSelection::Password => HostModalField::Password,
                 AuthTypeSelection::PrivateKey => HostModalField::Passphrase,

@@ -7,6 +7,8 @@ use redash_types::settings::AppSettings;
 use redash_types::sftp::RemoteFileItem;
 use std::collections::{HashMap, HashSet};
 
+pub use redash_types::metrics::{CardMetricType, ChartTimeRange};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ActiveView {
     Fleet,
@@ -112,6 +114,25 @@ pub enum UserAction {
     TriggerRunBatch,
     SetHoverPos(Option<(f64, f64)>),
     SetFilterFocused(bool),
+    SetCardMetric {
+        host_id: String,
+        metric: CardMetricType,
+    },
+    SetHoveredChartPoint {
+        host_id: String,
+        point: Option<usize>,
+    },
+    ClearHoveredChartPoint(String),
+    SetHostChartTimeRange {
+        host_id: String,
+        range: ChartTimeRange,
+    },
+    SetModalIsTesting(bool),
+    SetModalTestStatus(Option<(String, bool)>),
+    ResizeTerminal {
+        cols: usize,
+        rows: usize,
+    },
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -119,10 +140,18 @@ pub enum UserAction {
 pub enum UiEffect {
     None,
     FetchHosts,
+    ResizeTerminal {
+        cols: u16,
+        rows: u16,
+    },
     SaveHost(HostConfig),
     DeleteHost(String),
     SendTerminalInput(String),
     SaveSettings,
+    TestHostConnection {
+        host: HostConfig,
+        password: Option<String>,
+    },
     FetchSftpList {
         host_id: String,
         path: String,
@@ -149,6 +178,12 @@ pub struct AppStateMachine {
     pub filter_query: String,
     pub metrics: HashMap<String, NodeMetrics>,
     pub metrics_history: HashMap<String, Vec<f32>>,
+    pub cpu_histories: HashMap<String, Vec<f32>>,
+    pub mem_histories: HashMap<String, Vec<f32>>,
+    pub disk_histories: HashMap<String, Vec<f32>>,
+    pub active_card_metrics: HashMap<String, CardMetricType>,
+    pub active_time_ranges: HashMap<String, ChartTimeRange>,
+    pub hovered_chart_points: HashMap<String, usize>,
     pub terminal_lines: Vec<String>,
     pub terminal_grid: TerminalGrid,
     pub agent: Option<DetectedAgent>,
@@ -159,6 +194,8 @@ pub struct AppStateMachine {
     pub modal_port: String,
     pub modal_user: String,
     pub modal_field_idx: usize,
+    pub modal_is_testing: bool,
+    pub modal_test_status: Option<(String, bool)>,
     pub active_workbench_tab: WorkbenchTab,
     pub process_sort_by: ProcessSortField,
     pub selected_snippet_category: String,
@@ -194,7 +231,7 @@ impl Default for AppStateMachine {
 impl AppStateMachine {
     pub fn new() -> Self {
         let mut grid = TerminalGrid::new(120, 40);
-        grid.write_stream("ReDash Web Terminal [Version 0.1.0-beta]\r\nConnected to ReDash Web Gateway over high-performance WebSocket PTY.\r\n\r\n");
+        grid.write_stream("ReDash Web Terminal [Version 0.1.1-beta]\r\nConnected to ReDash Web Gateway over high-performance WebSocket PTY.\r\n\r\n");
 
         Self {
             active_view: ActiveView::Fleet,
@@ -203,8 +240,14 @@ impl AppStateMachine {
             filter_query: String::new(),
             metrics: HashMap::new(),
             metrics_history: HashMap::new(),
+            cpu_histories: HashMap::new(),
+            mem_histories: HashMap::new(),
+            disk_histories: HashMap::new(),
+            active_card_metrics: HashMap::new(),
+            active_time_ranges: HashMap::new(),
+            hovered_chart_points: HashMap::new(),
             terminal_lines: vec![
-                "ReDash Web Terminal [Version 0.1.0-beta]".to_string(),
+                "ReDash Web Terminal [Version 0.1.1-beta]".to_string(),
                 "Connected to ReDash Web Gateway over high-performance WebSocket PTY.".to_string(),
                 "".to_string(),
             ],
@@ -217,6 +260,8 @@ impl AppStateMachine {
             modal_port: "22".to_string(),
             modal_user: "root".to_string(),
             modal_field_idx: 0,
+            modal_is_testing: false,
+            modal_test_status: None,
             active_workbench_tab: WorkbenchTab::Terminal,
             process_sort_by: ProcessSortField::CpuDesc,
             selected_snippet_category: "All".to_string(),
@@ -280,17 +325,24 @@ impl AppStateMachine {
                 self.modal_port = "22".to_string();
                 self.modal_user = "root".to_string();
                 self.modal_field_idx = 0;
+                self.modal_is_testing = false;
+                self.modal_test_status = None;
             }
             UserAction::CloseAddModal => {
                 self.show_add_modal = false;
+                self.modal_is_testing = false;
+                self.modal_test_status = None;
             }
-            UserAction::ModalInput { field, text } => match field {
-                0 => self.modal_name = text,
-                1 => self.modal_hostname = text,
-                2 => self.modal_port = text,
-                3 => self.modal_user = text,
-                _ => {}
-            },
+            UserAction::ModalInput { field, text } => {
+                self.modal_test_status = None;
+                match field {
+                    0 => self.modal_name = text,
+                    1 => self.modal_hostname = text,
+                    2 => self.modal_port = text,
+                    3 => self.modal_user = text,
+                    _ => {}
+                }
+            }
             UserAction::ModalNextField => {
                 self.modal_field_idx = (self.modal_field_idx + 1) % 4;
             }
@@ -302,10 +354,24 @@ impl AppStateMachine {
                     host.port = port;
                     effects.push(UiEffect::SaveHost(host));
                     self.show_add_modal = false;
+                    self.modal_is_testing = false;
+                    self.modal_test_status = None;
                 }
             }
             UserAction::DeleteHost(id) => {
                 self.hosts.retain(|h| h.id.0 != id);
+                self.metrics.remove(&id);
+                self.metrics_history.remove(&id);
+                self.cpu_histories.remove(&id);
+                self.mem_histories.remove(&id);
+                self.disk_histories.remove(&id);
+                self.active_card_metrics.remove(&id);
+                self.active_time_ranges.remove(&id);
+                self.hovered_chart_points.remove(&id);
+                self.batch_selected_host_ids.remove(&id);
+                if self.selected_host_id.as_deref() == Some(&id) {
+                    self.selected_host_id = self.hosts.first().map(|h| h.id.0.clone());
+                }
                 effects.push(UiEffect::DeleteHost(id));
             }
             UserAction::AppendTerminal(text) => {
@@ -327,9 +393,24 @@ impl AppStateMachine {
                 }
             }
             UserAction::UpdateMetrics { host_id, metrics } => {
+                let cpu_h = self.cpu_histories.entry(host_id.clone()).or_default();
+                cpu_h.push(metrics.cpu_percent());
+                if cpu_h.len() > 1800 {
+                    cpu_h.remove(0);
+                }
+                let mem_h = self.mem_histories.entry(host_id.clone()).or_default();
+                mem_h.push(metrics.mem_percent());
+                if mem_h.len() > 1800 {
+                    mem_h.remove(0);
+                }
+                let disk_h = self.disk_histories.entry(host_id.clone()).or_default();
+                disk_h.push(metrics.disk_percent());
+                if disk_h.len() > 1800 {
+                    disk_h.remove(0);
+                }
                 let history = self.metrics_history.entry(host_id.clone()).or_default();
                 history.push(metrics.cpu_percent());
-                if history.len() > 30 {
+                if history.len() > 1800 {
                     history.remove(0);
                 }
                 self.metrics.insert(host_id, metrics);
@@ -549,9 +630,117 @@ impl AppStateMachine {
             UserAction::SetFilterFocused(focused) => {
                 self.is_filter_focused = focused;
             }
+            UserAction::SetCardMetric { host_id, metric } => {
+                self.active_card_metrics.insert(host_id, metric);
+            }
+            UserAction::SetHoveredChartPoint { host_id, point } => match point {
+                Some(pt) => {
+                    self.hovered_chart_points.insert(host_id, pt);
+                }
+                None => {
+                    self.hovered_chart_points.remove(&host_id);
+                }
+            },
+            UserAction::ClearHoveredChartPoint(host_id) => {
+                self.hovered_chart_points.remove(&host_id);
+            }
+            UserAction::SetHostChartTimeRange { host_id, range } => {
+                self.active_time_ranges.insert(host_id, range);
+            }
+            UserAction::SetModalIsTesting(is_testing) => {
+                self.modal_is_testing = is_testing;
+            }
+            UserAction::SetModalTestStatus(status) => {
+                self.modal_test_status = status;
+            }
+            UserAction::ResizeTerminal { cols, rows } => {
+                let clamped_cols = cols.clamp(10, u16::MAX as usize);
+                let clamped_rows = rows.clamp(5, u16::MAX as usize);
+                if self.terminal_grid.cols != clamped_cols
+                    || self.terminal_grid.rows != clamped_rows
+                {
+                    self.terminal_grid.resize(clamped_cols, clamped_rows);
+                    effects.push(UiEffect::ResizeTerminal {
+                        cols: clamped_cols as u16,
+                        rows: clamped_rows as u16,
+                    });
+                }
+            }
         }
 
         effects
+    }
+
+    pub fn set_card_metric(&mut self, host_id: String, metric: CardMetricType) -> Vec<UiEffect> {
+        self.handle_action(UserAction::SetCardMetric { host_id, metric })
+    }
+
+    pub fn get_card_metric(&self, host_id: &str) -> CardMetricType {
+        self.active_card_metrics
+            .get(host_id)
+            .copied()
+            .unwrap_or_default()
+    }
+
+    pub fn set_host_chart_time_range(
+        &mut self,
+        host_id: String,
+        range: ChartTimeRange,
+    ) -> Vec<UiEffect> {
+        self.handle_action(UserAction::SetHostChartTimeRange { host_id, range })
+    }
+
+    pub fn get_host_chart_time_range(&self, host_id: &str) -> ChartTimeRange {
+        self.active_time_ranges
+            .get(host_id)
+            .copied()
+            .unwrap_or_default()
+    }
+
+    pub fn slice_history_for_range(history: &[f32], range: ChartTimeRange) -> Vec<f32> {
+        let max_samples = range.max_samples();
+        let slice = if history.len() > max_samples {
+            &history[history.len() - max_samples..]
+        } else {
+            history
+        };
+        if slice.len() <= 60 {
+            slice.to_vec()
+        } else {
+            let target_points = 60;
+            (0..target_points)
+                .map(|i| {
+                    let start = i * slice.len() / target_points;
+                    let end = ((i + 1) * slice.len() / target_points).min(slice.len());
+                    if start >= end {
+                        slice.get(start).copied().unwrap_or(0.0)
+                    } else {
+                        let chunk = &slice[start..end];
+                        chunk.iter().sum::<f32>() / chunk.len() as f32
+                    }
+                })
+                .collect()
+        }
+    }
+
+    pub fn set_hovered_chart_point(
+        &mut self,
+        host_id: String,
+        point: Option<usize>,
+    ) -> Vec<UiEffect> {
+        self.handle_action(UserAction::SetHoveredChartPoint { host_id, point })
+    }
+
+    pub fn clear_hovered_chart_point(&mut self, host_id: String) -> Vec<UiEffect> {
+        self.handle_action(UserAction::ClearHoveredChartPoint(host_id))
+    }
+
+    pub fn set_modal_is_testing(&mut self, is_testing: bool) -> Vec<UiEffect> {
+        self.handle_action(UserAction::SetModalIsTesting(is_testing))
+    }
+
+    pub fn set_modal_test_status(&mut self, status: Option<(String, bool)>) -> Vec<UiEffect> {
+        self.handle_action(UserAction::SetModalTestStatus(status))
     }
 
     pub fn set_hover_pos(&mut self, pos: Option<(f64, f64)>) -> Vec<UiEffect> {
@@ -774,6 +963,14 @@ impl AppStateMachine {
         let loc = crate::i18n::Locale::from_code(&self.settings.language)
             .unwrap_or(crate::i18n::Locale::ZhCn);
         crate::i18n::lookup_in_locale(loc, key).unwrap_or(key)
+    }
+
+    pub fn delete_host(&mut self, host_id: String) -> Vec<UiEffect> {
+        self.handle_action(UserAction::DeleteHost(host_id))
+    }
+
+    pub fn resize_terminal(&mut self, cols: usize, rows: usize) -> Vec<UiEffect> {
+        self.handle_action(UserAction::ResizeTerminal { cols, rows })
     }
 
     pub fn current_palette(&self) -> &'static crate::theme::ThemePalette {
@@ -1215,5 +1412,176 @@ mod tests {
         assert!(!sm.terminal_search_active);
         assert!(sm.terminal_search_query.is_empty());
         assert_eq!(sm.terminal_search_match_count, 0);
+    }
+
+    #[test]
+    fn test_card_metrics_and_hover_state() {
+        let mut sm = AppStateMachine::new();
+        let host_id = "test-host-1".to_string();
+
+        assert_eq!(sm.get_card_metric(&host_id), CardMetricType::All);
+
+        sm.set_card_metric(host_id.clone(), CardMetricType::Cpu);
+        assert_eq!(sm.get_card_metric(&host_id), CardMetricType::Cpu);
+
+        sm.set_card_metric(host_id.clone(), CardMetricType::Memory);
+        assert_eq!(sm.get_card_metric(&host_id), CardMetricType::Memory);
+
+        sm.set_card_metric(host_id.clone(), CardMetricType::Disk);
+        assert_eq!(sm.get_card_metric(&host_id), CardMetricType::Disk);
+
+        // Hover points
+        assert_eq!(sm.hovered_chart_points.get(&host_id), None);
+        sm.set_hovered_chart_point(host_id.clone(), Some(5));
+        assert_eq!(sm.hovered_chart_points.get(&host_id), Some(&5));
+
+        sm.clear_hovered_chart_point(host_id.clone());
+        assert_eq!(sm.hovered_chart_points.get(&host_id), None);
+
+        // Metrics history multi-series tracking
+        let mut metrics = NodeMetrics::default();
+        metrics.cpu.usage_percent = 25.5;
+        metrics.mem.usage_percent = 60.0;
+        metrics.disks = vec![redash_types::metrics::DiskMetrics {
+            usage_percent: 42.0,
+            ..Default::default()
+        }];
+
+        sm.handle_action(UserAction::UpdateMetrics {
+            host_id: host_id.clone(),
+            metrics,
+        });
+
+        assert_eq!(sm.cpu_histories.get(&host_id).unwrap(), &vec![25.5]);
+        assert_eq!(sm.mem_histories.get(&host_id).unwrap(), &vec![60.0]);
+        assert_eq!(sm.disk_histories.get(&host_id).unwrap(), &vec![42.0]);
+        assert_eq!(sm.metrics_history.get(&host_id).unwrap(), &vec![25.5]);
+    }
+
+    #[test]
+    fn test_modal_test_connection_state() {
+        let mut sm = AppStateMachine::new();
+        assert!(!sm.modal_is_testing);
+        assert!(sm.modal_test_status.is_none());
+
+        sm.set_modal_is_testing(true);
+        assert!(sm.modal_is_testing);
+
+        sm.set_modal_test_status(Some(("连接成功 (24ms)".to_string(), true)));
+        assert_eq!(
+            sm.modal_test_status,
+            Some(("连接成功 (24ms)".to_string(), true))
+        );
+
+        // Editing input clears test status
+        sm.handle_action(UserAction::ModalInput {
+            field: 1,
+            text: "192.168.1.100".to_string(),
+        });
+        assert!(sm.modal_test_status.is_none());
+
+        // Closing modal resets testing flags
+        sm.set_modal_is_testing(true);
+        sm.set_modal_test_status(Some(("Error".to_string(), false)));
+        sm.handle_action(UserAction::CloseAddModal);
+        assert!(!sm.modal_is_testing);
+        assert!(sm.modal_test_status.is_none());
+    }
+
+    #[test]
+    fn test_delete_host_cleans_up_all_resources() {
+        let mut sm = AppStateMachine::new();
+        let mut h1 = HostConfig::new("Host-1", "1.1.1.1", "root");
+        h1.id = redash_types::HostId("h1".to_string());
+        let mut h2 = HostConfig::new("Host-2", "1.1.1.2", "root");
+        h2.id = redash_types::HostId("h2".to_string());
+        sm.hosts = vec![h1, h2];
+        sm.selected_host_id = Some("h1".to_string());
+
+        let mut metrics = NodeMetrics::default();
+        metrics.cpu.usage_percent = 50.0;
+        sm.handle_action(UserAction::UpdateMetrics {
+            host_id: "h1".to_string(),
+            metrics,
+        });
+        sm.set_card_metric("h1".to_string(), CardMetricType::Disk);
+        sm.set_hovered_chart_point("h1".to_string(), Some(5));
+
+        assert!(sm.metrics.contains_key("h1"));
+        assert!(sm.cpu_histories.contains_key("h1"));
+        assert!(sm.mem_histories.contains_key("h1"));
+        assert!(sm.disk_histories.contains_key("h1"));
+        assert!(sm.active_card_metrics.contains_key("h1"));
+        assert!(sm.hovered_chart_points.contains_key("h1"));
+
+        // Delete h1
+        let effects = sm.delete_host("h1".to_string());
+        assert_eq!(effects, vec![UiEffect::DeleteHost("h1".to_string())]);
+        assert_eq!(sm.hosts.len(), 1);
+        assert_eq!(sm.selected_host_id, Some("h2".to_string()));
+
+        // Verify maps are all cleaned up
+        assert!(!sm.metrics.contains_key("h1"));
+        assert!(!sm.cpu_histories.contains_key("h1"));
+        assert!(!sm.mem_histories.contains_key("h1"));
+        assert!(!sm.disk_histories.contains_key("h1"));
+        assert!(!sm.active_card_metrics.contains_key("h1"));
+        assert!(!sm.active_time_ranges.contains_key("h1"));
+        assert!(!sm.hovered_chart_points.contains_key("h1"));
+    }
+
+    #[test]
+    fn test_chart_time_range_and_downsampling() {
+        let mut sm = AppStateMachine::new();
+        let host_id = "node-101".to_string();
+
+        // Default range should be 1m (R1m)
+        assert_eq!(sm.get_host_chart_time_range(&host_id), ChartTimeRange::R1m);
+
+        // Switch to 5m, 30m, 60m
+        sm.set_host_chart_time_range(host_id.clone(), ChartTimeRange::R5m);
+        assert_eq!(sm.get_host_chart_time_range(&host_id), ChartTimeRange::R5m);
+
+        sm.set_host_chart_time_range(host_id.clone(), ChartTimeRange::R60m);
+        assert_eq!(sm.get_host_chart_time_range(&host_id), ChartTimeRange::R60m);
+
+        // Test slice_history_for_range with short data (<= 60 points)
+        let short_data: Vec<f32> = (0..20).map(|i| i as f32).collect();
+        let sliced = AppStateMachine::slice_history_for_range(&short_data, ChartTimeRange::R1m);
+        assert_eq!(sliced.len(), 20);
+
+        // Test slice_history_for_range with 60m data (1800 points downsampled to 60 points)
+        let large_data: Vec<f32> = (0..1800).map(|i| (i % 100) as f32).collect();
+        let downsampled =
+            AppStateMachine::slice_history_for_range(&large_data, ChartTimeRange::R60m);
+        assert_eq!(downsampled.len(), 60);
+
+        // Test 1m slice on large data (should take last 30 samples and keep <= 60 points)
+        let slice_1m = AppStateMachine::slice_history_for_range(&large_data, ChartTimeRange::R1m);
+        assert_eq!(slice_1m.len(), 30);
+        assert_eq!(slice_1m, &large_data[1770..]);
+    }
+
+    #[test]
+    fn test_terminal_resize_effect() {
+        let mut sm = AppStateMachine::new();
+        assert_eq!(sm.terminal_grid.cols, 120);
+        assert_eq!(sm.terminal_grid.rows, 40);
+
+        // Resizing to new dimensions returns effect
+        let effects = sm.resize_terminal(160, 50);
+        assert_eq!(
+            effects,
+            vec![UiEffect::ResizeTerminal {
+                cols: 160,
+                rows: 50
+            }]
+        );
+        assert_eq!(sm.terminal_grid.cols, 160);
+        assert_eq!(sm.terminal_grid.rows, 50);
+
+        // Same dimensions returns empty effects (no-op)
+        let effects_same = sm.resize_terminal(160, 50);
+        assert!(effects_same.is_empty());
     }
 }

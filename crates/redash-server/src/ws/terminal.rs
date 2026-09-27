@@ -109,7 +109,7 @@ async fn handle_terminal_socket(
     let (server_tx, mut server_rx) = mpsc::channel::<ServerTerminalMessage>(128);
 
     // WebSocket Outgoing Writer Task
-    let ws_writer = tokio::spawn(async move {
+    let mut ws_writer = tokio::spawn(async move {
         while let Some(msg) = server_rx.recv().await {
             if let Ok(json) = serde_json::to_string(&msg)
                 && ws_tx.send(Message::Text(json.into())).await.is_err()
@@ -121,7 +121,7 @@ async fn handle_terminal_socket(
 
     // Task 1: Forward PTY output -> WebSocket Client (with Agent HUD Detection)
     let server_tx_pty = server_tx.clone();
-    let pty_out_forwarder = tokio::spawn(async move {
+    let mut pty_out_forwarder = tokio::spawn(async move {
         let mut buffer_history = String::new();
 
         while let Some(bytes) = pty_out_rx.recv().await {
@@ -153,7 +153,7 @@ async fn handle_terminal_socket(
 
     // Task 2: Forward WebSocket Client -> PTY Input
     let pty_channel_clone = Arc::clone(&pty_channel);
-    let ws_in_forwarder = tokio::spawn(async move {
+    let mut ws_in_forwarder = tokio::spawn(async move {
         while let Some(Ok(msg)) = ws_rx.next().await {
             match msg {
                 Message::Text(text) => {
@@ -188,8 +188,13 @@ async fn handle_terminal_socket(
     });
 
     tokio::select! {
-        _ = ws_writer => {},
-        _ = pty_out_forwarder => {},
-        _ = ws_in_forwarder => {},
+        _ = (&mut ws_writer) => {},
+        _ = (&mut pty_out_forwarder) => {},
+        _ = (&mut ws_in_forwarder) => {},
     }
+
+    ws_writer.abort();
+    pty_out_forwarder.abort();
+    ws_in_forwarder.abort();
+    let _ = pty_channel.close().await;
 }

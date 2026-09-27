@@ -76,7 +76,10 @@ impl WorkbenchView {
             let _ = term_entity.update(cx, |view, cx| match result {
                 Ok(pty) => view.attach_pty(Arc::new(pty), cx),
                 Err(error) => {
-                    view.connection_error = Some(crate::t_fmt!("workbench.term_conn_failed", error = format!("{error:#}")));
+                    view.connection_error = Some(crate::t_fmt!(
+                        "workbench.term_conn_failed",
+                        error = format!("{error:#}")
+                    ));
                     cx.notify();
                 }
             });
@@ -172,7 +175,8 @@ impl WorkbenchView {
         let host_name = self.host.name.clone();
         let settings = self.settings.clone();
         let new_term = cx.new(|cx| {
-            let mut tv = TerminalView::new(init_cols, init_rows, None, output_rx, cx).with_host_name(host_name);
+            let mut tv = TerminalView::new(init_cols, init_rows, None, output_rx, cx)
+                .with_host_name(host_name);
             tv.apply_settings(&settings, cx);
             tv
         });
@@ -185,7 +189,10 @@ impl WorkbenchView {
             let _ = term_entity.update(cx, |view, cx| match result {
                 Ok(pty) => view.attach_pty(Arc::new(pty), cx),
                 Err(error) => {
-                    view.connection_error = Some(crate::t_fmt!("workbench.term_conn_failed", error = format!("{error:#}")));
+                    view.connection_error = Some(crate::t_fmt!(
+                        "workbench.term_conn_failed",
+                        error = format!("{error:#}")
+                    ));
                     cx.notify();
                 }
             });
@@ -212,7 +219,8 @@ impl WorkbenchView {
         let host = self.host.clone();
         let name = host.name.clone();
         let terminal = cx.new(|cx| {
-            let mut terminal = TerminalView::new(init_cols, init_rows, None, output_rx, cx).with_host_name(name);
+            let mut terminal =
+                TerminalView::new(init_cols, init_rows, None, output_rx, cx).with_host_name(name);
             terminal.apply_settings(&settings, cx);
             terminal
         });
@@ -221,11 +229,16 @@ impl WorkbenchView {
         self.terminal_view = terminal.clone();
         let manager = Arc::clone(&self.session_mgr);
         cx.spawn(async move |_, cx| {
-            let result = manager.open_pty(&host, init_cols as u32, init_rows as u32, output_tx).await;
+            let result = manager
+                .open_pty(&host, init_cols as u32, init_rows as u32, output_tx)
+                .await;
             let _ = terminal.update(cx, |view, cx| match result {
                 Ok(pty) => view.attach_pty(Arc::new(pty), cx),
                 Err(error) => {
-                    view.connection_error = Some(crate::t_fmt!("workbench.term_conn_failed", error = format!("{error:#}")));
+                    view.connection_error = Some(crate::t_fmt!(
+                        "workbench.term_conn_failed",
+                        error = format!("{error:#}")
+                    ));
                     cx.notify();
                 }
             });
@@ -862,7 +875,10 @@ impl Render for WorkbenchView {
                     Some(ms) if ms < 80 => (format!("{}ms", ms), DarkTechTheme::accent_emerald()),
                     Some(ms) if ms < 250 => (format!("{}ms", ms), DarkTechTheme::status_warn()),
                     Some(ms) => (format!("{}ms", ms), DarkTechTheme::status_crit()),
-                    None => (crate::t!("workbench.unknown").to_string(), DarkTechTheme::accent_cyan()),
+                    None => (
+                        crate::t!("workbench.unknown").to_string(),
+                        DarkTechTheme::accent_cyan(),
+                    ),
                 };
                 (
                     cpu,
@@ -893,8 +909,6 @@ impl Render for WorkbenchView {
 
         div()
             .id("workbench_root")
-            .child(div().id("reconnect_terminal").px_2().text_sm().text_color(DarkTechTheme::accent_cyan()).cursor_pointer().child(crate::t!("workbench.reconnect_terminal"))
-                .on_click(cx.listener(|this, _, window, cx| this.reconnect_terminal(window, cx))))
             .children(self.probe_error.as_ref().map(|error| div().p_2().text_sm().text_color(DarkTechTheme::status_warn()).child(crate::t_fmt!("workbench.probe_error_last_data", error = error.to_string()))))
             .children(self.metrics.as_ref().filter(|m| !m.collection_errors.is_empty()).map(|m| div().px_2().text_xs().text_color(DarkTechTheme::text_muted()).child(m.collection_errors.join(" · "))))
             .size_full()
@@ -1043,6 +1057,80 @@ impl Render for WorkbenchView {
                                             .items_center()
                                             .gap_1()
                                             .mr_2()
+                                            .child(
+                                                div()
+                                                    .id("reconnect_terminal")
+                                                    .h(px(26.0))
+                                                    .w(px(28.0))
+                                                    .rounded_md()
+                                                    .bg(DarkTechTheme::bg_input())
+                                                    .border_1()
+                                                    .border_color(DarkTechTheme::border_default())
+                                                    .flex()
+                                                    .items_center()
+                                                    .justify_center()
+                                                    .cursor_pointer()
+                                                    .hover(|s| {
+                                                        s.bg(DarkTechTheme::bg_panel_hover())
+                                                            .border_color(DarkTechTheme::border_muted())
+                                                    })
+                                                    .on_click(cx.listener(|this, _e: &ClickEvent, window, cx| {
+                                                        this.reconnect_terminal(window, cx);
+                                                    }))
+                                                    .tooltip(crate::components::tooltip::tooltip(crate::t!("workbench.reconnect_terminal")))
+                                                    .child(Icon::refresh().with_size(px(13.0)).with_color(DarkTechTheme::text_secondary()))
+                                            )
+                                            .child(
+                                                div()
+                                                    .id("search_terminal")
+                                                    .h(px(26.0))
+                                                    .w(px(28.0))
+                                                    .rounded_md()
+                                                    .bg(DarkTechTheme::bg_input())
+                                                    .border_1()
+                                                    .border_color(DarkTechTheme::border_default())
+                                                    .flex()
+                                                    .items_center()
+                                                    .justify_center()
+                                                    .cursor_pointer()
+                                                    .hover(|s| {
+                                                        s.bg(DarkTechTheme::bg_panel_hover())
+                                                            .border_color(DarkTechTheme::border_muted())
+                                                    })
+                                                    .on_click(cx.listener(|this, _e: &ClickEvent, _window, cx| {
+                                                        this.terminal_view.update(cx, |term, cx| {
+                                                            term.toggle_search(cx);
+                                                        });
+                                                    }))
+                                                    .tooltip(crate::components::tooltip::tooltip(crate::t!("term.search")))
+                                                    .child(Icon::search().with_size(px(13.0)).with_color(DarkTechTheme::text_secondary()))
+                                            )
+                                            .child(
+                                                div()
+                                                    .id("clear_terminal")
+                                                    .h(px(26.0))
+                                                    .w(px(28.0))
+                                                    .rounded_md()
+                                                    .bg(DarkTechTheme::bg_input())
+                                                    .border_1()
+                                                    .border_color(DarkTechTheme::border_default())
+                                                    .flex()
+                                                    .items_center()
+                                                    .justify_center()
+                                                    .cursor_pointer()
+                                                    .hover(|s| {
+                                                        s.bg(DarkTechTheme::bg_panel_hover())
+                                                            .border_color(DarkTechTheme::border_muted())
+                                                    })
+                                                    .on_click(cx.listener(|this, _e: &ClickEvent, window, cx| {
+                                                        this.terminal_view.update(cx, |term, _cx| {
+                                                            term.focus(window);
+                                                            term.clear_screen();
+                                                        });
+                                                    }))
+                                                    .tooltip(crate::components::tooltip::tooltip(crate::t!("term.clear")))
+                                                    .child(Icon::clear().with_size(px(13.0)).with_color(DarkTechTheme::text_secondary()))
+                                            )
                                             .child(
                                                 div()
                                                     .id("wb_split_v")

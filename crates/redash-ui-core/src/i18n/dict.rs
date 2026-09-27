@@ -386,7 +386,9 @@ fn lookup_zh_cn(key: &str) -> Option<&'static str> {
         "settings.badge_previewing" => "实时预览中",
         "settings.badge_in_use" => "当前使用",
         "settings.badge_previewing_unsaved" => "● 实时预览中 (未保存)",
-        "settings.probe_subdesc" => "配置 ReDash 与纳管 Linux / macOS / Windows 节点间的轻量级探针采集节奏与网络超时策略。",
+        "settings.probe_subdesc" => {
+            "配置 ReDash 与纳管 Linux / macOS / Windows 节点间的轻量级探针采集节奏与网络超时策略。"
+        }
         "settings.opt_per_sec" => "{secs} 秒/次",
         "settings.opt_secs" => "{secs} 秒",
         "settings.opt_timeout_3s" => "3s (严苛)",
@@ -399,14 +401,22 @@ fn lookup_zh_cn(key: &str) -> Option<&'static str> {
         "settings.opt_points_60" => "60 点 (精细)",
         "settings.opt_points_120" => "120 点 (全景)",
         "settings.auto_probe_title" => "后台自动执行实时探针探测",
-        "settings.auto_probe_desc" => "开启后将在后台定期采集 CPU、内存、磁盘与网络吞吐指标，关闭后仅在手动刷新时探测。",
-        "settings.alerts_desc" => "实时监控指标超标、节点离线故障自动化检测，支持 macOS 原生桌面通知与 Webhook 机器人消息分发。",
+        "settings.auto_probe_desc" => {
+            "开启后将在后台定期采集 CPU、内存、磁盘与网络吞吐指标，关闭后仅在手动刷新时探测。"
+        }
+        "settings.alerts_desc" => {
+            "实时监控指标超标、节点离线故障自动化检测，支持 macOS 原生桌面通知与 Webhook 机器人消息分发。"
+        }
         "settings.opt_recommend" => "推荐",
         "settings.opt_strict" => "严苛",
         "settings.opt_urgent" => "紧迫",
         "settings.opt_high" => "极高",
-        "settings.notify_offline_desc" => "当纳管服务器出现网络不可达、SSH 认证失败或连续探针超时无响应时立即发出告警预警。",
-        "settings.notify_macos_desc" => "发生过载或故障时，调用 macOS 系统通知中心弹出横幅提醒与提示音。",
+        "settings.notify_offline_desc" => {
+            "当纳管服务器出现网络不可达、SSH 认证失败或连续探针超时无响应时立即发出告警预警。"
+        }
+        "settings.notify_macos_desc" => {
+            "发生过载或故障时，调用 macOS 系统通知中心弹出横幅提醒与提示音。"
+        }
         "settings.webhook_feishu_card" => "🤖 飞书群自定义机器人 (已适配交互卡片)",
         "settings.webhook_generic" => "🌐 通用 Webhook (JSON)",
         "settings.btn_paste_webhook" => "📋 从剪贴板粘贴 Webhook",
@@ -426,7 +436,9 @@ fn lookup_zh_cn(key: &str) -> Option<&'static str> {
         "settings.storage_hosts_title" => "服务器主机配置文件 (hosts.json)",
         "settings.storage_settings_title" => "系统首选项配置文件 (settings.json)",
         "settings.vault_title" => "操作系统级密钥安全保管库 (Credential Vault)",
-        "settings.vault_desc" => "服务器 SSH 密码及私钥口令默认托管于系统底层安全钥匙串（macOS Keychain / Linux Secret Service / Windows Credential Manager），本地 JSON 仅保留主机指纹。",
+        "settings.vault_desc" => {
+            "服务器 SSH 密码及私钥口令默认托管于系统底层安全钥匙串（macOS Keychain / Linux Secret Service / Windows Credential Manager），本地 JSON 仅保留主机指纹。"
+        }
         "settings.backup_header" => "配置备份与数据维护 (Backup & Maintenance)",
         "settings.about_tech_title" => "底层架构与驱动引擎 (Architecture & Tech Stack)",
         "settings.about_host_env" => "本地主机运行环境 (Host Environment)",
@@ -476,7 +488,9 @@ fn lookup_zh_cn(key: &str) -> Option<&'static str> {
         "batch.cancelled_status" => "已停止本地任务并请求关闭远端信道；脱离会话的进程可能仍在运行",
 
         // Host Modal
-        "host.auth_missing_cred" => "已保存的登录凭据不存在，请重新填写密码或私钥口令，也可更改认证方式。",
+        "host.auth_missing_cred" => {
+            "已保存的登录凭据不存在，请重新填写密码或私钥口令，也可更改认证方式。"
+        }
         "host.val_name_too_long" => "服务器名称长度不能超过 64 个字符",
         "host.val_port_zero" => "端口不能为 0",
         "host.val_password_missing" => "登录密码缺失，请重新填写密码后保存。",
@@ -505,13 +519,19 @@ fn lookup_zh_cn(key: &str) -> Option<&'static str> {
         "settings.cursor_underline" => "_ 下划线 (Underline)",
         "settings.terminal_preview" => "实时终端渲染预览 (Live Preview)",
         "settings.copy_on_select_title" => "光标选中文本时自动复制到剪贴板 (Copy on Select)",
-        "settings.copy_on_select_desc" => "在终端中拖拽鼠标选择文字内容时，自动将其复制到操作系统系统剪贴板。",
+        "settings.copy_on_select_desc" => {
+            "在终端中拖拽鼠标选择文字内容时，自动将其复制到操作系统系统剪贴板。"
+        }
         "settings.appearance_unsupported_hint" => "发光特效与紧凑布局尚未支持，暂不提供设置。",
         "settings.sparkline_points" => "脉搏历史点数 (Sparkline Buffer Points)",
         "settings.feishu_bot_label" => "飞书群机器人",
         "settings.webhook_disabled" => "未启用",
-        "settings.webhook_placeholder" => "https://open.feishu.cn/open-apis/bot/v2/hook/... (支持直接从剪贴板粘贴)",
-        "settings.status_webhook_test_msg" => "这是一条来自 ReDash 桌面运维工作台的告警测试通知，指标监控与机器人通道运转正常。",
+        "settings.webhook_placeholder" => {
+            "https://open.feishu.cn/open-apis/bot/v2/hook/... (支持直接从剪贴板粘贴)"
+        }
+        "settings.status_webhook_test_msg" => {
+            "这是一条来自 ReDash 桌面运维工作台的告警测试通知，指标监控与机器人通道运转正常。"
+        }
         "settings.status_macos_notify_title" => "ReDash 告警测试",
         "settings.status_macos_notify_body" => "这是一个自动化告警测试通知，指标监控系统运转正常。",
         "settings.opt_font_size_12" => "12 px (推荐)",
@@ -913,17 +933,27 @@ fn lookup_en_us(key: &str) -> Option<&'static str> {
         "fleet.status_unknown" => "Unknown",
 
         // Settings View
-        "settings.theme_desc" => "Manage dark tech palettes, 1px glow borders, and fleet card density.",
-        "settings.theme_instant_hint" => "Instant global live preview upon selection, no restart required",
+        "settings.theme_desc" => {
+            "Manage dark tech palettes, 1px glow borders, and fleet card density."
+        }
+        "settings.theme_instant_hint" => {
+            "Instant global live preview upon selection, no restart required"
+        }
         "settings.theme_darktech_desc" => "Deep carbon black #0a0b10 + 1px cyber blue glow",
-        "settings.theme_cyberpunk_desc" => "Cyberpunk Neon: deep purple-black + fluorescent cyan borders",
-        "settings.theme_monokai_desc" => "Classic Hacker Code: warm carbon gray + golden yellow accents",
+        "settings.theme_cyberpunk_desc" => {
+            "Cyberpunk Neon: deep purple-black + fluorescent cyan borders"
+        }
+        "settings.theme_monokai_desc" => {
+            "Classic Hacker Code: warm carbon gray + golden yellow accents"
+        }
         "settings.theme_github_desc" => "Slate Immersive Dark: classic GitHub midnight blue-gray",
         "settings.badge_current" => "Active",
         "settings.badge_previewing" => "Live Preview",
         "settings.badge_in_use" => "In Use",
         "settings.badge_previewing_unsaved" => "● Live Preview (Unsaved)",
-        "settings.probe_subdesc" => "Configure lightweight telemetry polling cadences and network timeout policies between ReDash and managed nodes.",
+        "settings.probe_subdesc" => {
+            "Configure lightweight telemetry polling cadences and network timeout policies between ReDash and managed nodes."
+        }
         "settings.opt_per_sec" => "{secs}s / probe",
         "settings.opt_secs" => "{secs}s",
         "settings.opt_timeout_3s" => "3s (Strict)",
@@ -936,14 +966,22 @@ fn lookup_en_us(key: &str) -> Option<&'static str> {
         "settings.opt_points_60" => "60 pts (Detailed)",
         "settings.opt_points_120" => "120 pts (Panorama)",
         "settings.auto_probe_title" => "Automatic Background Telemetry Probing",
-        "settings.auto_probe_desc" => "Periodically poll CPU, memory, disk, and network metrics in background. If disabled, probe only on manual refresh.",
-        "settings.alerts_desc" => "Automated thresholds & offline failure detection, supporting macOS desktop banners and Webhook robot dispatch.",
+        "settings.auto_probe_desc" => {
+            "Periodically poll CPU, memory, disk, and network metrics in background. If disabled, probe only on manual refresh."
+        }
+        "settings.alerts_desc" => {
+            "Automated thresholds & offline failure detection, supporting macOS desktop banners and Webhook robot dispatch."
+        }
         "settings.opt_recommend" => "Recommended",
         "settings.opt_strict" => "Strict",
         "settings.opt_urgent" => "Urgent",
         "settings.opt_high" => "Critical",
-        "settings.notify_offline_desc" => "Trigger alerts immediately when a managed server is unreachable, auth fails, or consecutive probes timeout.",
-        "settings.notify_macos_desc" => "Display macOS notification banner and alert sound when overloads or node failures occur.",
+        "settings.notify_offline_desc" => {
+            "Trigger alerts immediately when a managed server is unreachable, auth fails, or consecutive probes timeout."
+        }
+        "settings.notify_macos_desc" => {
+            "Display macOS notification banner and alert sound when overloads or node failures occur."
+        }
         "settings.webhook_feishu_card" => "🤖 Feishu / Lark Bot (Interactive Card Adapter)",
         "settings.webhook_generic" => "🌐 Generic Webhook (JSON)",
         "settings.btn_paste_webhook" => "📋 Paste from Clipboard",
@@ -954,16 +992,22 @@ fn lookup_en_us(key: &str) -> Option<&'static str> {
         "settings.status_webhook_pasted" => "Pasted Webhook URL from clipboard",
         "settings.status_webhook_empty_clipboard" => "No valid text found in clipboard",
         "settings.status_webhook_cleared" => "Webhook URL cleared",
-        "settings.status_webhook_need_url" => "Please configure or paste a Webhook URL before testing",
+        "settings.status_webhook_need_url" => {
+            "Please configure or paste a Webhook URL before testing"
+        }
         "settings.status_webhook_success" => "{target} test message sent successfully!",
         "settings.status_webhook_failed" => "Webhook delivery failed: {error}",
         "settings.status_macos_notify_success" => "System desktop test notification sent",
         "settings.status_macos_notify_failed" => "Failed to send system desktop test notification",
-        "settings.storage_desc" => "View local storage paths, credential vault mechanisms, and data backups.",
+        "settings.storage_desc" => {
+            "View local storage paths, credential vault mechanisms, and data backups."
+        }
         "settings.storage_hosts_title" => "Server Host Inventory (hosts.json)",
         "settings.storage_settings_title" => "Application Preferences (settings.json)",
         "settings.vault_title" => "OS-Level Secure Credential Vault",
-        "settings.vault_desc" => "SSH passwords and private key passphrases are stored in OS keychain (macOS Keychain / Linux Secret Service / Windows Credential Manager). Local JSON never stores plaintext secrets.",
+        "settings.vault_desc" => {
+            "SSH passwords and private key passphrases are stored in OS keychain (macOS Keychain / Linux Secret Service / Windows Credential Manager). Local JSON never stores plaintext secrets."
+        }
         "settings.backup_header" => "Configuration Backup & Maintenance",
         "settings.about_tech_title" => "Architecture & Tech Stack",
         "settings.about_host_env" => "Local Host Environment",
@@ -977,13 +1021,17 @@ fn lookup_en_us(key: &str) -> Option<&'static str> {
         "batch.preset_disk_space" => "Disk Space",
         "batch.preset_disk_space_desc" => "Check critical partition usage and free space",
         "batch.preset_disk_clean" => "Disk Deep Clean",
-        "batch.preset_disk_clean_desc" => "Vacuum systemd journal logs and temp files, reporting freed space",
+        "batch.preset_disk_clean_desc" => {
+            "Vacuum systemd journal logs and temp files, reporting freed space"
+        }
         "batch.preset_docker_health" => "Container Health",
         "batch.preset_docker_health_desc" => "List running Docker containers and port mappings",
         "batch.preset_top_proc" => "Top Processes",
         "batch.preset_top_proc_desc" => "List top 8 processes consuming CPU resources",
         "batch.preset_ports" => "Listening Ports",
-        "batch.preset_ports_desc" => "Scan active listening network ports and corresponding processes",
+        "batch.preset_ports_desc" => {
+            "Scan active listening network ports and corresponding processes"
+        }
         "batch.preset_memory" => "Memory Diagnostics",
         "batch.preset_memory_desc" => "Display physical RAM, free memory, and swap space",
         "batch.running_count" => "Running: {count}",
@@ -994,13 +1042,17 @@ fn lookup_en_us(key: &str) -> Option<&'static str> {
         "batch.shell_header" => "SHELL COMMAND (Interactive Input)",
         "batch.shell_hint" => "· Ready for input. Press Enter to execute, Cmd+V to paste",
         "batch.shell_stats" => "Chars: {chars} | Cursor: {cursor}",
-        "batch.engine_banner" => "Timeout: 30s | Async PTY High-Performance Engine | Pipes & Compound Commands",
+        "batch.engine_banner" => {
+            "Timeout: 30s | Async PTY High-Performance Engine | Pipes & Compound Commands"
+        }
         "batch.filter_label" => "Filter:",
         "batch.filter_all" => "Show All",
         "batch.filter_success" => "Success Only",
         "batch.filter_failed" => "Failed Only",
         "batch.filter_display_count" => "Showing: {count} items",
-        "batch.ready_hint" => "Ready · Click presets above or type a Shell command and press Enter to start",
+        "batch.ready_hint" => {
+            "Ready · Click presets above or type a Shell command and press Enter to start"
+        }
         "batch.state_pending" => "Pending",
         "batch.state_running" => "Running",
         "batch.state_success" => "Success",
@@ -1010,14 +1062,20 @@ fn lookup_en_us(key: &str) -> Option<&'static str> {
         "batch.empty_output" => "(Command finished with empty stdout and stderr)",
         "batch.copied_clipboard" => "Copied console output for {host} to clipboard",
         "batch.cancelled_user" => "Execution cancelled by user",
-        "batch.cancelled_status" => "Local tasks stopped and channels closed; detached processes may still be running",
+        "batch.cancelled_status" => {
+            "Local tasks stopped and channels closed; detached processes may still be running"
+        }
 
         // Host Modal
-        "host.auth_missing_cred" => "Saved credentials not found. Please re-enter password or passphrase, or change authentication method.",
+        "host.auth_missing_cred" => {
+            "Saved credentials not found. Please re-enter password or passphrase, or change authentication method."
+        }
         "host.val_name_too_long" => "Server name cannot exceed 64 characters",
         "host.val_port_zero" => "Port cannot be 0",
         "host.val_password_missing" => "Password missing. Please enter password before saving.",
-        "host.val_passphrase_missing" => "Passphrase missing. Please enter passphrase before saving.",
+        "host.val_passphrase_missing" => {
+            "Passphrase missing. Please enter passphrase before saving."
+        }
         "host.val_reset_day" => "Bandwidth reset day must be between 1 and 31",
         "host.quick_group" => "Quick Groups:",
         "host.show_password" => "Show Password",
@@ -1025,7 +1083,9 @@ fn lookup_en_us(key: &str) -> Option<&'static str> {
         "host.show_passphrase" => "Show Passphrase",
         "host.hide_passphrase" => "Hide Passphrase",
         "host.passphrase_empty_hint" => "Leave blank if private key has no passphrase",
-        "host.agent_hint" => "Will automatically connect using local SSH Agent ($SSH_AUTH_SOCK) credentials",
+        "host.agent_hint" => {
+            "Will automatically connect using local SSH Agent ($SSH_AUTH_SOCK) credentials"
+        }
         "host.tags_label" => "Tags",
         "host.tags_placeholder" => "e.g. web, prod, nginx (comma separated)",
         "host.quota_placeholder" => "e.g. 1000 (for 1TB)",
@@ -1035,22 +1095,34 @@ fn lookup_en_us(key: &str) -> Option<&'static str> {
         "host.test_conn_success" => "SSH connection and authentication succeeded ({ms}ms)",
         "host.test_conn_failed" => "SSH connection or auth failed: {error}",
         "host.test_session_unavailable" => "Session manager is unavailable",
-        "settings.terminal_desc" => "Customize SSH PTY terminal font family, font size, cursor style, and scrollback limit.",
+        "settings.terminal_desc" => {
+            "Customize SSH PTY terminal font family, font size, cursor style, and scrollback limit."
+        }
         "settings.cursor_style" => "Cursor Style",
         "settings.cursor_block" => "█ Block",
         "settings.cursor_line" => "| Line",
         "settings.cursor_underline" => "_ Underline",
         "settings.terminal_preview" => "Live Terminal Preview",
         "settings.copy_on_select_title" => "Automatically Copy Selected Text to Clipboard",
-        "settings.copy_on_select_desc" => "When dragging the mouse to select text in the terminal, automatically copy it to the system clipboard.",
-        "settings.appearance_unsupported_hint" => "Glow effects and compact layout options are currently reserved.",
+        "settings.copy_on_select_desc" => {
+            "When dragging the mouse to select text in the terminal, automatically copy it to the system clipboard."
+        }
+        "settings.appearance_unsupported_hint" => {
+            "Glow effects and compact layout options are currently reserved."
+        }
         "settings.sparkline_points" => "Sparkline History Points",
         "settings.feishu_bot_label" => "Feishu Bot",
         "settings.webhook_disabled" => "Disabled",
-        "settings.webhook_placeholder" => "https://open.feishu.cn/open-apis/bot/v2/hook/... (paste URL from clipboard)",
-        "settings.status_webhook_test_msg" => "This is an alert test notification from ReDash Desktop. Monitoring & Webhook channel operational.",
+        "settings.webhook_placeholder" => {
+            "https://open.feishu.cn/open-apis/bot/v2/hook/... (paste URL from clipboard)"
+        }
+        "settings.status_webhook_test_msg" => {
+            "This is an alert test notification from ReDash Desktop. Monitoring & Webhook channel operational."
+        }
         "settings.status_macos_notify_title" => "ReDash Alert Test",
-        "settings.status_macos_notify_body" => "This is an automated alert test notification. Metrics monitoring system operational.",
+        "settings.status_macos_notify_body" => {
+            "This is an automated alert test notification. Metrics monitoring system operational."
+        }
         "settings.opt_font_size_12" => "12 px (Recommended)",
         "settings.opt_cpu_90" => "90% (Recommended)",
         "settings.opt_cpu_95" => "95% (Strict)",
@@ -1454,7 +1526,9 @@ fn lookup_zh_tw(key: &str) -> Option<&'static str> {
         "settings.badge_previewing" => "即時預覽中",
         "settings.badge_in_use" => "目前使用",
         "settings.badge_previewing_unsaved" => "● 即時預覽中 (未儲存)",
-        "settings.probe_subdesc" => "配置 ReDash 與納管 Linux / macOS / Windows 節點間的輕量級探針採集節奏與網路超時策略。",
+        "settings.probe_subdesc" => {
+            "配置 ReDash 與納管 Linux / macOS / Windows 節點間的輕量級探針採集節奏與網路超時策略。"
+        }
         "settings.opt_per_sec" => "{secs} 秒/次",
         "settings.opt_secs" => "{secs} 秒",
         "settings.opt_timeout_3s" => "3s (嚴苛)",
@@ -1467,14 +1541,22 @@ fn lookup_zh_tw(key: &str) -> Option<&'static str> {
         "settings.opt_points_60" => "60 點 (精細)",
         "settings.opt_points_120" => "120 點 (全景)",
         "settings.auto_probe_title" => "後台自動執行即時探針探測",
-        "settings.auto_probe_desc" => "開啟後將在後台定期採集 CPU、記憶體、磁碟與網路吞吐指標，關閉後僅在手動重新整理時探測。",
-        "settings.alerts_desc" => "即時監控指標超標、節點離線故障自動化檢測，支援 macOS 原生桌面通知與 Webhook 機器人訊息分發。",
+        "settings.auto_probe_desc" => {
+            "開啟後將在後台定期採集 CPU、記憶體、磁碟與網路吞吐指標，關閉後僅在手動重新整理時探測。"
+        }
+        "settings.alerts_desc" => {
+            "即時監控指標超標、節點離線故障自動化檢測，支援 macOS 原生桌面通知與 Webhook 機器人訊息分發。"
+        }
         "settings.opt_recommend" => "推薦",
         "settings.opt_strict" => "嚴苛",
         "settings.opt_urgent" => "緊迫",
         "settings.opt_high" => "極高",
-        "settings.notify_offline_desc" => "當納管伺服器出現網路不可達、SSH 認證失敗或連續探針超時無響應時立即發出告警預警。",
-        "settings.notify_macos_desc" => "發生過載或故障時，調用 macOS 系統通知中心彈出橫幅提醒與提示音。",
+        "settings.notify_offline_desc" => {
+            "當納管伺服器出現網路不可達、SSH 認證失敗或連續探針超時無響應時立即發出告警預警。"
+        }
+        "settings.notify_macos_desc" => {
+            "發生過載或故障時，調用 macOS 系統通知中心彈出橫幅提醒與提示音。"
+        }
         "settings.webhook_feishu_card" => "🤖 飛書群自訂機器人 (已適配互動卡片)",
         "settings.webhook_generic" => "🌐 汎用 Webhook (JSON)",
         "settings.btn_paste_webhook" => "📋 從剪貼簿貼上 Webhook",
@@ -1494,7 +1576,9 @@ fn lookup_zh_tw(key: &str) -> Option<&'static str> {
         "settings.storage_hosts_title" => "伺服器主機設定檔 (hosts.json)",
         "settings.storage_settings_title" => "系統偏好設定檔 (settings.json)",
         "settings.vault_title" => "作業系統級金鑰安全保管庫 (Credential Vault)",
-        "settings.vault_desc" => "伺服器 SSH 密碼及私鑰口令預設託管於系統底層安全鑰匙圈（macOS Keychain / Linux Secret Service / Windows Credential Manager），本機 JSON 僅保留主機指紋。",
+        "settings.vault_desc" => {
+            "伺服器 SSH 密碼及私鑰口令預設託管於系統底層安全鑰匙圈（macOS Keychain / Linux Secret Service / Windows Credential Manager），本機 JSON 僅保留主機指紋。"
+        }
         "settings.backup_header" => "設定備份與資料維護 (Backup & Maintenance)",
         "settings.about_tech_title" => "底層架構與驅動引擎 (Architecture & Tech Stack)",
         "settings.about_host_env" => "本機主機運行環境 (Host Environment)",
@@ -1525,7 +1609,9 @@ fn lookup_zh_tw(key: &str) -> Option<&'static str> {
         "batch.shell_header" => "SHELL COMMAND (自由互動鍵入)",
         "batch.shell_hint" => "· 焦點已就緒，直接鍵入，支援 Enter 執行與 Cmd+V 貼上",
         "batch.shell_stats" => "字元數: {chars} | 游標位置: {cursor}",
-        "batch.engine_banner" => "超時設定: 30 秒 | 非同步 PTY 高性能並行引擎 | 支援管道符與複合指令",
+        "batch.engine_banner" => {
+            "超時設定: 30 秒 | 非同步 PTY 高性能並行引擎 | 支援管道符與複合指令"
+        }
         "batch.filter_label" => "結果篩選:",
         "batch.filter_all" => "全部顯示",
         "batch.filter_success" => "僅成功",
@@ -1541,10 +1627,14 @@ fn lookup_zh_tw(key: &str) -> Option<&'static str> {
         "batch.empty_output" => "(指令執行完畢，標準輸出與標準錯誤為空)",
         "batch.copied_clipboard" => "已複製 {host} 的主控台輸出至剪貼簿",
         "batch.cancelled_user" => "使用者取消執行",
-        "batch.cancelled_status" => "已停止本機任務並請求關閉遠端信道；脫離工作階段的處理程序可能仍在運行",
+        "batch.cancelled_status" => {
+            "已停止本機任務並請求關閉遠端信道；脫離工作階段的處理程序可能仍在運行"
+        }
 
         // Host Modal
-        "host.auth_missing_cred" => "已儲存的登入憑據不存在，請重新填寫密碼或私鑰口令，也可更改認證方式。",
+        "host.auth_missing_cred" => {
+            "已儲存的登入憑據不存在，請重新填寫密碼或私鑰口令，也可更改認證方式。"
+        }
         "host.val_name_too_long" => "伺服器名稱長度不能超過 64 個字元",
         "host.val_port_zero" => "連接埠不能為 0",
         "host.val_password_missing" => "登入密碼缺失，請重新填寫密碼後儲存。",
@@ -1573,13 +1663,19 @@ fn lookup_zh_tw(key: &str) -> Option<&'static str> {
         "settings.cursor_underline" => "_ 下底線 (Underline)",
         "settings.terminal_preview" => "即時終端渲染預覽 (Live Preview)",
         "settings.copy_on_select_title" => "游標選取文字時自動複製到剪貼簿 (Copy on Select)",
-        "settings.copy_on_select_desc" => "在終端機中拖曳滑鼠選取文字時，自動將其複製到作業系統剪貼簿。",
+        "settings.copy_on_select_desc" => {
+            "在終端機中拖曳滑鼠選取文字時，自動將其複製到作業系統剪貼簿。"
+        }
         "settings.appearance_unsupported_hint" => "發光特效與緊湊版面配置尚未支援，暫不提供設定。",
         "settings.sparkline_points" => "脈搏歷史點數 (Sparkline Buffer Points)",
         "settings.feishu_bot_label" => "飛書群機器人",
         "settings.webhook_disabled" => "未啟用",
-        "settings.webhook_placeholder" => "https://open.feishu.cn/open-apis/bot/v2/hook/... (支援直接從剪貼簿貼上)",
-        "settings.status_webhook_test_msg" => "這是一條來自 ReDash 桌面維運工作台的警報測試通知，指標監控與機器人通道運轉正常。",
+        "settings.webhook_placeholder" => {
+            "https://open.feishu.cn/open-apis/bot/v2/hook/... (支援直接從剪貼簿貼上)"
+        }
+        "settings.status_webhook_test_msg" => {
+            "這是一條來自 ReDash 桌面維運工作台的警報測試通知，指標監控與機器人通道運轉正常。"
+        }
         "settings.status_macos_notify_title" => "ReDash 警報測試",
         "settings.status_macos_notify_body" => "這是一個自動化警報測試通知，指標監控系統運轉正常。",
         "settings.opt_font_size_12" => "12 px (推薦)",
@@ -1985,17 +2081,29 @@ fn lookup_ja_jp(key: &str) -> Option<&'static str> {
         "fleet.status_unknown" => "不明",
 
         // Settings View
-        "settings.theme_desc" => "ダークテックカラー、1pxグロー境界線、ダッシュボードカード密度を設定。",
-        "settings.theme_instant_hint" => "再起動不要、クリックすると即座にグローバルプレビューが反映されます",
+        "settings.theme_desc" => {
+            "ダークテックカラー、1pxグロー境界線、ダッシュボードカード密度を設定。"
+        }
+        "settings.theme_instant_hint" => {
+            "再起動不要、クリックすると即座にグローバルプレビューが反映されます"
+        }
         "settings.theme_darktech_desc" => "深淵カーボンブラック #0a0b10 + 1px サイバーブルーグロー",
-        "settings.theme_cyberpunk_desc" => "サイバーパンクネオン: 鮮烈パープルブラック + 蛍光シアン境界線",
-        "settings.theme_monokai_desc" => "クラシックハッカーコード: ウォームカーボングレー + ゴールドハイライト",
-        "settings.theme_github_desc" => "スレートイマーシブダーク: 定番 GitHub ミッドナイトブルーグレー",
+        "settings.theme_cyberpunk_desc" => {
+            "サイバーパンクネオン: 鮮烈パープルブラック + 蛍光シアン境界線"
+        }
+        "settings.theme_monokai_desc" => {
+            "クラシックハッカーコード: ウォームカーボングレー + ゴールドハイライト"
+        }
+        "settings.theme_github_desc" => {
+            "スレートイマーシブダーク: 定番 GitHub ミッドナイトブルーグレー"
+        }
         "settings.badge_current" => "現在の設定",
         "settings.badge_previewing" => "プレビュー中",
         "settings.badge_in_use" => "適用中",
         "settings.badge_previewing_unsaved" => "● リアルタイムプレビュー (未保存)",
-        "settings.probe_subdesc" => "ReDashと管理ノード間のプローブ収集間隔とタイムアウト設定を構成。",
+        "settings.probe_subdesc" => {
+            "ReDashと管理ノード間のプローブ収集間隔とタイムアウト設定を構成。"
+        }
         "settings.opt_per_sec" => "{secs}秒/回",
         "settings.opt_secs" => "{secs}秒",
         "settings.opt_timeout_3s" => "3秒 (厳格)",
@@ -2008,14 +2116,22 @@ fn lookup_ja_jp(key: &str) -> Option<&'static str> {
         "settings.opt_points_60" => "60点 (詳細)",
         "settings.opt_points_120" => "120点 (パノラマ)",
         "settings.auto_probe_title" => "バックグラウンド自動プローブ収集",
-        "settings.auto_probe_desc" => "有効時、CPU・メモリ・ディスク・ネットワーク帯域を定期収集します。無効時は手動更新のみ。",
-        "settings.alerts_desc" => "リソース閾値超過やオフライン障害を自動検知し、macOS通知やWebhookへ配信します。",
+        "settings.auto_probe_desc" => {
+            "有効時、CPU・メモリ・ディスク・ネットワーク帯域を定期収集します。無効時は手動更新のみ。"
+        }
+        "settings.alerts_desc" => {
+            "リソース閾値超過やオフライン障害を自動検知し、macOS通知やWebhookへ配信します。"
+        }
         "settings.opt_recommend" => "推奨",
         "settings.opt_strict" => "厳格",
         "settings.opt_urgent" => "緊急",
         "settings.opt_high" => "危険",
-        "settings.notify_offline_desc" => "管理サーバーがネットワーク不通、認証失敗、またはタイムアウトした場合に即座に警告。",
-        "settings.notify_macos_desc" => "過負荷や障害発生時、macOS通知バナーとサウンドで通知します。",
+        "settings.notify_offline_desc" => {
+            "管理サーバーがネットワーク不通、認証失敗、またはタイムアウトした場合に即座に警告。"
+        }
+        "settings.notify_macos_desc" => {
+            "過負荷や障害発生時、macOS通知バナーとサウンドで通知します。"
+        }
         "settings.webhook_feishu_card" => "🤖 Feishu / Lark Bot (インタラクティブカード対応)",
         "settings.webhook_generic" => "🌐 汎用 Webhook (JSON)",
         "settings.btn_paste_webhook" => "📋 クリップボードから貼り付け",
@@ -2024,18 +2140,28 @@ fn lookup_ja_jp(key: &str) -> Option<&'static str> {
         "settings.btn_test_webhook" => "Webhook / プッシュテスト",
         "settings.btn_test_macos_notify" => "デスクトップ通知をテスト",
         "settings.status_webhook_pasted" => "クリップボードからWebhookアドレスを貼り付けました",
-        "settings.status_webhook_empty_clipboard" => "クリップボードに有効なテキストが見つかりません",
+        "settings.status_webhook_empty_clipboard" => {
+            "クリップボードに有効なテキストが見つかりません"
+        }
         "settings.status_webhook_cleared" => "Webhook アドレスをクリアしました",
-        "settings.status_webhook_need_url" => "テストする前に Webhook アドレスを設定または貼り付けてください",
+        "settings.status_webhook_need_url" => {
+            "テストする前に Webhook アドレスを設定または貼り付けてください"
+        }
         "settings.status_webhook_success" => "{target} テスト通知の送信に成功しました！",
         "settings.status_webhook_failed" => "Webhook 送信に失敗しました: {error}",
         "settings.status_macos_notify_success" => "システムデスクトップテスト通知を送信しました",
-        "settings.status_macos_notify_failed" => "システムデスクトップテスト通知の送信に失敗しました",
-        "settings.storage_desc" => "ローカル設定パス、安全な認証情報保管庫、バックアップ設定を確認。",
+        "settings.status_macos_notify_failed" => {
+            "システムデスクトップテスト通知の送信に失敗しました"
+        }
+        "settings.storage_desc" => {
+            "ローカル設定パス、安全な認証情報保管庫、バックアップ設定を確認。"
+        }
         "settings.storage_hosts_title" => "ホスト設定ファイル (hosts.json)",
         "settings.storage_settings_title" => "アプリケーション設定ファイル (settings.json)",
         "settings.vault_title" => "OSレベルの安全な資格情報保管庫 (Credential Vault)",
-        "settings.vault_desc" => "SSHパスワードおよび秘密鍵パスフレーズはOS標準のキーチェーンで安全に管理されます。",
+        "settings.vault_desc" => {
+            "SSHパスワードおよび秘密鍵パスフレーズはOS標準のキーチェーンで安全に管理されます。"
+        }
         "settings.backup_header" => "バックアップとメンテナンス",
         "settings.about_tech_title" => "アーキテクチャとテクノロジースタック",
         "settings.about_host_env" => "ローカル実行環境",
@@ -2066,13 +2192,17 @@ fn lookup_ja_jp(key: &str) -> Option<&'static str> {
         "batch.shell_header" => "SHELL COMMAND (インタラクティブ入力)",
         "batch.shell_hint" => "· 入力準備完了。Enterで実行、Cmd+Vで貼り付け",
         "batch.shell_stats" => "文字数: {chars} | カーソル: {cursor}",
-        "batch.engine_banner" => "タイムアウト: 30秒 | 高性能非同期PTYエンジン | パイプ・複合コマンド対応",
+        "batch.engine_banner" => {
+            "タイムアウト: 30秒 | 高性能非同期PTYエンジン | パイプ・複合コマンド対応"
+        }
         "batch.filter_label" => "フィルター:",
         "batch.filter_all" => "すべて表示",
         "batch.filter_success" => "成功のみ",
         "batch.filter_failed" => "失敗のみ",
         "batch.filter_display_count" => "表示件数: {count}件",
-        "batch.ready_hint" => "準備完了 · プリセットを選択またはシェルコマンドを入力してEnterを押してください",
+        "batch.ready_hint" => {
+            "準備完了 · プリセットを選択またはシェルコマンドを入力してEnterを押してください"
+        }
         "batch.state_pending" => "待機中 (Pending)",
         "batch.state_running" => "実行中 (Running)",
         "batch.state_success" => "成功 (Success)",
@@ -2082,10 +2212,14 @@ fn lookup_ja_jp(key: &str) -> Option<&'static str> {
         "batch.empty_output" => "(コマンド実行完了、標準出力および標準エラー出力はありません)",
         "batch.copied_clipboard" => "{host} のコンソール出力をクリップボードにコピーしました",
         "batch.cancelled_user" => "ユーザーによりキャンセルされました",
-        "batch.cancelled_status" => "ローカルタスクを停止しチャンネルをクローズしました。切り離されたプロセスは継続している可能性があります",
+        "batch.cancelled_status" => {
+            "ローカルタスクを停止しチャンネルをクローズしました。切り離されたプロセスは継続している可能性があります"
+        }
 
         // Host Modal
-        "host.auth_missing_cred" => "保存済みの認証情報が見つかりません。パスワードまたは秘密鍵パスフレーズを再入力してください。",
+        "host.auth_missing_cred" => {
+            "保存済みの認証情報が見つかりません。パスワードまたは秘密鍵パスフレーズを再入力してください。"
+        }
         "host.val_name_too_long" => "サーバー名は64文字以内で指定してください",
         "host.val_port_zero" => "ポート番号に0は指定できません",
         "host.val_password_missing" => "パスワードが入力されていません。入力して保存してください。",
@@ -2107,22 +2241,34 @@ fn lookup_ja_jp(key: &str) -> Option<&'static str> {
         "host.test_conn_success" => "SSH接続と認証に成功しました ({ms}ms)",
         "host.test_conn_failed" => "SSH接続または認証に失敗しました: {error}",
         "host.test_session_unavailable" => "セッションマネージャーが利用できません",
-        "settings.terminal_desc" => "SSH PTY ターミナルのフォント、フォントサイズ、カーソル形状、スクロールバック制限をカスタマイズ。",
+        "settings.terminal_desc" => {
+            "SSH PTY ターミナルのフォント、フォントサイズ、カーソル形状、スクロールバック制限をカスタマイズ。"
+        }
         "settings.cursor_style" => "カーソルスタイル (Cursor Style)",
         "settings.cursor_block" => "█ ブロック (Block)",
         "settings.cursor_line" => "| ライン (Line)",
         "settings.cursor_underline" => "_ アンダースコア (Underline)",
         "settings.terminal_preview" => "ターミナルリアルタイムプレビュー (Live Preview)",
         "settings.copy_on_select_title" => "選択したテキストを自動でクリップボードにコピー",
-        "settings.copy_on_select_desc" => "ターミナル上でドラッグ選択したテキストをOSのクリップボードへ自動コピーします。",
-        "settings.appearance_unsupported_hint" => "グロー効果およびコンパクトレイアウトは現在未対応です。",
+        "settings.copy_on_select_desc" => {
+            "ターミナル上でドラッグ選択したテキストをOSのクリップボードへ自動コピーします。"
+        }
+        "settings.appearance_unsupported_hint" => {
+            "グロー効果およびコンパクトレイアウトは現在未対応です。"
+        }
         "settings.sparkline_points" => "スパークライン履歴ポイント数",
         "settings.feishu_bot_label" => "Feishu ボット",
         "settings.webhook_disabled" => "無効",
-        "settings.webhook_placeholder" => "https://open.feishu.cn/open-apis/bot/v2/hook/... (クリップボードから貼り付け可能)",
-        "settings.status_webhook_test_msg" => "これは ReDash デスクトップ管理ワークベンチからのアラートテスト通知です。監視およびWebhookチャンネルは正常に動作しています。",
+        "settings.webhook_placeholder" => {
+            "https://open.feishu.cn/open-apis/bot/v2/hook/... (クリップボードから貼り付け可能)"
+        }
+        "settings.status_webhook_test_msg" => {
+            "これは ReDash デスクトップ管理ワークベンチからのアラートテスト通知です。監視およびWebhookチャンネルは正常に動作しています。"
+        }
         "settings.status_macos_notify_title" => "ReDash アラートテスト",
-        "settings.status_macos_notify_body" => "これは自動アラートテスト通知です。メトリクス監視システムは正常に動作しています。",
+        "settings.status_macos_notify_body" => {
+            "これは自動アラートテスト通知です。メトリクス監視システムは正常に動作しています。"
+        }
         "settings.opt_font_size_12" => "12 px (推奨)",
         "settings.opt_cpu_90" => "90% (推奨)",
         "settings.opt_cpu_95" => "95% (厳格)",
@@ -2143,7 +2289,9 @@ fn lookup_ja_jp(key: &str) -> Option<&'static str> {
         "workbench.unknown" => "不明",
         "workbench.uncollected" => "未収集",
         "workbench.reconnect_terminal" => "ターミナルを再接続",
-        "workbench.probe_error_last_data" => "収集に失敗しました。前回のデータを表示しています: {error}",
+        "workbench.probe_error_last_data" => {
+            "収集に失敗しました。前回のデータを表示しています: {error}"
+        }
         "workbench.sftp_connecting" => "SFTP 接続を確立しています...",
         _ => return None,
     };

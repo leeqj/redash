@@ -87,10 +87,13 @@ pub async fn delete_host(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ApiResponse<()>>)> {
+    let host_id = redash_core::config::HostId(id);
     let mut store = state.host_store.write().await;
-    match store.delete_host(&redash_core::config::HostId(id)) {
+    match store.delete_host(&host_id) {
         Ok(Some(_)) => {
             let _ = store.save_to_file(&HostStore::default_path());
+            state.session_mgr.disconnect(&host_id).await;
+            state.metrics_cache.write().await.remove(&host_id);
             Ok(Json(ApiResponse {
                 success: true,
                 data: Some(()),
@@ -123,11 +126,99 @@ pub async fn test_connection(
         )
     })?;
 
-    match state.session_mgr.get_or_connect(&host).await {
+    match state.session_mgr.test_connection(&host).await {
         Ok(_) => Ok(Json(ApiResponse {
             success: true,
             data: Some(()),
             message: Some("Connection test successful".to_string()),
+        })),
+        Err(e) => Err((
+            StatusCode::BAD_GATEWAY,
+            Json(ApiResponse {
+                success: false,
+                data: None,
+                message: Some(format!("SSH connection failed: {}", e)),
+            }),
+        )),
+    }
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct TestDraftHostRequest {
+    pub hostname: String,
+    pub port: u16,
+    pub user: String,
+    #[serde(default)]
+    pub password: Option<String>,
+    #[serde(default)]
+    pub key_path: Option<String>,
+    #[serde(default)]
+    pub passphrase: Option<String>,
+}
+
+pub async fn test_draft_connection(
+    State(state): State<AppState>,
+    Json(req): Json<TestDraftHostRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ApiResponse<()>>)> {
+    let hostname = req.hostname.trim().to_string();
+    if hostname.is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ApiResponse {
+                success: false,
+                data: None,
+                message: Some("主机名/IP地址不能为空 (Hostname cannot be empty)".to_string()),
+            }),
+        ));
+    }
+    let port = if req.port == 0 { 22 } else { req.port };
+    let user = if req.user.trim().is_empty() {
+        "root".to_string()
+    } else {
+        req.user.trim().to_string()
+    };
+
+    let auth = if let Some(_pwd) = req.password.as_deref().filter(|p| !p.is_empty()) {
+        redash_core::config::AuthMethod::Password {
+            credential_id: "draft_pwd".to_string(),
+        }
+    } else if let Some(key) = req.key_path.as_deref().filter(|k| !k.is_empty()) {
+        redash_core::config::AuthMethod::PrivateKey {
+            key_path: std::path::PathBuf::from(key),
+            passphrase_id: req.passphrase.as_ref().map(|_| "draft_pass".to_string()),
+        }
+    } else {
+        redash_core::config::AuthMethod::Agent
+    };
+
+    let host = redash_core::config::HostConfig {
+        id: redash_core::config::HostId::new(),
+        name: "Test Draft".to_string(),
+        hostname,
+        port,
+        user,
+        auth,
+        group: "Default".to_string(),
+        tags: vec![],
+        target_os: redash_core::config::TargetOs::Linux,
+        jump_host: None,
+        proxy_jump_id: None,
+        bandwidth_limit_gb: None,
+        bandwidth_reset_day: None,
+    };
+
+    match state
+        .session_mgr
+        .test_connection_with_credentials(&host, req.password.as_deref(), req.passphrase.as_deref())
+        .await
+    {
+        Ok(duration) => Ok(Json(ApiResponse {
+            success: true,
+            data: Some(()),
+            message: Some(format!(
+                "Connection test successful ({}ms)",
+                duration.as_millis()
+            )),
         })),
         Err(e) => Err((
             StatusCode::BAD_GATEWAY,

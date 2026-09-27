@@ -56,6 +56,8 @@ impl GatewayClient {
     pub fn connect_terminal(
         &mut self,
         host_id: &str,
+        cols: u32,
+        rows: u32,
         on_output: Rc<dyn Fn(String)>,
         on_agent: Rc<dyn Fn(crate::models::DetectedAgent)>,
     ) -> Result<(), JsValue> {
@@ -63,7 +65,12 @@ impl GatewayClient {
         let host = location
             .host()
             .unwrap_or_else(|_| "127.0.0.1:8080".to_string());
-        let ws_url = format!("ws://{}/ws/terminal/{}?cols=120&rows=40", host, host_id);
+        let c = if cols == 0 { 120 } else { cols };
+        let r = if rows == 0 { 40 } else { rows };
+        let ws_url = format!(
+            "ws://{}/ws/terminal/{}?cols={}&rows={}",
+            host, host_id, c, r
+        );
 
         console::log_1(&format!("Connecting to terminal stream: {}", ws_url).into());
         let ws = WebSocket::new(&ws_url)?;
@@ -117,6 +124,18 @@ impl GatewayClient {
         if let Some(ws) = &self.active_terminal_ws {
             let cmd = crate::models::ClientTerminalMessage::Input {
                 data: data.to_string(),
+            };
+            if let Ok(json) = serde_json::to_string(&cmd) {
+                let _ = ws.send_with_str(&json);
+            }
+        }
+    }
+
+    pub fn send_terminal_resize(&self, cols: u16, rows: u16) {
+        if let Some(ws) = &self.active_terminal_ws {
+            let cmd = crate::models::ClientTerminalMessage::Resize {
+                cols: cols as u32,
+                rows: rows as u32,
             };
             if let Ok(json) = serde_json::to_string(&cmd) {
                 let _ = ws.send_with_str(&json);
@@ -284,6 +303,183 @@ pub fn async_delete_host(host_id: String, on_done: Rc<RefCell<dyn FnMut(Result<(
             (on_done.borrow_mut())(Ok(()));
         } else {
             (on_done.borrow_mut())(Err(format!("Server returned HTTP {}", resp.status())));
+        }
+    });
+}
+
+#[derive(serde::Serialize)]
+struct TestDraftPayload {
+    hostname: String,
+    port: u16,
+    user: String,
+    password: Option<String>,
+}
+
+#[allow(clippy::type_complexity)]
+pub fn async_test_draft_host(
+    hostname: String,
+    port: u16,
+    user: String,
+    password: Option<String>,
+    on_done: Rc<RefCell<dyn FnMut(Result<String, String>)>>,
+) {
+    wasm_bindgen_futures::spawn_local(async move {
+        let Some(window) = web_sys::window() else {
+            (on_done.borrow_mut())(Err("Window not found".to_string()));
+            return;
+        };
+
+        let opts = web_sys::RequestInit::new();
+        opts.set_method("POST");
+
+        let payload = TestDraftPayload {
+            hostname,
+            port,
+            user,
+            password,
+        };
+
+        let payload_str = match serde_json::to_string(&payload) {
+            Ok(s) => s,
+            Err(e) => {
+                (on_done.borrow_mut())(Err(format!("Serialization error: {}", e)));
+                return;
+            }
+        };
+        opts.set_body(&wasm_bindgen::JsValue::from_str(&payload_str));
+
+        let headers = match web_sys::Headers::new() {
+            Ok(h) => h,
+            Err(_) => {
+                (on_done.borrow_mut())(Err("Failed to construct Headers".to_string()));
+                return;
+            }
+        };
+        let _ = headers.set("Content-Type", "application/json");
+        opts.set_headers(&headers);
+
+        let resp_val = match wasm_bindgen_futures::JsFuture::from(
+            window.fetch_with_str_and_init("/api/hosts/test", &opts),
+        )
+        .await
+        {
+            Ok(v) => v,
+            Err(e) => {
+                (on_done.borrow_mut())(Err(format!("Network request failed: {:?}", e)));
+                return;
+            }
+        };
+        let resp: web_sys::Response = resp_val.unchecked_into();
+        let json_prom = match resp.json() {
+            Ok(p) => p,
+            Err(e) => {
+                (on_done.borrow_mut())(Err(format!("Failed to parse JSON response: {:?}", e)));
+                return;
+            }
+        };
+        let json_val = match wasm_bindgen_futures::JsFuture::from(json_prom).await {
+            Ok(v) => v,
+            Err(e) => {
+                (on_done.borrow_mut())(Err(format!("Failed to await JSON promise: {:?}", e)));
+                return;
+            }
+        };
+
+        if let Some(json_str) = js_sys::JSON::stringify(&json_val)
+            .ok()
+            .and_then(|s| s.as_string())
+        {
+            #[derive(serde::Deserialize)]
+            struct ApiResponse {
+                success: bool,
+                message: Option<String>,
+            }
+
+            match serde_json::from_str::<ApiResponse>(&json_str) {
+                Ok(res) if res.success => {
+                    let msg = res.message.unwrap_or_else(|| "连接测试成功".to_string());
+                    (on_done.borrow_mut())(Ok(msg));
+                }
+                Ok(res) => {
+                    let msg = res.message.unwrap_or_else(|| "连接失败".to_string());
+                    (on_done.borrow_mut())(Err(msg));
+                }
+                Err(e) => {
+                    (on_done.borrow_mut())(Err(format!("Deserialize error: {}", e)));
+                }
+            }
+        } else {
+            (on_done.borrow_mut())(Err("Failed to stringify JSON response".to_string()));
+        }
+    });
+}
+
+#[allow(clippy::type_complexity)]
+pub fn async_test_saved_host(
+    host_id: String,
+    on_done: Rc<RefCell<dyn FnMut(Result<String, String>)>>,
+) {
+    wasm_bindgen_futures::spawn_local(async move {
+        let Some(window) = web_sys::window() else {
+            (on_done.borrow_mut())(Err("Window not found".to_string()));
+            return;
+        };
+
+        let opts = web_sys::RequestInit::new();
+        opts.set_method("POST");
+
+        let url = format!("/api/hosts/{}/test", host_id);
+        let resp_val =
+            match wasm_bindgen_futures::JsFuture::from(window.fetch_with_str_and_init(&url, &opts))
+                .await
+            {
+                Ok(v) => v,
+                Err(e) => {
+                    (on_done.borrow_mut())(Err(format!("Network request failed: {:?}", e)));
+                    return;
+                }
+            };
+        let resp: web_sys::Response = resp_val.unchecked_into();
+        let json_prom = match resp.json() {
+            Ok(p) => p,
+            Err(e) => {
+                (on_done.borrow_mut())(Err(format!("Failed to parse JSON response: {:?}", e)));
+                return;
+            }
+        };
+        let json_val = match wasm_bindgen_futures::JsFuture::from(json_prom).await {
+            Ok(v) => v,
+            Err(e) => {
+                (on_done.borrow_mut())(Err(format!("Failed to await JSON promise: {:?}", e)));
+                return;
+            }
+        };
+
+        if let Some(json_str) = js_sys::JSON::stringify(&json_val)
+            .ok()
+            .and_then(|s| s.as_string())
+        {
+            #[derive(serde::Deserialize)]
+            struct ApiResponse {
+                success: bool,
+                message: Option<String>,
+            }
+
+            match serde_json::from_str::<ApiResponse>(&json_str) {
+                Ok(res) if res.success => {
+                    let msg = res.message.unwrap_or_else(|| "连接测试成功".to_string());
+                    (on_done.borrow_mut())(Ok(msg));
+                }
+                Ok(res) => {
+                    let msg = res.message.unwrap_or_else(|| "连接失败".to_string());
+                    (on_done.borrow_mut())(Err(msg));
+                }
+                Err(e) => {
+                    (on_done.borrow_mut())(Err(format!("Deserialize error: {}", e)));
+                }
+            }
+        } else {
+            (on_done.borrow_mut())(Err("Failed to stringify JSON response".to_string()));
         }
     });
 }

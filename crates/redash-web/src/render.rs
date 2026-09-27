@@ -15,7 +15,7 @@ pub struct LayoutBounds {
 
 pub const LAYOUT: LayoutBounds = LayoutBounds {
     sidebar_width: 60.0,
-    topbar_height: 50.0,
+    topbar_height: 35.0,
 };
 
 pub fn render_frame(
@@ -142,6 +142,10 @@ fn render_sidebar(
     }
 }
 
+pub fn get_topbar_add_btn_rect(width: f64) -> (f64, f64, f64, f64) {
+    (width - 95.0, 6.5, 85.0, 22.0)
+}
+
 fn render_topbar(
     ctx: &CanvasRenderingContext2d,
     state: &AppState,
@@ -164,11 +168,11 @@ fn render_topbar(
     ctx.line_to(width, h);
     ctx.stroke();
 
-    // App Title
+    // App Title (scaled down 30%)
     ctx.set_fill_style_str(theme.text_primary);
-    ctx.set_font("bold 15px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif");
+    ctx.set_font("bold 13px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif");
     ctx.set_text_align("left");
-    let _ = ctx.fill_text("ReDash Web", x + 20.0, 31.0);
+    let _ = ctx.fill_text("ReDash Web", x + 16.0, 22.0);
 
     // View Badge with shared i18n
     let badge_text = match state.active_view {
@@ -179,33 +183,40 @@ fn render_topbar(
         ActiveView::Settings => state.t("nav.settings"),
     };
     ctx.set_fill_style_str(theme.accent_cyan);
-    ctx.set_font("12px 'JetBrains Mono', monospace");
-    let _ = ctx.fill_text(badge_text, x + 130.0, 31.0);
+    ctx.set_font("11px 'JetBrains Mono', monospace");
+    let _ = ctx.fill_text(badge_text, x + 115.0, 22.0);
 
     // Right Status Indicator
-    let status_x = width - 200.0;
+    let status_x = width - 180.0;
     // Green LED dot
     ctx.set_fill_style_str(theme.status_online);
     ctx.begin_path();
-    let _ = ctx.arc(status_x, 25.0, 4.0, 0.0, std::f64::consts::PI * 2.0);
+    let _ = ctx.arc(status_x, 17.5, 3.5, 0.0, std::f64::consts::PI * 2.0);
     ctx.fill();
 
     ctx.set_fill_style_str(theme.text_secondary);
-    ctx.set_font("12px -apple-system, sans-serif");
-    let _ = ctx.fill_text("Gateway Online", status_x + 10.0, 29.0);
+    ctx.set_font("11px -apple-system, sans-serif");
+    let _ = ctx.fill_text("Gateway Online", status_x + 8.0, 21.0);
 
     // Add Host Button
-    let btn_x = width - 110.0;
-    ctx.set_fill_style_str(theme.bg_card_hover);
-    ctx.fill_rect(btn_x, 12.0, 95.0, 26.0);
+    let (btn_x, btn_y, btn_w, btn_h) = get_topbar_add_btn_rect(width);
+    let is_add_hovered = state.hover_pos.is_some_and(|(hx, hy)| {
+        hx >= btn_x && hx <= btn_x + btn_w && hy >= btn_y && hy <= btn_y + btn_h
+    });
+    ctx.set_fill_style_str(if is_add_hovered {
+        theme.bg_card_hover
+    } else {
+        theme.bg_input
+    });
+    ctx.fill_rect(btn_x, btn_y, btn_w, btn_h);
     ctx.set_stroke_style_str(theme.accent_cyan);
-    ctx.stroke_rect(btn_x, 12.0, 95.0, 26.0);
+    ctx.stroke_rect(btn_x, btn_y, btn_w, btn_h);
 
     ctx.set_fill_style_str(theme.text_primary);
-    ctx.set_font("bold 12px sans-serif");
+    ctx.set_font("bold 11px sans-serif");
     ctx.set_text_align("center");
     let btn_title = format!("+ {}", state.t("host.add_title"));
-    let _ = ctx.fill_text(&btn_title, btn_x + 47.5, 29.0);
+    let _ = ctx.fill_text(&btn_title, btn_x + btn_w / 2.0, btn_y + 15.0);
 }
 
 fn render_fleet_view(
@@ -219,20 +230,20 @@ fn render_fleet_view(
 ) {
     let padding = 24.0;
     let card_w = ((w - padding * 3.0) / 2.0).max(340.0);
-    let card_h = 160.0;
+    let card_h = 196.0;
 
-    // Header Summary with shared i18n
+    // Header Summary with shared i18n (scaled down 40%)
     ctx.set_fill_style_str(theme.text_primary);
-    ctx.set_font("bold 16px sans-serif");
+    ctx.set_font("bold 14px sans-serif");
     ctx.set_text_align("left");
-    let _ = ctx.fill_text(state.t("nav.fleet"), x + padding, y + 30.0);
+    let _ = ctx.fill_text(state.t("nav.fleet"), x + padding, y + 23.0);
 
     ctx.set_fill_style_str(theme.text_secondary);
-    ctx.set_font("12px sans-serif");
+    ctx.set_font("11px sans-serif");
     let count_text = format!("{} Nodes", state.hosts.len());
-    let _ = ctx.fill_text(&count_text, x + padding + 140.0, 30.0 + y);
+    let _ = ctx.fill_text(&count_text, x + padding + 120.0, y + 23.0);
 
-    // Fleet Search / Filter Bar
+    // Fleet Search / Filter Bar (scaled down 40%)
     let (sb_x, sb_y, sb_w, sb_h) = get_fleet_search_bar_rect(x, y, w);
     ctx.set_fill_style_str(theme.bg_input);
     ctx.fill_rect(sb_x, sb_y, sb_w, sb_h);
@@ -246,19 +257,19 @@ fn render_fleet_view(
 
     if state.filter_query.is_empty() {
         ctx.set_fill_style_str(theme.text_muted);
-        ctx.set_font("12px sans-serif");
+        ctx.set_font("11.5px sans-serif");
         ctx.set_text_align("left");
-        let _ = ctx.fill_text("🔍 搜索节点名称、IP 或标签...", sb_x + 10.0, sb_y + 19.0);
+        let _ = ctx.fill_text("🔍 搜索节点名称、IP 或标签...", sb_x + 8.0, sb_y + 15.0);
     } else {
         ctx.set_fill_style_str(theme.text_primary);
-        ctx.set_font("12px 'JetBrains Mono', monospace");
+        ctx.set_font("11.5px 'JetBrains Mono', monospace");
         ctx.set_text_align("left");
         let cursor_suffix = if state.is_filter_focused { "|" } else { "" };
         let display = format!("{}{}", state.filter_query, cursor_suffix);
-        let _ = ctx.fill_text(&display, sb_x + 10.0, sb_y + 19.0);
+        let _ = ctx.fill_text(&display, sb_x + 8.0, sb_y + 15.0);
     }
 
-    let start_y = y + 54.0;
+    let start_y = y + 36.0;
 
     if state.hosts.is_empty() {
         ctx.set_fill_style_str(theme.text_muted);
@@ -296,6 +307,7 @@ fn render_fleet_view(
         return;
     }
 
+    let mut pending_tooltip = None;
     for (idx, host) in filtered_hosts.iter().enumerate() {
         let col = idx % 2;
         let row = idx / 2;
@@ -306,16 +318,23 @@ fn render_fleet_view(
             break;
         }
 
-        render_host_card(ctx, state, theme, host, card_x, card_y, card_w, card_h);
+        if let Some(tt) = render_host_card(ctx, state, theme, host, card_x, card_y, card_w, card_h)
+        {
+            pending_tooltip = Some(tt);
+        }
+    }
+
+    if let Some((tt_text, tt_x, tt_y)) = pending_tooltip {
+        render_tooltip(ctx, theme, &tt_text, tt_x, tt_y);
     }
 }
 
 pub fn get_fleet_search_bar_rect(x: f64, y: f64, w: f64) -> (f64, f64, f64, f64) {
     let padding = 24.0;
-    let sb_x = x + padding + 220.0;
-    let sb_y = y + 16.0;
-    let sb_w = (w - padding * 2.0 - 240.0).clamp(180.0, 320.0);
-    let sb_h = 28.0;
+    let sb_x = x + padding + 190.0;
+    let sb_y = y + 7.0;
+    let sb_w = (w - padding * 2.0 - 210.0).clamp(180.0, 320.0);
+    let sb_h = 22.0;
     (sb_x, sb_y, sb_w, sb_h)
 }
 
@@ -323,8 +342,72 @@ pub fn get_fleet_host_delete_btn_rect(cx: f64, cy: f64, cw: f64) -> (f64, f64, f
     let del_w = 20.0;
     let del_h = 20.0;
     let del_x = cx + cw - 28.0;
-    let del_y = cy + 10.0;
+    let del_y = cy + 11.0;
     (del_x, del_y, del_w, del_h)
+}
+
+pub fn get_fleet_host_select_btn_rect(cx: f64, cy: f64, cw: f64) -> (f64, f64, f64, f64) {
+    let sel_w = 66.0;
+    let sel_h = 22.0;
+    let sel_x = cx + cw - 100.0;
+    let sel_y = cy + 10.0;
+    (sel_x, sel_y, sel_w, sel_h)
+}
+
+pub fn get_fleet_host_sparkline_hud_rect(cx: f64, cy: f64, cw: f64) -> (f64, f64, f64, f64) {
+    let hud_x = cx + 16.0;
+    let hud_y = cy + 40.0;
+    let hud_w = cw - 32.0;
+    let hud_h = 108.0;
+    (hud_x, hud_y, hud_w, hud_h)
+}
+
+pub fn get_fleet_host_metric_tab_rect(
+    hud_x: f64,
+    hud_y: f64,
+    tab_idx: usize,
+) -> (f64, f64, f64, f64) {
+    let tab_w = 34.0;
+    let tab_h = 18.0;
+    let gap = 3.0;
+    let tab_x = hud_x + 6.0 + (tab_idx as f64) * (tab_w + gap);
+    let tab_y = hud_y + 4.0;
+    (tab_x, tab_y, tab_w, tab_h)
+}
+
+pub fn get_fleet_host_chart_rect(
+    hud_x: f64,
+    hud_y: f64,
+    hud_w: f64,
+    hud_h: f64,
+) -> (f64, f64, f64, f64) {
+    let chart_x = hud_x + 6.0;
+    let chart_y = hud_y + 26.0;
+    let chart_w = hud_w - 12.0;
+    let chart_h = hud_h - 52.0;
+    (chart_x, chart_y, chart_w, chart_h)
+}
+
+pub fn get_fleet_host_range_pill_rect(
+    hud_x: f64,
+    hud_y: f64,
+    hud_h: f64,
+    pill_idx: usize,
+) -> (f64, f64, f64, f64) {
+    let pill_w = 28.0;
+    let pill_h = 16.0;
+    let gap = 4.0;
+    let pill_x = hud_x + 6.0 + (pill_idx as f64) * (pill_w + gap);
+    let pill_y = hud_y + hud_h - 20.0;
+    (pill_x, pill_y, pill_w, pill_h)
+}
+
+pub fn get_fleet_host_action_term_btn_rect(cx: f64, cy: f64) -> (f64, f64, f64, f64) {
+    (cx + 16.0, cy + 158.0, 72.0, 24.0)
+}
+
+pub fn get_fleet_host_action_sftp_btn_rect(cx: f64, cy: f64) -> (f64, f64, f64, f64) {
+    (cx + 96.0, cy + 158.0, 56.0, 24.0)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -337,7 +420,7 @@ fn render_host_card(
     cy: f64,
     cw: f64,
     ch: f64,
-) {
+) -> Option<(String, f64, f64)> {
     let is_selected = state.selected_host_id.as_deref() == Some(&host.id.0);
     let is_hovered = state
         .hover_pos
@@ -378,14 +461,84 @@ fn render_host_card(
 
     ctx.set_fill_style_str(led_color);
     ctx.begin_path();
-    let _ = ctx.arc(cx + 16.0, cy + 22.0, 4.0, 0.0, std::f64::consts::PI * 2.0);
+    let _ = ctx.arc(cx + 16.0, cy + 21.0, 4.0, 0.0, std::f64::consts::PI * 2.0);
     ctx.fill();
 
-    // Host Name
-    ctx.set_fill_style_str(theme.text_primary);
-    ctx.set_font("bold 14px sans-serif");
+    // OS Icon placed right in front of host name
+    let os_icon = match host.target_os {
+        redash_types::host::TargetOs::Linux => "🐧",
+        redash_types::host::TargetOs::Darwin => "🍎",
+        redash_types::host::TargetOs::Windows => "🪟",
+        redash_types::host::TargetOs::Unknown => "🖥️",
+    };
+    ctx.set_fill_style_str(theme.text_secondary);
+    ctx.set_font("12px -apple-system, sans-serif");
     ctx.set_text_align("left");
-    let _ = ctx.fill_text(&host.name, cx + 28.0, cy + 26.0);
+    let _ = ctx.fill_text(os_icon, cx + 25.0, cy + 24.5);
+
+    // Host Name
+    let name_x = cx + 43.0;
+    ctx.set_fill_style_str(theme.text_primary);
+    ctx.set_font("bold 13px sans-serif");
+    ctx.set_text_align("left");
+    let _ = ctx.fill_text(&host.name, name_x, cy + 25.0);
+
+    // Tooltip trigger on host name: displays user@hostname:port
+    let name_w = (host.name.chars().count() as f64) * 8.5;
+    let is_name_hovered = state.hover_pos.is_some_and(|(hx, hy)| {
+        hx >= name_x && hx <= name_x + name_w.max(32.0) && hy >= cy + 10.0 && hy <= cy + 30.0
+    });
+    let tooltip = if is_name_hovered {
+        let endpoint = format!("{}@{}:{}", host.user, host.hostname, host.port);
+        Some((endpoint, name_x + name_w / 2.0, cy + 34.0))
+    } else {
+        None
+    };
+
+    // Host Group Badge
+    let group_x = (name_x + name_w + 10.0).min(cx + cw - 180.0);
+    ctx.set_fill_style_str(theme.bg_input);
+    ctx.fill_rect(group_x, cy + 12.0, 52.0, 18.0);
+    ctx.set_stroke_style_str(theme.border_muted);
+    ctx.set_line_width(1.0);
+    ctx.stroke_rect(group_x, cy + 12.0, 52.0, 18.0);
+    ctx.set_fill_style_str(theme.accent_cyan);
+    ctx.set_font("9.5px 'JetBrains Mono', monospace");
+    ctx.set_text_align("center");
+    let _ = ctx.fill_text(&truncate_text(&host.group, 7), group_x + 26.0, cy + 24.5);
+
+    // Selection Button [ + 选择 ] / [ ✓ 已选择 ]
+    let (sel_x, sel_y, sel_w, sel_h) = get_fleet_host_select_btn_rect(cx, cy, cw);
+    let is_sel_hovered = state.hover_pos.is_some_and(|(hx, hy)| {
+        hx >= sel_x && hx <= sel_x + sel_w && hy >= sel_y && hy <= sel_y + sel_h
+    });
+    ctx.set_fill_style_str(if is_selected {
+        theme.accent_cyan
+    } else if is_sel_hovered {
+        theme.bg_card_hover
+    } else {
+        theme.bg_input
+    });
+    ctx.fill_rect(sel_x, sel_y, sel_w, sel_h);
+    ctx.set_stroke_style_str(if is_selected {
+        theme.accent_cyan
+    } else {
+        theme.border_default
+    });
+    ctx.stroke_rect(sel_x, sel_y, sel_w, sel_h);
+    ctx.set_fill_style_str(if is_selected {
+        theme.bg_root
+    } else {
+        theme.text_secondary
+    });
+    ctx.set_font("bold 10px sans-serif");
+    ctx.set_text_align("center");
+    let sel_text = if is_selected {
+        format!("✓ {}", state.t("fleet.selected"))
+    } else {
+        format!("+ {}", state.t("fleet.select"))
+    };
+    let _ = ctx.fill_text(&sel_text, sel_x + sel_w / 2.0, sel_y + 15.0);
 
     // Delete Button [ ✕ ]
     let (del_x, del_y, del_w, del_h) = get_fleet_host_delete_btn_rect(cx, cy, cw);
@@ -405,87 +558,432 @@ fn render_host_card(
     ctx.set_text_align("center");
     let _ = ctx.fill_text("✕", del_x + del_w / 2.0, del_y + 14.0);
 
-    // Host Endpoint
-    ctx.set_fill_style_str(theme.text_secondary);
-    ctx.set_font("12px 'JetBrains Mono', monospace");
-    ctx.set_text_align("left");
-    let endpoint = format!("{}@{}:{}", host.user, host.hostname, host.port);
-    let _ = ctx.fill_text(&endpoint, cx + 28.0, cy + 44.0);
+    // RTT Latency badge (if available) placed in top row
+    if let Some(rtt) = metrics.and_then(|m| m.rtt_ms) {
+        let rtt_x = group_x + 58.0;
+        if rtt_x + 50.0 < sel_x {
+            ctx.set_fill_style_str(theme.bg_input);
+            ctx.fill_rect(rtt_x, cy + 12.0, 50.0, 18.0);
+            ctx.set_stroke_style_str(theme.border_muted);
+            ctx.stroke_rect(rtt_x, cy + 12.0, 50.0, 18.0);
+            ctx.set_fill_style_str(theme.text_secondary);
+            ctx.set_font("9.5px 'JetBrains Mono', monospace");
+            ctx.set_text_align("center");
+            let _ = ctx.fill_text(&format!("⚡{}ms", rtt), rtt_x + 25.0, cy + 24.5);
+        }
+    }
 
-    // Metrics (if available)
+    // --- Full-Width Telemetry Sparkline HUD ---
+    let (hud_x, hud_y, hud_w, hud_h) = get_fleet_host_sparkline_hud_rect(cx, cy, cw);
+    ctx.set_fill_style_str(theme.bg_input);
+    ctx.fill_rect(hud_x, hud_y, hud_w, hud_h);
+    ctx.set_stroke_style_str(theme.border_muted);
+    ctx.stroke_rect(hud_x, hud_y, hud_w, hud_h);
+
+    let active_metric = state
+        .active_card_metrics
+        .get(&host.id.0)
+        .copied()
+        .unwrap_or(redash_ui_core::state::CardMetricType::All);
+
+    // Mini Tabs: [CPU] [内存] [磁盘] [综合]
+    let tabs = [
+        (redash_ui_core::state::CardMetricType::Cpu, "CPU"),
+        (
+            redash_ui_core::state::CardMetricType::Memory,
+            state.t("metric.memory"),
+        ),
+        (
+            redash_ui_core::state::CardMetricType::Disk,
+            state.t("metric.disk"),
+        ),
+        (
+            redash_ui_core::state::CardMetricType::All,
+            state.t("metric.all"),
+        ),
+    ];
+
+    for (t_idx, (m_type, label)) in tabs.iter().enumerate() {
+        let (tx, ty, tw, th) = get_fleet_host_metric_tab_rect(hud_x, hud_y, t_idx);
+        let is_tab_active = active_metric == *m_type;
+        let is_tab_hovered = state
+            .hover_pos
+            .is_some_and(|(hx, hy)| hx >= tx && hx <= tx + tw && hy >= ty && hy <= ty + th);
+
+        ctx.set_fill_style_str(if is_tab_active {
+            theme.bg_card_hover
+        } else if is_tab_hovered {
+            theme.bg_card
+        } else {
+            theme.bg_input
+        });
+        ctx.fill_rect(tx, ty, tw, th);
+        ctx.set_stroke_style_str(if is_tab_active {
+            match m_type {
+                redash_ui_core::state::CardMetricType::Cpu => theme.accent_cyan,
+                redash_ui_core::state::CardMetricType::Memory => theme.accent_purple,
+                redash_ui_core::state::CardMetricType::Disk => theme.status_warn,
+                redash_ui_core::state::CardMetricType::All => theme.accent_cyan,
+            }
+        } else {
+            theme.border_muted
+        });
+        ctx.stroke_rect(tx, ty, tw, th);
+
+        ctx.set_fill_style_str(if is_tab_active {
+            match m_type {
+                redash_ui_core::state::CardMetricType::Cpu => theme.accent_cyan,
+                redash_ui_core::state::CardMetricType::Memory => theme.accent_purple,
+                redash_ui_core::state::CardMetricType::Disk => theme.status_warn,
+                redash_ui_core::state::CardMetricType::All => theme.accent_cyan,
+            }
+        } else {
+            theme.text_muted
+        });
+        ctx.set_font(if is_tab_active {
+            "bold 8.5px 'JetBrains Mono', monospace"
+        } else {
+            "8.5px 'JetBrains Mono', monospace"
+        });
+        ctx.set_text_align("center");
+        let _ = ctx.fill_text(label, tx + tw / 2.0, ty + 12.5);
+    }
+
+    // Historical samples retrieval and time range slicing
+    let active_range = state.get_host_chart_time_range(&host.id.0);
+
+    let raw_cpu = state
+        .cpu_histories
+        .get(&host.id.0)
+        .cloned()
+        .or_else(|| state.metrics_history.get(&host.id.0).cloned())
+        .unwrap_or_default();
+    let raw_mem = state
+        .mem_histories
+        .get(&host.id.0)
+        .cloned()
+        .unwrap_or_default();
+    let raw_disk = state
+        .disk_histories
+        .get(&host.id.0)
+        .cloned()
+        .unwrap_or_default();
+
+    let cpu_data =
+        redash_ui_core::state::AppStateMachine::slice_history_for_range(&raw_cpu, active_range);
+    let mem_data =
+        redash_ui_core::state::AppStateMachine::slice_history_for_range(&raw_mem, active_range);
+    let disk_data =
+        redash_ui_core::state::AppStateMachine::slice_history_for_range(&raw_disk, active_range);
+
+    let total_samples = match active_metric {
+        redash_ui_core::state::CardMetricType::Cpu => cpu_data.len(),
+        redash_ui_core::state::CardMetricType::Memory => mem_data.len(),
+        redash_ui_core::state::CardMetricType::Disk => disk_data.len(),
+        redash_ui_core::state::CardMetricType::All => {
+            cpu_data.len().max(mem_data.len()).max(disk_data.len())
+        }
+    };
+
+    let (chart_x, chart_y, chart_w, chart_h) =
+        get_fleet_host_chart_rect(hud_x, hud_y, hud_w, hud_h);
+    let is_chart_hovered = state.hover_pos.is_some_and(|(hx, hy)| {
+        hx >= chart_x && hx <= chart_x + chart_w && hy >= chart_y && hy <= chart_y + chart_h
+    });
+
+    let hovered_point = if is_chart_hovered && total_samples > 1 {
+        state.hover_pos.map(|(hx, _)| {
+            let rel_x = (hx - chart_x).clamp(0.0, chart_w);
+            let step = chart_w / (total_samples - 1) as f64;
+            let idx = ((rel_x + step * 0.5) / step).floor() as usize;
+            idx.min(total_samples.saturating_sub(1))
+        })
+    } else {
+        state.hovered_chart_points.get(&host.id.0).copied()
+    };
+
+    // Calculate live or hovered readout values
     let cpu_pct = metrics.map(|m| m.cpu_percent()).unwrap_or(0.0);
     let mem_pct = metrics.map(|m| m.mem_percent()).unwrap_or(0.0);
+    let disk_pct = metrics.map(|m| m.disk_percent()).unwrap_or(0.0);
 
-    // CPU Gauge Bar
-    ctx.set_fill_style_str(theme.text_secondary);
-    ctx.set_font("11px sans-serif");
-    let _ = ctx.fill_text("CPU", cx + 16.0, cy + 72.0);
-    let _ = ctx.fill_text(&format!("{:.1}%", cpu_pct), cx + 60.0, cy + 72.0);
-
-    let bar_w = cw - 32.0;
-    ctx.set_fill_style_str(theme.bg_input);
-    ctx.fill_rect(cx + 16.0, cy + 78.0, bar_w, 6.0);
-
-    let cpu_fill_w = (bar_w * (cpu_pct as f64 / 100.0)).clamp(0.0, bar_w);
-    ctx.set_fill_style_str(if cpu_pct > 80.0 {
-        theme.status_crit
+    let total_duration_secs = active_range.duration_secs();
+    let (time_tag, display_cpu, display_mem_str, display_disk) = if let Some(idx) = hovered_point {
+        let time_ago_secs = if total_samples > 1 {
+            (total_samples.saturating_sub(1 + idx) as u64 * total_duration_secs)
+                / (total_samples - 1) as u64
+        } else {
+            0
+        };
+        let tag = if time_ago_secs == 0 {
+            "[实时]".to_string()
+        } else if time_ago_secs < 60 {
+            format!("[-{}s]", time_ago_secs)
+        } else {
+            let mins = (time_ago_secs + 30) / 60;
+            format!("[-{}m]", mins)
+        };
+        let c = cpu_data.get(idx).copied().unwrap_or(cpu_pct);
+        let m = mem_data.get(idx).copied().unwrap_or(mem_pct);
+        let d = disk_data.get(idx).copied().unwrap_or(disk_pct);
+        (Some(tag), c, format!("{:.0}%", m), d)
     } else {
+        let mem_used_gb = metrics
+            .map(|m| m.mem.used_bytes as f64 / 1_073_741_824.0)
+            .unwrap_or(0.0);
+        let mem_total_gb = metrics
+            .map(|m| m.mem.total_bytes as f64 / 1_073_741_824.0)
+            .unwrap_or(0.0);
+        let m_str = if active_metric == redash_ui_core::state::CardMetricType::Memory {
+            format!("{:.1}G/{:.1}G ({:.0}%)", mem_used_gb, mem_total_gb, mem_pct)
+        } else {
+            format!("{:.0}%", mem_pct)
+        };
+        (None, cpu_pct, m_str, disk_pct)
+    };
+
+    // Right Side Header Readout (compact to prevent overflow)
+    ctx.set_text_align("right");
+    let readout_body = if metrics.is_none() {
+        state.t("fleet.not_collected").to_string()
+    } else {
+        match active_metric {
+            redash_ui_core::state::CardMetricType::Cpu => format!("CPU: {:.1}%", display_cpu),
+            redash_ui_core::state::CardMetricType::Memory => format!("RAM: {}", display_mem_str),
+            redash_ui_core::state::CardMetricType::Disk => format!("DISK: {:.0}%", display_disk),
+            redash_ui_core::state::CardMetricType::All => format!(
+                "CPU: {:.1}%  RAM: {:.0}%  DISK: {:.0}%",
+                display_cpu, mem_pct, display_disk
+            ),
+        }
+    };
+    let full_readout = if let Some(ref tag) = time_tag {
+        format!("{} {}", tag, readout_body)
+    } else {
+        readout_body
+    };
+
+    ctx.set_fill_style_str(if time_tag.is_some() {
         theme.accent_cyan
+    } else {
+        theme.text_secondary
     });
-    ctx.fill_rect(cx + 16.0, cy + 78.0, cpu_fill_w, 6.0);
+    ctx.set_font("bold 8.5px 'JetBrains Mono', monospace");
+    let _ = ctx.fill_text(&full_readout, hud_x + hud_w - 6.0, hud_y + 16.5);
 
-    // Memory Gauge Bar
-    ctx.set_fill_style_str(theme.text_secondary);
-    let _ = ctx.fill_text("MEM", cx + 16.0, cy + 102.0);
-    let _ = ctx.fill_text(&format!("{:.1}%", mem_pct), cx + 60.0, cy + 102.0);
+    // Sparkline Canvas Area
+    if total_samples < 2 {
+        ctx.set_fill_style_str(theme.text_muted);
+        ctx.set_font("10px sans-serif");
+        ctx.set_text_align("center");
+        let _ = ctx.fill_text(
+            "等待采集数据 (Waiting for metrics)...",
+            chart_x + chart_w / 2.0,
+            chart_y + chart_h / 2.0 + 4.0,
+        );
+    } else {
+        // Grid baseline & 50% line
+        ctx.set_stroke_style_str("rgba(255, 255, 255, 0.06)");
+        ctx.set_line_width(1.0);
+        ctx.begin_path();
+        ctx.move_to(chart_x, chart_y + chart_h * 0.5);
+        ctx.line_to(chart_x + chart_w, chart_y + chart_h * 0.5);
+        ctx.stroke();
 
-    ctx.set_fill_style_str(theme.bg_input);
-    ctx.fill_rect(cx + 16.0, cy + 108.0, bar_w, 6.0);
+        ctx.begin_path();
+        ctx.move_to(chart_x, chart_y + chart_h);
+        ctx.line_to(chart_x + chart_w, chart_y + chart_h);
+        ctx.stroke();
 
-    let mem_fill_w = (bar_w * (mem_pct as f64 / 100.0)).clamp(0.0, bar_w);
-    ctx.set_fill_style_str(theme.accent_purple);
-    ctx.fill_rect(cx + 16.0, cy + 108.0, mem_fill_w, 6.0);
+        // Helper to draw series curves
+        let draw_series = |data: &[f32], stroke_col: &str, fill_alpha: f64| {
+            if data.len() < 2 {
+                return;
+            }
+            let pts =
+                redash_types::math::normalize_sparkline(data, chart_x, chart_y, chart_w, chart_h);
+            if pts.len() < 2 {
+                return;
+            }
 
-    // Live Sparkline Chart using shared redash-types math
-    if let Some(history) = state.metrics_history.get(&host.id.0)
-        && history.len() >= 2
-    {
-        let spark_x = cx + cw - 120.0;
-        let spark_y = cy + 20.0;
-        let spark_w = 85.0;
-        let spark_h = 36.0;
+            if fill_alpha > 0.0 {
+                ctx.set_fill_style_str(&format!("{stroke_col}22"));
+                ctx.begin_path();
+                ctx.move_to(pts[0].0, chart_y + chart_h);
+                for pt in &pts {
+                    ctx.line_to(pt.0, pt.1);
+                }
+                ctx.line_to(pts[pts.len() - 1].0, chart_y + chart_h);
+                ctx.close_path();
+                ctx.fill();
+            }
 
-        let points =
-            redash_types::math::normalize_sparkline(history, spark_x, spark_y, spark_w, spark_h);
-        if points.len() >= 2 {
-            ctx.set_stroke_style_str(theme.accent_cyan);
+            ctx.set_stroke_style_str(stroke_col);
             ctx.set_line_width(1.5);
             ctx.begin_path();
-            ctx.move_to(points[0].0, points[0].1);
-            for pt in &points[1..] {
+            ctx.move_to(pts[0].0, pts[0].1);
+            for pt in &pts[1..] {
                 ctx.line_to(pt.0, pt.1);
             }
+            ctx.stroke();
+
+            if hovered_point.is_none() {
+                if let Some(last) = pts.last() {
+                    ctx.set_fill_style_str(&format!("{stroke_col}33"));
+                    ctx.begin_path();
+                    let _ = ctx.arc(last.0, last.1, 4.0, 0.0, std::f64::consts::PI * 2.0);
+                    ctx.fill();
+
+                    ctx.set_fill_style_str(stroke_col);
+                    ctx.begin_path();
+                    let _ = ctx.arc(last.0, last.1, 1.5, 0.0, std::f64::consts::PI * 2.0);
+                    ctx.fill();
+                }
+            } else if let Some(h_idx) = hovered_point
+                && h_idx < pts.len()
+            {
+                let hp = pts[h_idx];
+                ctx.set_fill_style_str(&format!("{stroke_col}66"));
+                ctx.begin_path();
+                let _ = ctx.arc(hp.0, hp.1, 4.5, 0.0, std::f64::consts::PI * 2.0);
+                ctx.fill();
+
+                ctx.set_fill_style_str(stroke_col);
+                ctx.begin_path();
+                let _ = ctx.arc(hp.0, hp.1, 2.0, 0.0, std::f64::consts::PI * 2.0);
+                ctx.fill();
+            }
+        };
+
+        match active_metric {
+            redash_ui_core::state::CardMetricType::All => {
+                draw_series(&cpu_data, theme.accent_cyan, 0.0);
+                draw_series(&mem_data, theme.accent_purple, 0.0);
+                draw_series(&disk_data, theme.status_warn, 0.0);
+            }
+            redash_ui_core::state::CardMetricType::Cpu => {
+                draw_series(&cpu_data, theme.accent_cyan, 0.15);
+            }
+            redash_ui_core::state::CardMetricType::Memory => {
+                draw_series(&mem_data, theme.accent_purple, 0.15);
+            }
+            redash_ui_core::state::CardMetricType::Disk => {
+                draw_series(&disk_data, theme.status_warn, 0.15);
+            }
+        }
+
+        // Crosshair vertical guide line
+        if let Some(h_idx) = hovered_point {
+            let step = chart_w / (total_samples - 1).max(1) as f64;
+            let guide_x = chart_x + (h_idx as f64) * step;
+            ctx.set_stroke_style_str("rgba(56, 189, 248, 0.45)");
+            ctx.set_line_width(1.0);
+            ctx.begin_path();
+            ctx.move_to(guide_x, chart_y);
+            ctx.line_to(guide_x, chart_y + chart_h);
             ctx.stroke();
         }
     }
 
+    // Sparkline HUD Footer: Range Switcher Pills [1m] [5m] [30m] [60m]
+    for (p_idx, &range) in redash_types::metrics::ChartTimeRange::ALL
+        .iter()
+        .enumerate()
+    {
+        let (px, py, pw, ph) = get_fleet_host_range_pill_rect(hud_x, hud_y, hud_h, p_idx);
+        let is_range_active = active_range == range;
+        let is_range_hovered = state
+            .hover_pos
+            .is_some_and(|(hx, hy)| hx >= px && hx <= px + pw && hy >= py && hy <= py + ph);
+
+        ctx.set_fill_style_str(if is_range_active {
+            theme.bg_card_hover
+        } else if is_range_hovered {
+            theme.bg_card
+        } else {
+            theme.bg_input
+        });
+        ctx.fill_rect(px, py, pw, ph);
+
+        ctx.set_stroke_style_str(if is_range_active {
+            theme.accent_cyan
+        } else {
+            theme.border_muted
+        });
+        ctx.set_line_width(1.0);
+        ctx.stroke_rect(px, py, pw, ph);
+
+        ctx.set_fill_style_str(if is_range_active {
+            theme.accent_cyan
+        } else if is_range_hovered {
+            theme.text_primary
+        } else {
+            theme.text_muted
+        });
+        ctx.set_font(if is_range_active {
+            "bold 8.5px 'JetBrains Mono', monospace"
+        } else {
+            "8.5px 'JetBrains Mono', monospace"
+        });
+        ctx.set_text_align("center");
+        let _ = ctx.fill_text(range.label(), px + pw / 2.0, py + 11.5);
+    }
+
+    // Right: Current window tag
+    ctx.set_fill_style_str(theme.text_muted);
+    ctx.set_font("8px 'JetBrains Mono', monospace");
+    ctx.set_text_align("right");
+    let window_tag = format!("{} 范围", active_range.label());
+    let _ = ctx.fill_text(&window_tag, hud_x + hud_w - 6.0, hud_y + hud_h - 8.0);
+
     // Action Buttons
-    let btn_y = cy + 126.0;
     // [ Terminal ]
-    ctx.set_fill_style_str(theme.bg_card_hover);
-    ctx.fill_rect(cx + 16.0, btn_y, 70.0, 22.0);
+    let (term_x, term_y, term_w, term_h) = get_fleet_host_action_term_btn_rect(cx, cy);
+    let is_term_hovered = state.hover_pos.is_some_and(|(hx, hy)| {
+        hx >= term_x && hx <= term_x + term_w && hy >= term_y && hy <= term_y + term_h
+    });
+    ctx.set_fill_style_str(if is_term_hovered {
+        theme.accent_cyan
+    } else {
+        theme.bg_card_hover
+    });
+    ctx.fill_rect(term_x, term_y, term_w, term_h);
     ctx.set_stroke_style_str(theme.border_default);
-    ctx.stroke_rect(cx + 16.0, btn_y, 70.0, 22.0);
-    ctx.set_fill_style_str(theme.text_primary);
+    ctx.stroke_rect(term_x, term_y, term_w, term_h);
+    ctx.set_fill_style_str(if is_term_hovered {
+        theme.bg_root
+    } else {
+        theme.text_primary
+    });
     ctx.set_font("11px sans-serif");
     ctx.set_text_align("center");
-    let _ = ctx.fill_text(state.t("nav.terminal"), cx + 51.0, btn_y + 15.0);
+    let _ = ctx.fill_text(
+        state.t("nav.terminal"),
+        term_x + term_w / 2.0,
+        term_y + 16.0,
+    );
 
     // [ SFTP ]
-    ctx.set_fill_style_str(theme.bg_card_hover);
-    ctx.fill_rect(cx + 96.0, btn_y, 50.0, 22.0);
-    ctx.stroke_rect(cx + 96.0, btn_y, 50.0, 22.0);
-    let _ = ctx.fill_text(state.t("nav.sftp"), cx + 121.0, btn_y + 15.0);
+    let (sftp_x, sftp_y, sftp_w, sftp_h) = get_fleet_host_action_sftp_btn_rect(cx, cy);
+    let is_sftp_hovered = state.hover_pos.is_some_and(|(hx, hy)| {
+        hx >= sftp_x && hx <= sftp_x + sftp_w && hy >= sftp_y && hy <= sftp_y + sftp_h
+    });
+    ctx.set_fill_style_str(if is_sftp_hovered {
+        theme.accent_purple
+    } else {
+        theme.bg_card_hover
+    });
+    ctx.fill_rect(sftp_x, sftp_y, sftp_w, sftp_h);
+    ctx.set_stroke_style_str(theme.border_default);
+    ctx.stroke_rect(sftp_x, sftp_y, sftp_w, sftp_h);
+    ctx.set_fill_style_str(if is_sftp_hovered {
+        theme.bg_root
+    } else {
+        theme.text_primary
+    });
+    let _ = ctx.fill_text(state.t("nav.sftp"), sftp_x + sftp_w / 2.0, sftp_y + 16.0);
+
+    tooltip
 }
 
 pub const WORKBENCH_TAB_BAR_HEIGHT: f64 = 36.0;
@@ -781,6 +1279,148 @@ fn render_workbench_subtabs(
         ctx.set_text_align("center");
         let _ = ctx.fill_text(label, tab_x + tab_w / 2.0, tab_y + 18.0);
     }
+
+    // Right Toolbar: Compact icon-only buttons with hover tooltips
+    if state.active_workbench_tab == WorkbenchTab::Terminal {
+        // 1. Reconnect button [ 🔄 ]
+        let (rb_x, rb_y, rb_w, rb_h) = get_workbench_toolbar_reconnect_btn_rect(x, y, w);
+        let is_rb_hovered = state.hover_pos.is_some_and(|(hx, hy)| {
+            hx >= rb_x && hx <= rb_x + rb_w && hy >= rb_y && hy <= rb_y + rb_h
+        });
+
+        ctx.set_fill_style_str(if is_rb_hovered {
+            theme.bg_card_hover
+        } else {
+            theme.bg_card
+        });
+        ctx.fill_rect(rb_x, rb_y, rb_w, rb_h);
+        ctx.set_stroke_style_str(if is_rb_hovered {
+            theme.border_muted
+        } else {
+            theme.border_default
+        });
+        ctx.stroke_rect(rb_x, rb_y, rb_w, rb_h);
+        ctx.set_fill_style_str(theme.text_secondary);
+        ctx.set_font("12px sans-serif");
+        ctx.set_text_align("center");
+        let _ = ctx.fill_text("🔄", rb_x + rb_w / 2.0, rb_y + 18.0);
+
+        // 2. Search button [ 🔍 ]
+        let (sb_x, sb_y, sb_w, sb_h) = get_workbench_toolbar_search_btn_rect(x, y, w);
+        let is_sb_hovered = state.hover_pos.is_some_and(|(hx, hy)| {
+            hx >= sb_x && hx <= sb_x + sb_w && hy >= sb_y && hy <= sb_y + sb_h
+        });
+
+        ctx.set_fill_style_str(if state.terminal_search_active || is_sb_hovered {
+            theme.bg_card_hover
+        } else {
+            theme.bg_card
+        });
+        ctx.fill_rect(sb_x, sb_y, sb_w, sb_h);
+        ctx.set_stroke_style_str(if state.terminal_search_active {
+            theme.accent_cyan
+        } else if is_sb_hovered {
+            theme.border_muted
+        } else {
+            theme.border_default
+        });
+        ctx.stroke_rect(sb_x, sb_y, sb_w, sb_h);
+        ctx.set_fill_style_str(if state.terminal_search_active {
+            theme.accent_cyan
+        } else {
+            theme.text_secondary
+        });
+        ctx.set_font("12px sans-serif");
+        ctx.set_text_align("center");
+        let _ = ctx.fill_text("🔍", sb_x + sb_w / 2.0, sb_y + 18.0);
+
+        // 3. Clear button [ 🗑️ ]
+        let (cb_x, cb_y, cb_w, cb_h) = get_workbench_toolbar_clear_btn_rect(x, y, w);
+        let is_cb_hovered = state.hover_pos.is_some_and(|(hx, hy)| {
+            hx >= cb_x && hx <= cb_x + cb_w && hy >= cb_y && hy <= cb_y + cb_h
+        });
+
+        ctx.set_fill_style_str(if is_cb_hovered {
+            theme.bg_card_hover
+        } else {
+            theme.bg_card
+        });
+        ctx.fill_rect(cb_x, cb_y, cb_w, cb_h);
+        ctx.set_stroke_style_str(if is_cb_hovered {
+            theme.border_muted
+        } else {
+            theme.border_default
+        });
+        ctx.stroke_rect(cb_x, cb_y, cb_w, cb_h);
+        ctx.set_fill_style_str(theme.text_secondary);
+        ctx.set_font("12px sans-serif");
+        ctx.set_text_align("center");
+        let _ = ctx.fill_text("🗑️", cb_x + cb_w / 2.0, cb_y + 18.0);
+
+        // Tooltip popup
+        if is_rb_hovered {
+            render_tooltip(
+                ctx,
+                theme,
+                state.t("workbench.reconnect_terminal"),
+                rb_x + rb_w / 2.0,
+                rb_y + rb_h + 6.0,
+            );
+        } else if is_sb_hovered {
+            render_tooltip(
+                ctx,
+                theme,
+                "搜索终端内容 (Cmd+F)",
+                sb_x + sb_w / 2.0,
+                sb_y + sb_h + 6.0,
+            );
+        } else if is_cb_hovered {
+            render_tooltip(
+                ctx,
+                theme,
+                "清空终端屏幕",
+                cb_x + cb_w / 2.0,
+                cb_y + cb_h + 6.0,
+            );
+        }
+    }
+}
+
+pub fn render_tooltip(
+    ctx: &CanvasRenderingContext2d,
+    theme: &ThemeColors,
+    text: &str,
+    center_x: f64,
+    top_y: f64,
+) {
+    ctx.set_font("11px -apple-system, sans-serif");
+    let text_w = (text.chars().count() as f64) * 8.5 + 16.0;
+    let tt_w = text_w.max(84.0);
+    let tt_h = 24.0;
+    let tt_x = center_x - tt_w / 2.0;
+    let tt_y = top_y;
+
+    ctx.set_fill_style_str(theme.bg_root);
+    ctx.fill_rect(tt_x, tt_y, tt_w, tt_h);
+    ctx.set_stroke_style_str(theme.border_muted);
+    ctx.set_line_width(1.0);
+    ctx.stroke_rect(tt_x, tt_y, tt_w, tt_h);
+
+    ctx.set_fill_style_str(theme.text_primary);
+    ctx.set_text_align("center");
+    let _ = ctx.fill_text(text, center_x, tt_y + 16.0);
+}
+
+pub fn get_workbench_toolbar_reconnect_btn_rect(x: f64, y: f64, w: f64) -> (f64, f64, f64, f64) {
+    (x + w - 102.0, y + 4.0, 28.0, 28.0)
+}
+
+pub fn get_workbench_toolbar_search_btn_rect(x: f64, y: f64, w: f64) -> (f64, f64, f64, f64) {
+    (x + w - 68.0, y + 4.0, 28.0, 28.0)
+}
+
+pub fn get_workbench_toolbar_clear_btn_rect(x: f64, y: f64, w: f64) -> (f64, f64, f64, f64) {
+    (x + w - 34.0, y + 4.0, 28.0, 28.0)
 }
 
 fn render_terminal_panel(
@@ -2583,7 +3223,7 @@ pub fn render_sftp_editor_modal(
     }
 }
 
-pub const SETTINGS_SIDEBAR_WIDTH: f64 = 170.0;
+pub const SETTINGS_SIDEBAR_WIDTH: f64 = 140.0;
 
 pub const SETTINGS_CATEGORIES: [(SettingsCategory, &str, &str, &str); 5] = [
     (SettingsCategory::Appearance, "🎨", "外观主题", "Appearance"),
@@ -2599,9 +3239,9 @@ pub fn get_settings_category_rect(
     base_y: f64,
 ) -> (f64, f64, f64, f64) {
     let item_x = base_x + 8.0;
-    let item_y = base_y + 24.0 + (cat_idx as f64) * 48.0;
-    let item_w = 154.0;
-    let item_h = 40.0;
+    let item_y = base_y + 24.0 + (cat_idx as f64) * 40.0;
+    let item_w = 124.0;
+    let item_h = 32.0;
     (item_x, item_y, item_w, item_h)
 }
 
@@ -2914,9 +3554,9 @@ fn render_settings_view(
         }
 
         ctx.set_font(if is_active {
-            "bold 13px sans-serif"
+            "bold 11.5px sans-serif"
         } else {
-            "13px sans-serif"
+            "11.5px sans-serif"
         });
         ctx.set_fill_style_str(if is_active {
             theme.text_primary
@@ -2932,7 +3572,7 @@ fn render_settings_view(
             SettingsCategory::Backup => state.t("settings.cat_storage"),
         };
         let display_label = format!("{} {}", icon, cat_label);
-        let _ = ctx.fill_text(&display_label, ix + 12.0, iy + 25.0);
+        let _ = ctx.fill_text(&display_label, ix + 12.0, iy + 21.0);
     }
 
     // 2. Right Content Area
@@ -4472,7 +5112,7 @@ fn render_add_modal(
 
     // Modal Box
     let mw = 420.0;
-    let mh = 320.0;
+    let mh = 360.0;
     let mx = (w - mw) / 2.0;
     let my = (h - mh) / 2.0;
 
@@ -4525,8 +5165,60 @@ fn render_add_modal(
         iy += 56.0;
     }
 
+    // Connection test status feedback
+    let status_y = my + 295.0;
+    if state.modal_is_testing {
+        ctx.set_fill_style_str(theme.accent_cyan);
+        ctx.set_font("12px sans-serif");
+        ctx.set_text_align("left");
+        let _ = ctx.fill_text(
+            "⏳ 正在测试连接 (Testing connection)...",
+            mx + 20.0,
+            status_y,
+        );
+    } else if let Some((ref msg, is_ok)) = state.modal_test_status {
+        ctx.set_fill_style_str(if is_ok {
+            theme.status_online
+        } else {
+            theme.status_crit
+        });
+        ctx.set_font("12px sans-serif");
+        ctx.set_text_align("left");
+        let icon = if is_ok { "✓" } else { "✕" };
+        let full_msg = format!("{} {}", icon, msg);
+        let _ = ctx.fill_text(&truncate_text(&full_msg, 45), mx + 20.0, status_y);
+    }
+
     // Modal Action Buttons with shared i18n
     let btn_y = my + mh - 42.0;
+
+    // [ 🔌 测试连接 ]
+    let (test_x, test_y, test_w, test_h) = get_host_modal_test_btn_rect(mx, my, mw, mh);
+    let is_test_hovered = state.hover_pos.is_some_and(|(hx, hy)| {
+        hx >= test_x && hx <= test_x + test_w && hy >= test_y && hy <= test_y + test_h
+    });
+    ctx.set_fill_style_str(if is_test_hovered {
+        theme.bg_card_hover
+    } else {
+        theme.bg_input
+    });
+    ctx.fill_rect(test_x, test_y, test_w, test_h);
+    ctx.set_stroke_style_str(if state.modal_is_testing {
+        theme.accent_cyan
+    } else {
+        theme.border_default
+    });
+    ctx.set_line_width(1.0);
+    ctx.stroke_rect(test_x, test_y, test_w, test_h);
+    ctx.set_fill_style_str(theme.accent_cyan);
+    ctx.set_font("bold 11.5px sans-serif");
+    ctx.set_text_align("center");
+    let test_label = if state.modal_is_testing {
+        "⏳ 测试中..."
+    } else {
+        "🔌 测试连接"
+    };
+    let _ = ctx.fill_text(test_label, test_x + test_w / 2.0, test_y + 18.0);
 
     // [ Cancel ]
     ctx.set_fill_style_str(theme.bg_card_hover);
@@ -4546,6 +5238,10 @@ fn render_add_modal(
     let _ = ctx.fill_text(state.t("host.btn_submit"), mx + mw - 60.0, btn_y + 18.0);
 }
 
+pub fn get_host_modal_test_btn_rect(mx: f64, my: f64, _mw: f64, mh: f64) -> (f64, f64, f64, f64) {
+    (mx + 20.0, my + mh - 42.0, 96.0, 28.0)
+}
+
 pub fn is_interactive_element(
     x: f64,
     y: f64,
@@ -4556,10 +5252,16 @@ pub fn is_interactive_element(
     // 1. Modals have top priority
     if state.show_add_modal {
         let mw = 420.0;
-        let mh = 320.0;
+        let mh = 360.0;
         let mx = (width - mw) / 2.0;
         let my = (height - mh) / 2.0;
         let btn_y = my + mh - 42.0;
+
+        let (tx, ty, tw, th) = get_host_modal_test_btn_rect(mx, my, mw, mh);
+        if (tx..=tx + tw).contains(&x) && (ty..=ty + th).contains(&y) {
+            return (true, "pointer");
+        }
+
         if (btn_y..=btn_y + 28.0).contains(&y) && (mx + mw - 180.0..=mx + mw - 20.0).contains(&x) {
             return (true, "pointer");
         }
@@ -4601,8 +5303,8 @@ pub fn is_interactive_element(
 
     // 3. Topbar Add Button
     if y <= LAYOUT.topbar_height {
-        let btn_x = width - 110.0;
-        if (btn_x..=btn_x + 95.0).contains(&x) && (12.0..=38.0).contains(&y) {
+        let (btn_x, btn_y, btn_w, btn_h) = get_topbar_add_btn_rect(width);
+        if (btn_x..=btn_x + btn_w).contains(&x) && (btn_y..=btn_y + btn_h).contains(&y) {
             return (true, "pointer");
         }
     }
@@ -4621,8 +5323,8 @@ pub fn is_interactive_element(
             }
             let padding = 24.0;
             let card_w = ((content_w - padding * 3.0) / 2.0).max(340.0);
-            let card_h = 160.0;
-            let start_y = content_y + 54.0;
+            let card_h = 196.0;
+            let start_y = content_y + 36.0;
             for idx in 0..state.hosts.len() {
                 let col = idx % 2;
                 let row = idx / 2;
@@ -4635,6 +5337,22 @@ pub fn is_interactive_element(
         }
         ActiveView::Terminal => {
             if (content_y..=content_y + WORKBENCH_TAB_BAR_HEIGHT).contains(&y) {
+                return (true, "pointer");
+            }
+            // Toolbar icons (Reconnect, Search, Clear)
+            let (tb_r_x, tb_r_y, tb_r_w, tb_r_h) =
+                get_workbench_toolbar_reconnect_btn_rect(content_x, content_y, content_w);
+            if (tb_r_x..=tb_r_x + tb_r_w).contains(&x) && (tb_r_y..=tb_r_y + tb_r_h).contains(&y) {
+                return (true, "pointer");
+            }
+            let (tb_s_x, tb_s_y, tb_s_w, tb_s_h) =
+                get_workbench_toolbar_search_btn_rect(content_x, content_y, content_w);
+            if (tb_s_x..=tb_s_x + tb_s_w).contains(&x) && (tb_s_y..=tb_s_y + tb_s_h).contains(&y) {
+                return (true, "pointer");
+            }
+            let (tb_c_x, tb_c_y, tb_c_w, tb_c_h) =
+                get_workbench_toolbar_clear_btn_rect(content_x, content_y, content_w);
+            if (tb_c_x..=tb_c_x + tb_c_w).contains(&x) && (tb_c_y..=tb_c_y + tb_c_h).contains(&y) {
                 return (true, "pointer");
             }
             if state.active_workbench_tab == WorkbenchTab::Processes {
@@ -4919,8 +5637,14 @@ mod tests {
         assert_eq!(cursor, "pointer");
 
         // 2. Topbar Add Host button returns pointer
-        let btn_x = width - 110.0;
-        let (inter, cursor) = is_interactive_element(btn_x + 10.0, 20.0, width, height, &state);
+        let (btn_x, btn_y, btn_w, btn_h) = get_topbar_add_btn_rect(width);
+        let (inter, cursor) = is_interactive_element(
+            btn_x + btn_w / 2.0,
+            btn_y + btn_h / 2.0,
+            width,
+            height,
+            &state,
+        );
         assert!(inter);
         assert_eq!(cursor, "pointer");
 
@@ -4935,7 +5659,7 @@ mod tests {
         let padding = 24.0;
         let _card_w = ((content_w - padding * 3.0) / 2.0).max(340.0);
         let card_x = content_x + padding;
-        let card_y = content_y + 54.0;
+        let card_y = content_y + 36.0;
         let (inter, cursor) =
             is_interactive_element(card_x + 20.0, card_y + 20.0, width, height, &state);
         assert!(inter);

@@ -1,5 +1,5 @@
-use gpui::*;
 use crate::components::theme::DarkTechTheme;
+use gpui::*;
 
 pub struct TooltipView {
     text: SharedString,
@@ -21,7 +21,9 @@ impl Render for TooltipView {
     }
 }
 
-pub fn tooltip(label: impl Into<SharedString>) -> impl Fn(&mut Window, &mut App) -> AnyView + 'static {
+pub fn tooltip(
+    label: impl Into<SharedString>,
+) -> impl Fn(&mut Window, &mut App) -> AnyView + 'static {
     let label: SharedString = label.into();
     move |_window, cx| {
         let label = label.clone();
@@ -41,4 +43,3 @@ mod tests {
         assert_eq!(view.text, text);
     }
 }
-

@@ -1284,6 +1284,9 @@ mod tests {
         assert_eq!(Icon::upload().icon_type, IconType::Upload);
         assert_eq!(Icon::clock().icon_type, IconType::Clock);
         assert_eq!(Icon::split_vertical().icon_type, IconType::SplitVertical);
-        assert_eq!(Icon::split_horizontal().icon_type, IconType::SplitHorizontal);
+        assert_eq!(
+            Icon::split_horizontal().icon_type,
+            IconType::SplitHorizontal
+        );
     }
 }

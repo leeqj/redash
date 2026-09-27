@@ -825,18 +825,18 @@ impl Render for TerminalView {
                     .line_height(px(row_h))
                     .text_color(DarkTechTheme::text_primary())
                     .overflow_hidden()
-                    .on_scroll_wheel(cx.listener(move |this, event: &ScrollWheelEvent, _window, cx| {
-                        let delta_y = match event.delta {
-                            ScrollDelta::Lines(delta) => delta.y as i32,
-                            ScrollDelta::Pixels(delta) => {
-                                (f32::from(delta.y) / row_h) as i32
+                    .on_scroll_wheel(cx.listener(
+                        move |this, event: &ScrollWheelEvent, _window, cx| {
+                            let delta_y = match event.delta {
+                                ScrollDelta::Lines(delta) => delta.y as i32,
+                                ScrollDelta::Pixels(delta) => (f32::from(delta.y) / row_h) as i32,
+                            };
+                            if delta_y != 0 {
+                                this.emulator.scroll(delta_y * 3);
+                                cx.notify();
                             }
-                        };
-                        if delta_y != 0 {
-                            this.emulator.scroll(delta_y * 3);
-                            cx.notify();
-                        }
-                    }))
+                        },
+                    ))
                     .child(resize_detector)
                     .children(lines.into_iter().enumerate().map(|(line_idx, line)| {
                         let mut row_el = div()
@@ -978,8 +978,7 @@ impl Render for TerminalView {
                                 }
                             }));
                         } else {
-                            row_el = row_el
-                                .child(div().h(px(row_h)).w(px(0.0)).flex_shrink_0());
+                            row_el = row_el.child(div().h(px(row_h)).w(px(0.0)).flex_shrink_0());
                         }
 
                         row_el

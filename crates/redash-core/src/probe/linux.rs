@@ -344,7 +344,8 @@ MemAvailable:    16384000 kB
   eth0: 500000000 50000 0 0 0 0 0 0 250000000 25000 0 0 0 0 0 0
 "#;
         let host_id = HostId("fleet-linux-node".into());
-        let metrics = LinuxProbe::parse(&host_id, fleet_output).expect("fleet parse should succeed");
+        let metrics =
+            LinuxProbe::parse(&host_id, fleet_output).expect("fleet parse should succeed");
 
         assert_eq!(metrics.uptime_secs, 86400);
         assert!((metrics.cpu.load_1 - 1.20).abs() < 1e-5);

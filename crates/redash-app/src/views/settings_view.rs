@@ -140,14 +140,14 @@ impl SettingsView {
                 "settings_cat".into(),
                 category as u64,
             ))
-            .h(px(38.0))
+            .h(px(30.0))
             .w_full()
-            .px_3()
+            .px_2p5()
             .rounded_md()
             .flex()
             .flex_row()
             .items_center()
-            .gap_2p5()
+            .gap_2()
             .cursor_pointer()
             .bg(if is_selected {
                 DarkTechTheme::bg_panel_hover()
@@ -173,10 +173,10 @@ impl SettingsView {
                 this.status_message = None;
                 cx.notify();
             }))
-            .child(icon.with_size(px(14.0)).with_color(icon_color))
+            .child(icon.with_size(px(12.0)).with_color(icon_color))
             .child(
                 div()
-                    .text_size(px(12.5))
+                    .text_size(px(11.0))
                     .font_weight(if is_selected {
                         FontWeight::SEMIBOLD
                     } else {
@@ -362,7 +362,10 @@ impl SettingsView {
                                     .text_size(px(11.5))
                                     .font_family("Menlo")
                                     .text_color(DarkTechTheme::text_accent())
-                                    .child(crate::t_fmt!("settings.opt_per_sec", secs = draft.probe_interval_secs)),
+                                    .child(crate::t_fmt!(
+                                        "settings.opt_per_sec",
+                                        secs = draft.probe_interval_secs
+                                    )),
                             ),
                     )
                     .child(
@@ -444,7 +447,10 @@ impl SettingsView {
                                     .text_size(px(11.5))
                                     .font_family("Menlo")
                                     .text_color(DarkTechTheme::text_accent())
-                                    .child(crate::t_fmt!("settings.opt_secs", secs = draft.probe_timeout_secs)),
+                                    .child(crate::t_fmt!(
+                                        "settings.opt_secs",
+                                        secs = draft.probe_timeout_secs
+                                    )),
                             ),
                     )
                     .child(
@@ -526,7 +532,10 @@ impl SettingsView {
                                     .text_size(px(11.5))
                                     .font_family("Menlo")
                                     .text_color(DarkTechTheme::text_accent())
-                                    .child(crate::t_fmt!("settings.opt_points_val", pts = draft.history_points)),
+                                    .child(crate::t_fmt!(
+                                        "settings.opt_points_val",
+                                        pts = draft.history_points
+                                    )),
                             ),
                     )
                     .child(
@@ -1010,7 +1019,9 @@ impl SettingsView {
                                                 div()
                                                     .text_size(px(11.0))
                                                     .text_color(DarkTechTheme::text_accent())
-                                                    .child(crate::t!("settings.theme_instant_hint")),
+                                                    .child(crate::t!(
+                                                        "settings.theme_instant_hint"
+                                                    )),
                                             ),
                                     ),
                             ),
@@ -1344,7 +1355,9 @@ impl SettingsView {
                                                                     DarkTechTheme::status_online(),
                                                                 ),
                                                             )
-                                                            .child(crate::t!("settings.badge_in_use")),
+                                                            .child(crate::t!(
+                                                                "settings.badge_in_use"
+                                                            )),
                                                     ),
                                             )
                                             })
@@ -1358,16 +1371,26 @@ impl SettingsView {
                                                         .text_size(px(9.5))
                                                         .font_weight(FontWeight::BOLD)
                                                         .text_color(DarkTechTheme::status_warn())
-                                                        .child(crate::t!("settings.badge_previewing_unsaved")),
+                                                        .child(crate::t!(
+                                                            "settings.badge_previewing_unsaved"
+                                                        )),
                                                 )
                                             }),
                                     )
                                     .child({
                                         let theme_desc = match p.name {
-                                            "Minimalist Dark Tech" => crate::t!("settings.theme_darktech_desc"),
-                                            "Cyberpunk Neon" => crate::t!("settings.theme_cyberpunk_desc"),
-                                            "Monokai Pro" => crate::t!("settings.theme_monokai_desc"),
-                                            "GitHub Dark" => crate::t!("settings.theme_github_desc"),
+                                            "Minimalist Dark Tech" => {
+                                                crate::t!("settings.theme_darktech_desc")
+                                            }
+                                            "Cyberpunk Neon" => {
+                                                crate::t!("settings.theme_cyberpunk_desc")
+                                            }
+                                            "Monokai Pro" => {
+                                                crate::t!("settings.theme_monokai_desc")
+                                            }
+                                            "GitHub Dark" => {
+                                                crate::t!("settings.theme_github_desc")
+                                            }
                                             _ => p.description,
                                         };
                                         div()
@@ -1952,19 +1975,25 @@ impl SettingsView {
                                     .text_size(px(11.0))
                                     .text_color(DarkTechTheme::text_muted())
                                     .child(
-                                div()
-                                    .flex()
-                                    .flex_row()
-                                    .items_center()
-                                    .gap_1()
-                                    .child(Icon::folder().with_size(px(11.0)).with_color(DarkTechTheme::text_muted()))
-                                    .child(
                                         div()
-                                            .text_size(px(11.0))
-                                            .text_color(DarkTechTheme::text_muted())
-                                            .child(crate::t!("settings.storage_hosts_title")),
+                                            .flex()
+                                            .flex_row()
+                                            .items_center()
+                                            .gap_1()
+                                            .child(
+                                                Icon::folder()
+                                                    .with_size(px(11.0))
+                                                    .with_color(DarkTechTheme::text_muted()),
+                                            )
+                                            .child(
+                                                div()
+                                                    .text_size(px(11.0))
+                                                    .text_color(DarkTechTheme::text_muted())
+                                                    .child(crate::t!(
+                                                        "settings.storage_hosts_title"
+                                                    )),
+                                            ),
                                     ),
-                            ),
                             )
                             .child(
                                 div()
@@ -1988,19 +2017,25 @@ impl SettingsView {
                                     .text_size(px(11.0))
                                     .text_color(DarkTechTheme::text_muted())
                                     .child(
-                                div()
-                                    .flex()
-                                    .flex_row()
-                                    .items_center()
-                                    .gap_1()
-                                    .child(Icon::settings().with_size(px(11.0)).with_color(DarkTechTheme::text_muted()))
-                                    .child(
                                         div()
-                                            .text_size(px(11.0))
-                                            .text_color(DarkTechTheme::text_muted())
-                                            .child(crate::t!("settings.storage_settings_title")),
+                                            .flex()
+                                            .flex_row()
+                                            .items_center()
+                                            .gap_1()
+                                            .child(
+                                                Icon::settings()
+                                                    .with_size(px(11.0))
+                                                    .with_color(DarkTechTheme::text_muted()),
+                                            )
+                                            .child(
+                                                div()
+                                                    .text_size(px(11.0))
+                                                    .text_color(DarkTechTheme::text_muted())
+                                                    .child(crate::t!(
+                                                        "settings.storage_settings_title"
+                                                    )),
+                                            ),
                                     ),
-                            ),
                             )
                             .child(
                                 div()
@@ -2033,7 +2068,9 @@ impl SettingsView {
                             .items_center()
                             .gap_1p5()
                             .child(
-                                Icon::shield().with_size(px(14.0)).with_color(DarkTechTheme::status_online()),
+                                Icon::shield()
+                                    .with_size(px(14.0))
+                                    .with_color(DarkTechTheme::status_online()),
                             )
                             .child(
                                 div()
@@ -2090,7 +2127,10 @@ impl SettingsView {
                                     .justify_center()
                                     .gap_1p5()
                                     .cursor_pointer()
-                                    .hover(|s| s.bg(DarkTechTheme::bg_panel_hover()).border_color(DarkTechTheme::border_active()))
+                                    .hover(|s| {
+                                        s.bg(DarkTechTheme::bg_panel_hover())
+                                            .border_color(DarkTechTheme::border_active())
+                                    })
                                     .on_click(cx.listener(|this, _e: &ClickEvent, window, cx| {
                                         if let Some(cb) = &this.on_action {
                                             cb(SettingsAction::ExportHosts, window, cx);
@@ -2116,7 +2156,10 @@ impl SettingsView {
                                     .justify_center()
                                     .gap_1p5()
                                     .cursor_pointer()
-                                    .hover(|s| s.bg(DarkTechTheme::bg_panel_hover()).border_color(DarkTechTheme::border_active()))
+                                    .hover(|s| {
+                                        s.bg(DarkTechTheme::bg_panel_hover())
+                                            .border_color(DarkTechTheme::border_active())
+                                    })
                                     .on_click(cx.listener(|this, _e: &ClickEvent, window, cx| {
                                         if let Some(cb) = &this.on_action {
                                             cb(SettingsAction::ImportHosts, window, cx);
@@ -2140,7 +2183,10 @@ impl SettingsView {
                                     .items_center()
                                     .justify_center()
                                     .cursor_pointer()
-                                    .hover(|s| s.bg(DarkTechTheme::bg_panel_hover()).border_color(DarkTechTheme::accent_indigo()))
+                                    .hover(|s| {
+                                        s.bg(DarkTechTheme::bg_panel_hover())
+                                            .border_color(DarkTechTheme::accent_indigo())
+                                    })
                                     .on_click(cx.listener(|this, _e: &ClickEvent, window, cx| {
                                         if let Some(cb) = &this.on_action {
                                             cb(SettingsAction::ResetDemoHosts, window, cx);
@@ -2188,14 +2234,18 @@ impl SettingsView {
                         div()
                             .size(px(54.0))
                             .rounded_xl()
-                            .bg(DarkTechTheme::border_active())
-                            .text_color(DarkTechTheme::bg_root())
-                            .font_weight(FontWeight::BOLD)
-                            .text_size(px(22.0))
+                            .overflow_hidden()
                             .flex()
                             .items_center()
                             .justify_center()
-                            .child("SB"),
+                            .child(
+                                img(std::sync::Arc::new(gpui::Image::from_bytes(
+                                    gpui::ImageFormat::Png,
+                                    include_bytes!("../../../../assets/icon.png").to_vec(),
+                                )))
+                                .size(px(54.0))
+                                .rounded_xl(),
+                            ),
                     )
                     .child(
                         div()
@@ -2226,7 +2276,7 @@ impl SettingsView {
                                             .text_size(px(10.5))
                                             .font_family("Menlo")
                                             .text_color(DarkTechTheme::text_accent())
-                                            .child("v0.1.0-beta"),
+                                            .child("v0.1.1-beta"),
                                     )
                                     .child(
                                         div()
@@ -2668,18 +2718,18 @@ impl Render for SettingsView {
                     .overflow_hidden()
                     .flex()
                     .flex_row()
-                    // Left Category Navigation Bar (200px)
+                    // Left Category Navigation Bar (reduced 20% to 160px)
                     .child(
                         div()
                             .id("settings_sidebar_scroll")
-                            .w(px(200.0))
+                            .w(px(160.0))
                             .flex_shrink_0()
                             .h_full()
                             .overflow_y_scroll()
                             .bg(DarkTechTheme::bg_panel())
                             .border_r_1()
                             .border_color(DarkTechTheme::border_default())
-                            .p_2p5()
+                            .p_2()
                             .flex()
                             .flex_col()
                             .gap_1()

@@ -288,3 +288,64 @@ async fn test_webhook_test_api() {
     assert_eq!(json2["success"], false);
     assert!(json2["message"].as_str().unwrap().contains("推送失败"));
 }
+
+#[tokio::test]
+async fn test_hosts_test_connection_api() {
+    let state = AppState::new();
+    let app = build_router(state);
+
+    // 1. POST /api/hosts/test with empty hostname -> 400 Bad Request
+    let req_empty = serde_json::json!({
+        "hostname": "   ",
+        "port": 22,
+        "user": "root"
+    });
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/hosts/test")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&req_empty).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    let body = res.into_body().collect().await.unwrap().to_bytes();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["success"], false);
+    assert!(json["message"].as_str().unwrap().contains("不能为空"));
+
+    // 2. POST /api/hosts/test with dummy unreachable host -> BAD_GATEWAY error handled cleanly
+    let req_unreachable = serde_json::json!({
+        "hostname": "127.0.0.1",
+        "port": 54321,
+        "user": "nonexistent_user",
+        "password": "wrong_password"
+    });
+    let res2 = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/hosts/test")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&req_unreachable).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(res2.status(), StatusCode::BAD_GATEWAY);
+    let body2 = res2.into_body().collect().await.unwrap().to_bytes();
+    let json2: serde_json::Value = serde_json::from_slice(&body2).unwrap();
+    assert_eq!(json2["success"], false);
+    assert!(
+        json2["message"]
+            .as_str()
+            .unwrap()
+            .contains("SSH connection failed")
+    );
+}

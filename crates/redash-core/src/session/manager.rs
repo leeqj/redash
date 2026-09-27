@@ -330,10 +330,7 @@ impl SessionManager {
                 )
                 .await
                 .with_context(|| {
-                    format!(
-                        "无法连接至目标 SSH 地址 {}:{}",
-                        host.hostname, host.port
-                    )
+                    format!("无法连接至目标 SSH 地址 {}:{}", host.hostname, host.port)
                 })?
             };
 
@@ -363,7 +360,8 @@ impl SessionManager {
 
     /// Convenience method to test an already saved host's connection.
     pub async fn test_connection(&self, host: &HostConfig) -> Result<Duration> {
-        self.test_connection_with_credentials(host, None, None).await
+        self.test_connection_with_credentials(host, None, None)
+            .await
     }
 
     pub async fn open_pty(

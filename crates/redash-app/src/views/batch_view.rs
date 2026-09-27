@@ -264,8 +264,7 @@ impl BatchView {
                 exec.error = Some(crate::t!("batch.cancelled_user").to_string());
             }
         }
-        self.toast_message =
-            Some(crate::t!("batch.cancelled_status").to_string());
+        self.toast_message = Some(crate::t!("batch.cancelled_status").to_string());
         cx.notify();
     }
 
@@ -616,14 +615,18 @@ impl Render for BatchView {
                                             .font_weight(FontWeight::BOLD)
                                             .text_color(rgb(0xf8fafc))
                                             .child(
-                                        div()
-                                            .flex()
-                                            .flex_row()
-                                            .items_center()
-                                            .gap_1p5()
-                                            .child(Icon::zap().with_size(px(14.0)).with_color(rgb(0x38bdf8)))
-                                            .child("BATCH COMMAND CENTER"),
-                                    )
+                                                div()
+                                                    .flex()
+                                                    .flex_row()
+                                                    .items_center()
+                                                    .gap_1p5()
+                                                    .child(
+                                                        Icon::zap()
+                                                            .with_size(px(14.0))
+                                                            .with_color(rgb(0x38bdf8)),
+                                                    )
+                                                    .child("BATCH COMMAND CENTER"),
+                                            ),
                                     )
                                     .child(
                                         div()
@@ -636,15 +639,15 @@ impl Render for BatchView {
                                             .text_size(px(10.0))
                                             .text_color(rgb(0x38bdf8))
                                             .font_weight(FontWeight::BOLD)
-                                            .child(format!("{} HOSTS TARGETED", target_count))
-                                    )
+                                            .child(format!("{} HOSTS TARGETED", target_count)),
+                                    ),
                             )
                             .child(
                                 div()
                                     .text_size(px(11.0))
                                     .text_color(rgb(0x64748b))
-                                    .child(crate::t!("batch.subtitle"))
-                            )
+                                    .child(crate::t!("batch.subtitle")),
+                            ),
                     )
                     // Telemetry Status Capsules & Toolbar
                     .child(
@@ -657,54 +660,117 @@ impl Render for BatchView {
                             .when(running_count > 0, |d| {
                                 d.child(
                                     div()
-                                        .px_2().py_1().bg(rgb(0x0369a1)).rounded_md().text_size(px(10.5))
-                                        .text_color(rgb(0xf0f9ff)).font_weight(FontWeight::BOLD)
+                                        .px_2()
+                                        .py_1()
+                                        .bg(rgb(0x0369a1))
+                                        .rounded_md()
+                                        .text_size(px(10.5))
+                                        .text_color(rgb(0xf0f9ff))
+                                        .font_weight(FontWeight::BOLD)
                                         .child(
-                                        div()
-                                            .flex()
-                                            .flex_row()
-                                            .items_center()
-                                            .gap_1()
-                                            .child(Icon::zap().with_size(px(10.0)).with_color(rgb(0xf0f9ff)))
-                                            .child(crate::t_fmt!("batch.running_count", count = running_count)),
-                                    )
+                                            div()
+                                                .flex()
+                                                .flex_row()
+                                                .items_center()
+                                                .gap_1()
+                                                .child(
+                                                    Icon::zap()
+                                                        .with_size(px(10.0))
+                                                        .with_color(rgb(0xf0f9ff)),
+                                                )
+                                                .child(crate::t_fmt!(
+                                                    "batch.running_count",
+                                                    count = running_count
+                                                )),
+                                        ),
                                 )
                             })
                             .when(pending_count > 0, |d| {
                                 d.child(
                                     div()
-                                        .px_2().py_1().bg(rgb(0x1e2030)).border_1().border_color(rgb(0x313244)).rounded_md().text_size(px(10.5))
+                                        .px_2()
+                                        .py_1()
+                                        .bg(rgb(0x1e2030))
+                                        .border_1()
+                                        .border_color(rgb(0x313244))
+                                        .rounded_md()
+                                        .text_size(px(10.5))
                                         .text_color(rgb(0xa6adc8))
-                                        .child(crate::t_fmt!("batch.pending_count", count = pending_count))
+                                        .child(crate::t_fmt!(
+                                            "batch.pending_count",
+                                            count = pending_count
+                                        )),
                                 )
                             })
                             .when(success_count > 0, |d| {
                                 d.child(
                                     div()
-                                        .px_2().py_1().bg(rgb(0x064e3b)).rounded_md().text_size(px(10.5))
-                                        .text_color(rgb(0x6ee7b7)).font_weight(FontWeight::BOLD)
-                                        .child(crate::t_fmt!("batch.success_count", count = success_count))
+                                        .px_2()
+                                        .py_1()
+                                        .bg(rgb(0x064e3b))
+                                        .rounded_md()
+                                        .text_size(px(10.5))
+                                        .text_color(rgb(0x6ee7b7))
+                                        .font_weight(FontWeight::BOLD)
+                                        .child(crate::t_fmt!(
+                                            "batch.success_count",
+                                            count = success_count
+                                        )),
                                 )
                             })
                             .when(failed_count > 0, |d| {
                                 d.child(
                                     div()
-                                        .px_2().py_1().bg(rgb(0x7f1d1d)).rounded_md().text_size(px(10.5))
-                                        .text_color(rgb(0xfca5a5)).font_weight(FontWeight::BOLD)
-                                        .flex().flex_row().items_center().gap_1()
-                                        .child(Icon::close().with_size(px(10.0)).with_color(rgb(0xfca5a5)))
-                                        .child(crate::t_fmt!("batch.failed_count", count = failed_count))
+                                        .px_2()
+                                        .py_1()
+                                        .bg(rgb(0x7f1d1d))
+                                        .rounded_md()
+                                        .text_size(px(10.5))
+                                        .text_color(rgb(0xfca5a5))
+                                        .font_weight(FontWeight::BOLD)
+                                        .flex()
+                                        .flex_row()
+                                        .items_center()
+                                        .gap_1()
+                                        .child(
+                                            Icon::close()
+                                                .with_size(px(10.0))
+                                                .with_color(rgb(0xfca5a5)),
+                                        )
+                                        .child(crate::t_fmt!(
+                                            "batch.failed_count",
+                                            count = failed_count
+                                        )),
                                 )
                             })
                             // Total duration badge
                             .when_some(self.last_result.as_ref(), |d, job| {
                                 d.child(
                                     div()
-                                        .px_2().py_1().bg(rgb(0x131520)).border_1().border_color(rgb(0x282b3d)).rounded_md().text_size(px(10.5))
+                                        .px_2()
+                                        .py_1()
+                                        .bg(rgb(0x131520))
+                                        .border_1()
+                                        .border_color(rgb(0x282b3d))
+                                        .rounded_md()
+                                        .text_size(px(10.5))
                                         .text_color(rgb(0x38bdf8))
-                                        .flex().flex_row().items_center().gap_1()
-                                        .child(Icon::clock().with_size(px(11.0)).with_color(rgb(0x38bdf8)))
-                                        .child(crate::t_fmt!("batch.total_duration", duration = format_duration_detailed(job.total_duration_ms, job.total_duration_us)))
+                                        .flex()
+                                        .flex_row()
+                                        .items_center()
+                                        .gap_1()
+                                        .child(
+                                            Icon::clock()
+                                                .with_size(px(11.0))
+                                                .with_color(rgb(0x38bdf8)),
+                                        )
+                                        .child(crate::t_fmt!(
+                                            "batch.total_duration",
+                                            duration = format_duration_detailed(
+                                                job.total_duration_ms,
+                                                job.total_duration_us
+                                            )
+                                        )),
                                 )
                             })
                             // View Mode Toggle
@@ -724,8 +790,18 @@ impl Render for BatchView {
                                             .py_1()
                                             .rounded_sm()
                                             .cursor_pointer()
-                                            .bg(if current_view_mode == BatchViewMode::SplitGrid { rgb(0x38bdf8) } else { rgb(0x12141f) })
-                                            .text_color(if current_view_mode == BatchViewMode::SplitGrid { rgb(0x0a0b10) } else { rgb(0x94a3b8) })
+                                            .bg(if current_view_mode == BatchViewMode::SplitGrid {
+                                                rgb(0x38bdf8)
+                                            } else {
+                                                rgb(0x12141f)
+                                            })
+                                            .text_color(
+                                                if current_view_mode == BatchViewMode::SplitGrid {
+                                                    rgb(0x0a0b10)
+                                                } else {
+                                                    rgb(0x94a3b8)
+                                                },
+                                            )
                                             .font_weight(FontWeight::BOLD)
                                             .text_size(px(10.5))
                                             .flex()
@@ -736,8 +812,14 @@ impl Render for BatchView {
                                                 this.view_mode = BatchViewMode::SplitGrid;
                                                 cx.notify();
                                             }))
-                                            .child(Icon::windows().with_size(px(10.0)).with_color(if current_view_mode == BatchViewMode::SplitGrid { rgb(0x0a0b10) } else { rgb(0x94a3b8) }))
-                                            .child(crate::t!("batch.split_view"))
+                                            .child(Icon::windows().with_size(px(10.0)).with_color(
+                                                if current_view_mode == BatchViewMode::SplitGrid {
+                                                    rgb(0x0a0b10)
+                                                } else {
+                                                    rgb(0x94a3b8)
+                                                },
+                                            ))
+                                            .child(crate::t!("batch.split_view")),
                                     )
                                     .child(
                                         div()
@@ -746,8 +828,18 @@ impl Render for BatchView {
                                             .py_1()
                                             .rounded_sm()
                                             .cursor_pointer()
-                                            .bg(if current_view_mode == BatchViewMode::List { rgb(0x38bdf8) } else { rgb(0x12141f) })
-                                            .text_color(if current_view_mode == BatchViewMode::List { rgb(0x0a0b10) } else { rgb(0x94a3b8) })
+                                            .bg(if current_view_mode == BatchViewMode::List {
+                                                rgb(0x38bdf8)
+                                            } else {
+                                                rgb(0x12141f)
+                                            })
+                                            .text_color(
+                                                if current_view_mode == BatchViewMode::List {
+                                                    rgb(0x0a0b10)
+                                                } else {
+                                                    rgb(0x94a3b8)
+                                                },
+                                            )
                                             .font_weight(FontWeight::BOLD)
                                             .text_size(px(10.5))
                                             .flex()
@@ -758,11 +850,17 @@ impl Render for BatchView {
                                                 this.view_mode = BatchViewMode::List;
                                                 cx.notify();
                                             }))
-                                            .child(Icon::sort().with_size(px(10.0)).with_color(if current_view_mode == BatchViewMode::List { rgb(0x0a0b10) } else { rgb(0x94a3b8) }))
-                                            .child(crate::t!("batch.list_view"))
-                                    )
-                            )
-                    )
+                                            .child(Icon::sort().with_size(px(10.0)).with_color(
+                                                if current_view_mode == BatchViewMode::List {
+                                                    rgb(0x0a0b10)
+                                                } else {
+                                                    rgb(0x94a3b8)
+                                                },
+                                            ))
+                                            .child(crate::t!("batch.list_view")),
+                                    ),
+                            ),
+                    ),
             )
             // Toast notification banner if copied
             .when_some(self.toast_message.as_ref(), |d, msg| {
@@ -792,8 +890,8 @@ impl Render for BatchView {
                                         .text_size(px(11.0))
                                         .text_color(rgb(0xa7f3d0))
                                         .font_weight(FontWeight::BOLD)
-                                        .child(msg.clone())
-                                )
+                                        .child(msg.clone()),
+                                ),
                         )
                         .child(
                             div()
@@ -805,8 +903,8 @@ impl Render for BatchView {
                                     this.toast_message = None;
                                     cx.notify();
                                 }))
-                                .child(Icon::close().with_size(px(9.0)).with_color(rgb(0xa7f3d0)))
-                        )
+                                .child(Icon::close().with_size(px(9.0)).with_color(rgb(0xa7f3d0))),
+                        ),
                 )
             })
             // Interactive Shell Command Center Box
@@ -816,7 +914,11 @@ impl Render for BatchView {
                     .w_full()
                     .bg(rgb(0x11121a))
                     .border_1()
-                    .border_color(if is_focused { rgb(0x38bdf8) } else { rgb(0x232738) })
+                    .border_color(if is_focused {
+                        rgb(0x38bdf8)
+                    } else {
+                        rgb(0x232738)
+                    })
                     .rounded_lg()
                     .p_3()
                     .flex()
@@ -840,21 +942,22 @@ impl Render for BatchView {
                                             .text_size(px(11.5))
                                             .font_weight(FontWeight::BOLD)
                                             .text_color(rgb(0x94a3b8))
-                                            .child(crate::t!("batch.shell_header"))
+                                            .child(crate::t!("batch.shell_header")),
                                     )
                                     .child(
                                         div()
                                             .text_size(px(10.0))
                                             .text_color(rgb(0x475569))
-                                            .child(crate::t!("batch.shell_hint"))
-                                    )
+                                            .child(crate::t!("batch.shell_hint")),
+                                    ),
                             )
-                            .child(
-                                div()
-                                    .text_size(px(10.5))
-                                    .text_color(rgb(0x64748b))
-                                    .child(crate::t_fmt!("batch.shell_stats", chars = total_chars, cursor = safe_cursor))
-                            )
+                            .child(div().text_size(px(10.5)).text_color(rgb(0x64748b)).child(
+                                crate::t_fmt!(
+                                    "batch.shell_stats",
+                                    chars = total_chars,
+                                    cursor = safe_cursor
+                                ),
+                            )),
                     )
                     // Interactive Command Line Input Box
                     .child(
@@ -865,16 +968,26 @@ impl Render for BatchView {
                             .min_h(px(40.0))
                             .bg(rgb(0x06070a))
                             .border_1()
-                            .border_color(if is_focused { rgb(0x0284c7) } else { rgb(0x1e2030) })
+                            .border_color(if is_focused {
+                                rgb(0x0284c7)
+                            } else {
+                                rgb(0x1e2030)
+                            })
                             .rounded_md()
                             .px_3()
                             .py_2()
                             .cursor_text()
-                            .on_mouse_down(MouseButton::Left, cx.listener(|this, _, window, cx| {
-                                let fh = this.focus_handle.get_or_insert_with(|| cx.focus_handle()).clone();
-                                window.focus(&fh);
-                                cx.notify();
-                            }))
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(|this, _, window, cx| {
+                                    let fh = this
+                                        .focus_handle
+                                        .get_or_insert_with(|| cx.focus_handle())
+                                        .clone();
+                                    window.focus(&fh);
+                                    cx.notify();
+                                }),
+                            )
                             .on_key_down(cx.listener(|this, event: &KeyDownEvent, _window, cx| {
                                 this.handle_key_down(event, cx);
                             }))
@@ -888,74 +1001,55 @@ impl Render for BatchView {
                                     .text_color(rgb(0x38bdf8))
                                     .font_weight(FontWeight::BOLD)
                                     .mr_2()
-                                    .child("$ ")
+                                    .child("$ "),
                             )
-                            .child(
-                                if chars.is_empty() {
-                                    div()
-                                        .flex()
-                                        .flex_row()
-                                        .items_center()
-                                        .when(is_focused, |d| {
-                                            d.child(
-                                                div()
-                                                    .w(px(8.0))
-                                                    .h(px(16.0))
-                                                    .bg(rgb(0x38bdf8))
-                                                    .rounded_xs()
-                                            )
-                                        })
-                                        .child(
+                            .child(if chars.is_empty() {
+                                div()
+                                    .flex()
+                                    .flex_row()
+                                    .items_center()
+                                    .when(is_focused, |d| {
+                                        d.child(
                                             div()
-                                                .text_color(rgb(0x475569))
-                                                .ml_1()
-                                                .child(crate::t!("batch.input_placeholder"))
+                                                .w(px(8.0))
+                                                .h(px(16.0))
+                                                .bg(rgb(0x38bdf8))
+                                                .rounded_xs(),
                                         )
-                                } else {
-                                    div()
-                                        .flex()
-                                        .flex_row()
-                                        .items_center()
-                                        .child(
+                                    })
+                                    .child(
+                                        div()
+                                            .text_color(rgb(0x475569))
+                                            .ml_1()
+                                            .child(crate::t!("batch.input_placeholder")),
+                                    )
+                            } else {
+                                div()
+                                    .flex()
+                                    .flex_row()
+                                    .items_center()
+                                    .child(div().text_color(rgb(0xf1f5f9)).child(before_text))
+                                    .child(if let Some(ch) = cursor_char {
+                                        if is_focused {
                                             div()
+                                                .bg(rgb(0x38bdf8))
+                                                .text_color(rgb(0x0a0b10))
+                                                .font_weight(FontWeight::BOLD)
+                                                .child(ch.to_string())
+                                        } else {
+                                            div()
+                                                .border_b_2()
+                                                .border_color(rgb(0x64748b))
                                                 .text_color(rgb(0xf1f5f9))
-                                                .child(before_text)
-                                        )
-                                        .child(
-                                            if let Some(ch) = cursor_char {
-                                                if is_focused {
-                                                    div()
-                                                        .bg(rgb(0x38bdf8))
-                                                        .text_color(rgb(0x0a0b10))
-                                                        .font_weight(FontWeight::BOLD)
-                                                        .child(ch.to_string())
-                                                } else {
-                                                    div()
-                                                        .border_b_2()
-                                                        .border_color(rgb(0x64748b))
-                                                        .text_color(rgb(0xf1f5f9))
-                                                        .child(ch.to_string())
-                                                }
-                                            } else if is_focused {
-                                                div()
-                                                    .w(px(8.0))
-                                                    .h(px(16.0))
-                                                    .bg(rgb(0x38bdf8))
-                                                    .rounded_xs()
-                                            } else {
-                                                div()
-                                                    .w(px(2.0))
-                                                    .h(px(16.0))
-                                                    .bg(rgb(0x475569))
-                                            }
-                                        )
-                                        .child(
-                                            div()
-                                                .text_color(rgb(0xf1f5f9))
-                                                .child(after_text)
-                                        )
-                                }
-                            )
+                                                .child(ch.to_string())
+                                        }
+                                    } else if is_focused {
+                                        div().w(px(8.0)).h(px(16.0)).bg(rgb(0x38bdf8)).rounded_xs()
+                                    } else {
+                                        div().w(px(2.0)).h(px(16.0)).bg(rgb(0x475569))
+                                    })
+                                    .child(div().text_color(rgb(0xf1f5f9)).child(after_text))
+                            }),
                     )
                     // DevOps Presets Ribbon
                     .child(
@@ -964,62 +1058,69 @@ impl Render for BatchView {
                             .flex_col()
                             .gap_1p5()
                             .child(
-                                div()
-                                    .flex()
-                                    .flex_row()
-                                    .items_center()
-                                    .gap_2()
-                                    .child(
-                                        div()
-                                            .text_size(px(11.0))
-                                            .font_weight(FontWeight::BOLD)
-                                            .text_color(rgb(0x64748b))
-                                            .child(
-                                        div()
-                                            .flex()
-                                            .flex_row()
-                                            .items_center()
-                                            .gap_1p5()
-                                            .child(Icon::zap().with_size(px(11.0)).with_color(rgb(0x38bdf8)))
-                                            .child(crate::t!("batch.presets")),
-                                    )
-                                    )
+                                div().flex().flex_row().items_center().gap_2().child(
+                                    div()
+                                        .text_size(px(11.0))
+                                        .font_weight(FontWeight::BOLD)
+                                        .text_color(rgb(0x64748b))
+                                        .child(
+                                            div()
+                                                .flex()
+                                                .flex_row()
+                                                .items_center()
+                                                .gap_1p5()
+                                                .child(
+                                                    Icon::zap()
+                                                        .with_size(px(11.0))
+                                                        .with_color(rgb(0x38bdf8)),
+                                                )
+                                                .child(crate::t!("batch.presets")),
+                                        ),
+                                ),
                             )
-                            .child(
-                                div()
-                                    .flex()
-                                    .flex_row()
-                                    .items_center()
-                                    .gap_2()
-                                    .children(DEVOPS_PRESETS.iter().enumerate().map(|(idx, preset)| {
-                                        let cmd_str = preset.command;
-                                        div()
-                                            .id(ElementId::NamedInteger("preset_pill".into(), idx as u64))
-                                            .px_2p5()
-                                            .py_1()
-                                            .bg(rgb(0x161824))
-                                            .border_1()
-                                            .border_color(rgb(0x2d3148))
-                                            .rounded_md()
-                                            .text_size(px(11.0))
-                                            .text_color(rgb(0xcdd6f4))
-                                            .cursor_pointer()
-                                            .hover(|s| s.bg(rgb(0x23273c)).border_color(rgb(0x38bdf8)).text_color(rgb(0x38bdf8)))
-                                            .on_click(cx.listener(move |this, _, window, cx| {
-                                                this.apply_preset(cmd_str, window, cx);
-                                            }))
-                                            .child(match preset.label {
-                                                "系统概要" => crate::t!("batch.preset_sys_summary"),
-                                                "磁盘空间" => crate::t!("batch.preset_disk_space"),
-                                                "磁盘深度清理" => crate::t!("batch.preset_disk_clean"),
-                                                "容器健康检查" => crate::t!("batch.preset_docker_health"),
-                                                "Top 资源消耗" => crate::t!("batch.preset_top_proc"),
-                                                "监听端口" => crate::t!("batch.preset_ports"),
-                                                "内存诊断" => crate::t!("batch.preset_memory"),
-                                                other => other,
-                                            })
-                                    }))
-                            )
+                            .child(div().flex().flex_row().items_center().gap_2().children(
+                                DEVOPS_PRESETS.iter().enumerate().map(|(idx, preset)| {
+                                    let cmd_str = preset.command;
+                                    div()
+                                        .id(ElementId::NamedInteger(
+                                            "preset_pill".into(),
+                                            idx as u64,
+                                        ))
+                                        .px_2p5()
+                                        .py_1()
+                                        .bg(rgb(0x161824))
+                                        .border_1()
+                                        .border_color(rgb(0x2d3148))
+                                        .rounded_md()
+                                        .text_size(px(11.0))
+                                        .text_color(rgb(0xcdd6f4))
+                                        .cursor_pointer()
+                                        .hover(|s| {
+                                            s.bg(rgb(0x23273c))
+                                                .border_color(rgb(0x38bdf8))
+                                                .text_color(rgb(0x38bdf8))
+                                        })
+                                        .on_click(cx.listener(move |this, _, window, cx| {
+                                            this.apply_preset(cmd_str, window, cx);
+                                        }))
+                                        .child(match preset.label {
+                                            "系统概要" => crate::t!("batch.preset_sys_summary"),
+                                            "磁盘空间" => crate::t!("batch.preset_disk_space"),
+                                            "磁盘深度清理" => {
+                                                crate::t!("batch.preset_disk_clean")
+                                            }
+                                            "容器健康检查" => {
+                                                crate::t!("batch.preset_docker_health")
+                                            }
+                                            "Top 资源消耗" => {
+                                                crate::t!("batch.preset_top_proc")
+                                            }
+                                            "监听端口" => crate::t!("batch.preset_ports"),
+                                            "内存诊断" => crate::t!("batch.preset_memory"),
+                                            other => other,
+                                        })
+                                }),
+                            )),
                     )
                     // Actions and Execution Trigger
                     .child(
@@ -1039,32 +1140,40 @@ impl Render for BatchView {
                                         div()
                                             .text_size(px(11.0))
                                             .text_color(rgb(0x64748b))
-                                            .child(crate::t!("batch.engine_banner"))
+                                            .child(crate::t!("batch.engine_banner")),
                                     )
-                                    .when(self.last_result.is_some() || !self.active_executions.is_empty(), |d| {
-                                        d.child(
-                                            div()
-                                                .id("btn_clear_results")
-                                                .cursor_pointer()
-                                                .text_size(px(11.0))
-                                                .text_color(rgb(0x94a3b8))
-                                                .hover(|s| s.text_color(rgb(0xf87171)))
-                                                .on_click(cx.listener(|this, _, _, cx| {
-                                                    this.active_executions.clear();
-                                                    this.last_result = None;
-                                                    cx.notify();
-                                                }))
-                                                .child(
+                                    .when(
+                                        self.last_result.is_some()
+                                            || !self.active_executions.is_empty(),
+                                        |d| {
+                                            d.child(
                                                 div()
-                                                    .flex()
-                                                    .flex_row()
-                                                    .items_center()
-                                                    .gap_1()
-                                                    .child(Icon::trash().with_size(px(10.0)).with_color(rgb(0x94a3b8)))
-                                                    .child(crate::t!("common.clear")),
+                                                    .id("btn_clear_results")
+                                                    .cursor_pointer()
+                                                    .text_size(px(11.0))
+                                                    .text_color(rgb(0x94a3b8))
+                                                    .hover(|s| s.text_color(rgb(0xf87171)))
+                                                    .on_click(cx.listener(|this, _, _, cx| {
+                                                        this.active_executions.clear();
+                                                        this.last_result = None;
+                                                        cx.notify();
+                                                    }))
+                                                    .child(
+                                                        div()
+                                                            .flex()
+                                                            .flex_row()
+                                                            .items_center()
+                                                            .gap_1()
+                                                            .child(
+                                                                Icon::trash()
+                                                                    .with_size(px(10.0))
+                                                                    .with_color(rgb(0x94a3b8)),
+                                                            )
+                                                            .child(crate::t!("common.clear")),
+                                                    ),
                                             )
-                                        )
-                                    })
+                                        },
+                                    ),
                             )
                             .child(
                                 div()
@@ -1077,23 +1186,43 @@ impl Render for BatchView {
                                             .id("btn_exec_batch")
                                             .px_4()
                                             .py_2()
-                                            .bg(if is_running_val { rgb(0x334155) } else { rgb(0x38bdf8) })
-                                            .text_color(if is_running_val { rgb(0x94a3b8) } else { rgb(0x0a0b10) })
+                                            .bg(if is_running_val {
+                                                rgb(0x334155)
+                                            } else {
+                                                rgb(0x38bdf8)
+                                            })
+                                            .text_color(if is_running_val {
+                                                rgb(0x94a3b8)
+                                            } else {
+                                                rgb(0x0a0b10)
+                                            })
                                             .font_weight(FontWeight::BOLD)
                                             .rounded_md()
                                             .text_size(px(12.0))
                                             .cursor_pointer()
-                                            .hover(|s| if !is_running_val { s.bg(rgb(0x7dd3fc)) } else { s })
-                                            .on_click(cx.listener(|this, _e: &ClickEvent, _window, cx| {
-                                                this.execute(cx);
-                                            }))
+                                            .hover(|s| {
+                                                if !is_running_val {
+                                                    s.bg(rgb(0x7dd3fc))
+                                                } else {
+                                                    s
+                                                }
+                                            })
+                                            .on_click(cx.listener(
+                                                |this, _e: &ClickEvent, _window, cx| {
+                                                    this.execute(cx);
+                                                },
+                                            ))
                                             .child(if is_running_val {
                                                 div()
                                                     .flex()
                                                     .flex_row()
                                                     .items_center()
                                                     .gap_1p5()
-                                                    .child(Icon::refresh().with_size(px(12.0)).with_color(rgb(0x94a3b8)))
+                                                    .child(
+                                                        Icon::refresh()
+                                                            .with_size(px(12.0))
+                                                            .with_color(rgb(0x94a3b8)),
+                                                    )
                                                     .child(crate::t!("batch.running"))
                                             } else {
                                                 div()
@@ -1101,9 +1230,13 @@ impl Render for BatchView {
                                                     .flex_row()
                                                     .items_center()
                                                     .gap_1p5()
-                                                    .child(Icon::play().with_size(px(12.0)).with_color(rgb(0x0a0b10)))
+                                                    .child(
+                                                        Icon::play()
+                                                            .with_size(px(12.0))
+                                                            .with_color(rgb(0x0a0b10)),
+                                                    )
                                                     .child(crate::t!("batch.exec_btn"))
-                                            })
+                                            }),
                                     )
                                     .children({
                                         if is_running_val {
@@ -1114,24 +1247,31 @@ impl Render for BatchView {
                                                     .py_2()
                                                     .bg(DarkTechTheme::status_crit().opacity(0.2))
                                                     .border_1()
-                                                    .border_color(DarkTechTheme::status_crit().opacity(0.6))
+                                                    .border_color(
+                                                        DarkTechTheme::status_crit().opacity(0.6),
+                                                    )
                                                     .text_color(DarkTechTheme::status_crit())
                                                     .font_weight(FontWeight::BOLD)
                                                     .rounded_md()
                                                     .text_size(px(12.0))
                                                     .cursor_pointer()
-                                                    .hover(|s| s.bg(DarkTechTheme::status_crit().opacity(0.3)))
-                                                    .on_click(cx.listener(|this, _e: &ClickEvent, _window, cx| {
-                                                        this.cancel(cx);
-                                                    }))
-                                                    .child(crate::t!("batch.cancel_btn"))
+                                                    .hover(|s| {
+                                                        s.bg(DarkTechTheme::status_crit()
+                                                            .opacity(0.3))
+                                                    })
+                                                    .on_click(cx.listener(
+                                                        |this, _e: &ClickEvent, _window, cx| {
+                                                            this.cancel(cx);
+                                                        },
+                                                    ))
+                                                    .child(crate::t!("batch.cancel_btn")),
                                             )
                                         } else {
                                             None
                                         }
-                                    })
-                            )
-                    )
+                                    }),
+                            ),
+                    ),
             )
             // Filter Bar
             .child(
@@ -1153,51 +1293,84 @@ impl Render for BatchView {
                                     .text_size(px(11.0))
                                     .font_weight(FontWeight::BOLD)
                                     .text_color(rgb(0x64748b))
-                                    .child(crate::t!("batch.filter_label"))
+                                    .child(crate::t!("batch.filter_label")),
                             )
                             .child(
                                 div()
                                     .id("filter_all")
-                                    .px_2().py_0p5().rounded_sm().cursor_pointer().text_size(px(10.5))
-                                    .bg(if current_filter == ResultFilter::All { rgb(0x282b3d) } else { rgb(0x12141f) })
-                                    .text_color(if current_filter == ResultFilter::All { rgb(0xf1f5f9) } else { rgb(0x64748b) })
+                                    .px_2()
+                                    .py_0p5()
+                                    .rounded_sm()
+                                    .cursor_pointer()
+                                    .text_size(px(10.5))
+                                    .bg(if current_filter == ResultFilter::All {
+                                        rgb(0x282b3d)
+                                    } else {
+                                        rgb(0x12141f)
+                                    })
+                                    .text_color(if current_filter == ResultFilter::All {
+                                        rgb(0xf1f5f9)
+                                    } else {
+                                        rgb(0x64748b)
+                                    })
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.filter = ResultFilter::All;
                                         cx.notify();
                                     }))
-                                    .child(crate::t!("batch.filter_all"))
+                                    .child(crate::t!("batch.filter_all")),
                             )
                             .child(
                                 div()
                                     .id("filter_success")
-                                    .px_2().py_0p5().rounded_sm().cursor_pointer().text_size(px(10.5))
-                                    .bg(if current_filter == ResultFilter::SuccessOnly { rgb(0x064e3b) } else { rgb(0x12141f) })
-                                    .text_color(if current_filter == ResultFilter::SuccessOnly { rgb(0x6ee7b7) } else { rgb(0x64748b) })
+                                    .px_2()
+                                    .py_0p5()
+                                    .rounded_sm()
+                                    .cursor_pointer()
+                                    .text_size(px(10.5))
+                                    .bg(if current_filter == ResultFilter::SuccessOnly {
+                                        rgb(0x064e3b)
+                                    } else {
+                                        rgb(0x12141f)
+                                    })
+                                    .text_color(if current_filter == ResultFilter::SuccessOnly {
+                                        rgb(0x6ee7b7)
+                                    } else {
+                                        rgb(0x64748b)
+                                    })
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.filter = ResultFilter::SuccessOnly;
                                         cx.notify();
                                     }))
-                                    .child(crate::t!("batch.filter_success"))
+                                    .child(crate::t!("batch.filter_success")),
                             )
                             .child(
                                 div()
                                     .id("filter_failed")
-                                    .px_2().py_0p5().rounded_sm().cursor_pointer().text_size(px(10.5))
-                                    .bg(if current_filter == ResultFilter::FailedOnly { rgb(0x7f1d1d) } else { rgb(0x12141f) })
-                                    .text_color(if current_filter == ResultFilter::FailedOnly { rgb(0xfca5a5) } else { rgb(0x64748b) })
+                                    .px_2()
+                                    .py_0p5()
+                                    .rounded_sm()
+                                    .cursor_pointer()
+                                    .text_size(px(10.5))
+                                    .bg(if current_filter == ResultFilter::FailedOnly {
+                                        rgb(0x7f1d1d)
+                                    } else {
+                                        rgb(0x12141f)
+                                    })
+                                    .text_color(if current_filter == ResultFilter::FailedOnly {
+                                        rgb(0xfca5a5)
+                                    } else {
+                                        rgb(0x64748b)
+                                    })
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.filter = ResultFilter::FailedOnly;
                                         cx.notify();
                                     }))
-                                    .child(crate::t!("batch.filter_failed"))
-                            )
+                                    .child(crate::t!("batch.filter_failed")),
+                            ),
                     )
-                    .child(
-                        div()
-                            .text_size(px(11.0))
-                            .text_color(rgb(0x475569))
-                            .child(crate::t_fmt!("batch.filter_display_count", count = display_items.len()))
-                    )
+                    .child(div().text_size(px(11.0)).text_color(rgb(0x475569)).child(
+                        crate::t_fmt!("batch.filter_display_count", count = display_items.len()),
+                    )),
             )
             // Execution Results Container
             .child(
@@ -1208,61 +1381,49 @@ impl Render for BatchView {
                     .w_full()
                     .min_h(px(0.0))
                     .overflow_y_scroll()
-                    .child(
-                        if display_items.is_empty() {
-                            div()
-                                .w_full()
-                                .h(px(180.0))
-                                .bg(rgb(0x0e0f17))
-                                .border_1()
-                                .border_color(rgb(0x1e2030))
-                                .rounded_lg()
-                                .flex()
-                                .flex_col()
-                                .items_center()
-                                .justify_center()
-                                .gap_2()
-                                .child(
-                                    Icon::zap()
-                                        .with_size(px(24.0))
-                                        .with_color(rgb(0x38bdf8)),
+                    .child(if display_items.is_empty() {
+                        div()
+                            .w_full()
+                            .h(px(180.0))
+                            .bg(rgb(0x0e0f17))
+                            .border_1()
+                            .border_color(rgb(0x1e2030))
+                            .rounded_lg()
+                            .flex()
+                            .flex_col()
+                            .items_center()
+                            .justify_center()
+                            .gap_2()
+                            .child(Icon::zap().with_size(px(24.0)).with_color(rgb(0x38bdf8)))
+                            .child(
+                                div()
+                                    .text_size(px(12.5))
+                                    .text_color(rgb(0x64748b))
+                                    .child(crate::t!("batch.ready_hint")),
+                            )
+                    } else if current_view_mode == BatchViewMode::SplitGrid {
+                        // Split-screen comparison (2-Column Grid)
+                        let chunks: Vec<Vec<HostTaskExecution>> =
+                            display_items.chunks(2).map(|c| c.to_vec()).collect();
+                        div()
+                            .w_full()
+                            .flex()
+                            .flex_col()
+                            .gap_3()
+                            .children(chunks.into_iter().map(|pair| {
+                                div().w_full().flex().flex_row().gap_3().children(
+                                    pair.into_iter()
+                                        .map(|item| self.render_host_card(&item, true, cx)),
                                 )
-                                .child(
-                                    div()
-                                        .text_size(px(12.5))
-                                        .text_color(rgb(0x64748b))
-                                        .child(crate::t!("batch.ready_hint"))
-                                )
-                        } else if current_view_mode == BatchViewMode::SplitGrid {
-                            // Split-screen comparison (2-Column Grid)
-                            let chunks: Vec<Vec<HostTaskExecution>> = display_items.chunks(2).map(|c| c.to_vec()).collect();
-                            div()
-                                .w_full()
-                                .flex()
-                                .flex_col()
-                                .gap_3()
-                                .children(chunks.into_iter().map(|pair| {
-                                    div()
-                                        .w_full()
-                                        .flex()
-                                        .flex_row()
-                                        .gap_3()
-                                        .children(pair.into_iter().map(|item| {
-                                            self.render_host_card(&item, true, cx)
-                                        }))
-                                }))
-                        } else {
-                            // Full-width List View
-                            div()
-                                .w_full()
-                                .flex()
-                                .flex_col()
-                                .gap_3()
-                                .children(display_items.into_iter().map(|item| {
-                                    self.render_host_card(&item, false, cx)
-                                }))
-                        }
-                    )
+                            }))
+                    } else {
+                        // Full-width List View
+                        div().w_full().flex().flex_col().gap_3().children(
+                            display_items
+                                .into_iter()
+                                .map(|item| self.render_host_card(&item, false, cx)),
+                        )
+                    }),
             )
     }
 }
@@ -1293,7 +1454,12 @@ impl BatchView {
                 rgb(0x34d399),
                 crate::t!("batch.state_success"),
             ),
-            TaskState::Failed => (rgb(0x7f1d1d), rgb(0xef4444), rgb(0xf87171), crate::t!("batch.state_failed")),
+            TaskState::Failed => (
+                rgb(0x7f1d1d),
+                rgb(0xef4444),
+                rgb(0xf87171),
+                crate::t!("batch.state_failed"),
+            ),
         };
 
         let duration_display = format_duration_detailed(res.duration_ms, res.duration_us);
@@ -1458,7 +1624,10 @@ impl BatchView {
                                         cx.write_to_clipboard(ClipboardItem::new_string(
                                             copy_text.clone(),
                                         ));
-                                        this.toast_message = Some(crate::t_fmt!("batch.copied_clipboard", host = host_name_str));
+                                        this.toast_message = Some(crate::t_fmt!(
+                                            "batch.copied_clipboard",
+                                            host = host_name_str
+                                        ));
                                         cx.notify();
                                     }))
                                     .child(

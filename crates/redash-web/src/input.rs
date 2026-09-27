@@ -35,6 +35,7 @@ pub enum UiAction {
     },
     ApplyAgentSuggestion,
     AbortAgentTask,
+    TestDraftHost,
 }
 
 pub fn handle_mouse_click(
@@ -76,13 +77,18 @@ pub fn handle_mouse_click(
     // 1. If Modal is active, check modal clicks
     if state.show_add_modal {
         let mw = 420.0;
-        let mh = 320.0;
+        let mh = 360.0;
         let mx = (width - mw) / 2.0;
         let my = (height - mh) / 2.0;
 
-        // Cancel button
         let btn_y = my + mh - 42.0;
         if (btn_y..=btn_y + 28.0).contains(&y) {
+            // Test connection button [ 🔌 测试连接 ]
+            let (test_x, test_y, test_w, test_h) =
+                crate::render::get_host_modal_test_btn_rect(mx, my, mw, mh);
+            if (test_x..=test_x + test_w).contains(&x) && (test_y..=test_y + test_h).contains(&y) {
+                return Some(UiAction::TestDraftHost);
+            }
             if (mx + mw - 180.0..=mx + mw - 110.0).contains(&x) {
                 state.close_add_modal();
                 return None;
@@ -170,8 +176,8 @@ pub fn handle_mouse_click(
 
     // 4. Check Topbar "+ Add Host" button click
     if y <= LAYOUT.topbar_height {
-        let btn_x = width - 90.0;
-        if (btn_x..=btn_x + 75.0).contains(&x) && (12.0..=38.0).contains(&y) {
+        let (btn_x, btn_y, btn_w, btn_h) = crate::render::get_topbar_add_btn_rect(width);
+        if (btn_x..=btn_x + btn_w).contains(&x) && (btn_y..=btn_y + btn_h).contains(&y) {
             state.open_add_modal();
             return None;
         }
@@ -183,8 +189,8 @@ pub fn handle_mouse_click(
         let content_x = LAYOUT.sidebar_width;
         let content_w = width - LAYOUT.sidebar_width;
         let card_w = ((content_w - padding * 3.0) / 2.0).max(340.0);
-        let card_h = 160.0;
-        let start_y = LAYOUT.topbar_height + 54.0;
+        let card_h = 196.0;
+        let start_y = LAYOUT.topbar_height + 36.0;
 
         // Check Fleet Search Bar
         let (sb_x, sb_y, sb_w, sb_h) =
@@ -227,21 +233,64 @@ pub fn handle_mouse_click(
                 return Some(UiAction::DeleteHost(host_id));
             }
 
-            // 2. Action buttons
-            let btn_y = card_y + 126.0;
-            if (btn_y..=btn_y + 22.0).contains(&y) {
-                // [ Terminal ]
-                if (card_x + 16.0..=card_x + 86.0).contains(&x) {
-                    state.selected_host_id = Some(host_id.clone());
-                    state.switch_view(ActiveView::Terminal);
-                    return Some(UiAction::OpenTerminal(host_id));
+            // 1.5. Select button [ + 选择 ] / [ ✓ 已选择 ]
+            let (sel_x, sel_y, sel_w, sel_h) =
+                crate::render::get_fleet_host_select_btn_rect(card_x, card_y, card_w);
+            if (sel_x..=sel_x + sel_w).contains(&x) && (sel_y..=sel_y + sel_h).contains(&y) {
+                if state.selected_host_id.as_deref() == Some(&host_id) {
+                    state.selected_host_id = None;
+                } else {
+                    state.selected_host_id = Some(host_id);
                 }
-                // [ SFTP ]
-                if (card_x + 96.0..=card_x + 146.0).contains(&x) {
-                    state.selected_host_id = Some(host_id.clone());
-                    state.switch_view(ActiveView::Sftp);
-                    return Some(UiAction::OpenSftp(host_id));
+                return None;
+            }
+
+            // 1.8. Metric tabs in Sparkline HUD: [CPU] [内存] [磁盘] [综合]
+            let (hud_x, hud_y, _hud_w, hud_h) =
+                crate::render::get_fleet_host_sparkline_hud_rect(card_x, card_y, card_w);
+            let metric_tabs = [
+                redash_types::metrics::CardMetricType::Cpu,
+                redash_types::metrics::CardMetricType::Memory,
+                redash_types::metrics::CardMetricType::Disk,
+                redash_types::metrics::CardMetricType::All,
+            ];
+            for (t_idx, m_type) in metric_tabs.into_iter().enumerate() {
+                let (tx, ty, tw, th) =
+                    crate::render::get_fleet_host_metric_tab_rect(hud_x, hud_y, t_idx);
+                if (tx..=tx + tw).contains(&x) && (ty..=ty + th).contains(&y) {
+                    state.set_card_metric(host_id.clone(), m_type);
+                    return None;
                 }
+            }
+
+            // 1.9. Time range pills in Sparkline HUD: [1m] [5m] [30m] [60m]
+            for (p_idx, &range) in redash_types::metrics::ChartTimeRange::ALL
+                .iter()
+                .enumerate()
+            {
+                let (px, py, pw, ph) =
+                    crate::render::get_fleet_host_range_pill_rect(hud_x, hud_y, hud_h, p_idx);
+                if (px..=px + pw).contains(&x) && (py..=py + ph).contains(&y) {
+                    state.set_host_chart_time_range(host_id.clone(), range);
+                    return None;
+                }
+            }
+
+            // 2. Action buttons: [ Terminal ] and [ SFTP ]
+            let (tx, ty, tw, th) =
+                crate::render::get_fleet_host_action_term_btn_rect(card_x, card_y);
+            if (tx..=tx + tw).contains(&x) && (ty..=ty + th).contains(&y) {
+                state.selected_host_id = Some(host_id.clone());
+                state.switch_view(ActiveView::Terminal);
+                return Some(UiAction::OpenTerminal(host_id));
+            }
+
+            let (sx, sy, sw, sh) =
+                crate::render::get_fleet_host_action_sftp_btn_rect(card_x, card_y);
+            if (sx..=sx + sw).contains(&x) && (sy..=sy + sh).contains(&y) {
+                state.selected_host_id = Some(host_id.clone());
+                state.switch_view(ActiveView::Sftp);
+                return Some(UiAction::OpenSftp(host_id));
             }
 
             // 3. Card click selects host
@@ -256,10 +305,36 @@ pub fn handle_mouse_click(
     if state.active_view == ActiveView::Terminal {
         let base_x = LAYOUT.sidebar_width;
         let base_y = LAYOUT.topbar_height;
+        let content_w = width - base_x;
 
         // Sub-tab bar clicks
         if let Some(tab) = crate::render::get_workbench_tab_at_pos(x, y, base_x, base_y) {
             state.switch_workbench_tab(tab);
+            return None;
+        }
+
+        // Sub-tab bar toolbar buttons (Reconnect, Search, Clear)
+        let (rb_x, rb_y, rb_w, rb_h) =
+            crate::render::get_workbench_toolbar_reconnect_btn_rect(base_x, base_y, content_w);
+        if (rb_x..=rb_x + rb_w).contains(&x) && (rb_y..=rb_y + rb_h).contains(&y) {
+            if let Some(host_id) = &state.selected_host_id {
+                return Some(UiAction::OpenTerminal(host_id.clone()));
+            }
+            return None;
+        }
+
+        let (sb_x, sb_y, sb_w, sb_h) =
+            crate::render::get_workbench_toolbar_search_btn_rect(base_x, base_y, content_w);
+        if (sb_x..=sb_x + sb_w).contains(&x) && (sb_y..=sb_y + sb_h).contains(&y) {
+            state.toggle_terminal_search();
+            return None;
+        }
+
+        let (cb_x, cb_y, cb_w, cb_h) =
+            crate::render::get_workbench_toolbar_clear_btn_rect(base_x, base_y, content_w);
+        if (cb_x..=cb_x + cb_w).contains(&x) && (cb_y..=cb_y + cb_h).contains(&y) {
+            state.terminal_lines.clear();
+            state.terminal_grid.clear();
             return None;
         }
 
@@ -1812,7 +1887,7 @@ mod tests {
         let padding = 24.0;
         let card_w = ((content_w - padding * 3.0) / 2.0).max(340.0);
         let card_x = content_x + padding;
-        let card_y = content_y + 54.0;
+        let card_y = content_y + 36.0;
         let (del_x, del_y, del_w, del_h) =
             crate::render::get_fleet_host_delete_btn_rect(card_x, card_y, card_w);
 
@@ -1826,8 +1901,228 @@ mod tests {
         assert_eq!(action, Some(UiAction::DeleteHost("h1".to_string())));
 
         // 5. Click host card body (select host)
-        let action = handle_mouse_click(&mut state, card_x + 50.0, card_y + 50.0, width, height);
+        let action = handle_mouse_click(&mut state, card_x + 50.0, card_y + 20.0, width, height);
         assert!(action.is_none());
         assert_eq!(state.selected_host_id, Some("h1".to_string()));
+    }
+
+    #[test]
+    fn test_fleet_host_card_select_toggle_and_metric_tabs() {
+        let mut state = AppState::new();
+        state.switch_view(ActiveView::Fleet);
+
+        let mut h1 = crate::models::HostConfig::new("Production-1", "10.0.0.1", "root");
+        h1.id = redash_types::HostId("h1".to_string());
+        state.hosts = vec![h1];
+
+        let width = 1200.0;
+        let height = 800.0;
+        let content_x = LAYOUT.sidebar_width;
+        let content_y = LAYOUT.topbar_height;
+        let content_w = width - content_x;
+        let padding = 24.0;
+        let card_w = ((content_w - padding * 3.0) / 2.0).max(340.0);
+        let card_x = content_x + padding;
+        let card_y = content_y + 36.0;
+
+        // 1. Click select button [ + 选择 ] to toggle selection on
+        let (sel_x, sel_y, sel_w, sel_h) =
+            crate::render::get_fleet_host_select_btn_rect(card_x, card_y, card_w);
+        let action = handle_mouse_click(
+            &mut state,
+            sel_x + sel_w / 2.0,
+            sel_y + sel_h / 2.0,
+            width,
+            height,
+        );
+        assert!(action.is_none());
+        assert_eq!(state.selected_host_id, Some("h1".to_string()));
+
+        // Click select button again to toggle selection off
+        let action = handle_mouse_click(
+            &mut state,
+            sel_x + sel_w / 2.0,
+            sel_y + sel_h / 2.0,
+            width,
+            height,
+        );
+        assert!(action.is_none());
+        assert_eq!(state.selected_host_id, None);
+
+        // 2. Click Sparkline HUD metric tabs: [CPU], [内存], [磁盘], [综合]
+        let (hud_x, hud_y, _, _) =
+            crate::render::get_fleet_host_sparkline_hud_rect(card_x, card_y, card_w);
+
+        // Click CPU tab (idx 0)
+        let (tx, ty, tw, th) = crate::render::get_fleet_host_metric_tab_rect(hud_x, hud_y, 0);
+        let action = handle_mouse_click(&mut state, tx + tw / 2.0, ty + th / 2.0, width, height);
+        assert!(action.is_none());
+        assert_eq!(
+            state.get_card_metric("h1"),
+            redash_types::metrics::CardMetricType::Cpu
+        );
+
+        // Click Memory tab (idx 1)
+        let (tx, ty, tw, th) = crate::render::get_fleet_host_metric_tab_rect(hud_x, hud_y, 1);
+        let action = handle_mouse_click(&mut state, tx + tw / 2.0, ty + th / 2.0, width, height);
+        assert!(action.is_none());
+        assert_eq!(
+            state.get_card_metric("h1"),
+            redash_types::metrics::CardMetricType::Memory
+        );
+
+        // Click Disk tab (idx 2)
+        let (tx, ty, tw, th) = crate::render::get_fleet_host_metric_tab_rect(hud_x, hud_y, 2);
+        let action = handle_mouse_click(&mut state, tx + tw / 2.0, ty + th / 2.0, width, height);
+        assert!(action.is_none());
+        assert_eq!(
+            state.get_card_metric("h1"),
+            redash_types::metrics::CardMetricType::Disk
+        );
+
+        // Click All/综合 tab (idx 3)
+        let (tx, ty, tw, th) = crate::render::get_fleet_host_metric_tab_rect(hud_x, hud_y, 3);
+        let action = handle_mouse_click(&mut state, tx + tw / 2.0, ty + th / 2.0, width, height);
+        assert!(action.is_none());
+        assert_eq!(
+            state.get_card_metric("h1"),
+            redash_types::metrics::CardMetricType::All
+        );
+
+        // 3. Click Sparkline HUD range pills: [1m], [5m], [30m], [60m]
+        let (_, _, _, hud_h) =
+            crate::render::get_fleet_host_sparkline_hud_rect(card_x, card_y, card_w);
+
+        // Click 5m (idx 1)
+        let (px, py, pw, ph) =
+            crate::render::get_fleet_host_range_pill_rect(hud_x, hud_y, hud_h, 1);
+        let action = handle_mouse_click(&mut state, px + pw / 2.0, py + ph / 2.0, width, height);
+        assert!(action.is_none());
+        assert_eq!(
+            state.get_host_chart_time_range("h1"),
+            redash_types::metrics::ChartTimeRange::R5m
+        );
+
+        // Click 30m (idx 2)
+        let (px, py, pw, ph) =
+            crate::render::get_fleet_host_range_pill_rect(hud_x, hud_y, hud_h, 2);
+        let action = handle_mouse_click(&mut state, px + pw / 2.0, py + ph / 2.0, width, height);
+        assert!(action.is_none());
+        assert_eq!(
+            state.get_host_chart_time_range("h1"),
+            redash_types::metrics::ChartTimeRange::R30m
+        );
+
+        // Click 60m (idx 3)
+        let (px, py, pw, ph) =
+            crate::render::get_fleet_host_range_pill_rect(hud_x, hud_y, hud_h, 3);
+        let action = handle_mouse_click(&mut state, px + pw / 2.0, py + ph / 2.0, width, height);
+        assert!(action.is_none());
+        assert_eq!(
+            state.get_host_chart_time_range("h1"),
+            redash_types::metrics::ChartTimeRange::R60m
+        );
+
+        // Click 1m (idx 0)
+        let (px, py, pw, ph) =
+            crate::render::get_fleet_host_range_pill_rect(hud_x, hud_y, hud_h, 0);
+        let action = handle_mouse_click(&mut state, px + pw / 2.0, py + ph / 2.0, width, height);
+        assert!(action.is_none());
+        assert_eq!(
+            state.get_host_chart_time_range("h1"),
+            redash_types::metrics::ChartTimeRange::R1m
+        );
+    }
+
+    #[test]
+    fn test_workbench_toolbar_search_and_clear() {
+        let mut state = AppState::new();
+        state.switch_view(ActiveView::Terminal);
+        state.terminal_lines = vec!["Line 1".to_string(), "Line 2".to_string()];
+        state.terminal_grid.write_stream("Grid output\r\n");
+
+        let width = 1200.0;
+        let height = 800.0;
+        let base_x = LAYOUT.sidebar_width;
+        let base_y = LAYOUT.topbar_height;
+        let content_w = width - base_x;
+
+        // 0. Click Reconnect toolbar button (🔄)
+        state.selected_host_id = Some("host_1".to_string());
+        let (rb_x, rb_y, rb_w, rb_h) =
+            crate::render::get_workbench_toolbar_reconnect_btn_rect(base_x, base_y, content_w);
+        let action = handle_mouse_click(
+            &mut state,
+            rb_x + rb_w / 2.0,
+            rb_y + rb_h / 2.0,
+            width,
+            height,
+        );
+        assert_eq!(action, Some(UiAction::OpenTerminal("host_1".to_string())));
+
+        // 1. Click Search toolbar button (🔍)
+        let (sb_x, sb_y, sb_w, sb_h) =
+            crate::render::get_workbench_toolbar_search_btn_rect(base_x, base_y, content_w);
+        assert!(!state.terminal_search_active);
+        let action = handle_mouse_click(
+            &mut state,
+            sb_x + sb_w / 2.0,
+            sb_y + sb_h / 2.0,
+            width,
+            height,
+        );
+        assert!(action.is_none());
+        assert!(state.terminal_search_active);
+
+        // Click again toggles search off
+        let action = handle_mouse_click(
+            &mut state,
+            sb_x + sb_w / 2.0,
+            sb_y + sb_h / 2.0,
+            width,
+            height,
+        );
+        assert!(action.is_none());
+        assert!(!state.terminal_search_active);
+
+        // 2. Click Clear toolbar button (🗑️)
+        let (cb_x, cb_y, cb_w, cb_h) =
+            crate::render::get_workbench_toolbar_clear_btn_rect(base_x, base_y, content_w);
+        assert!(!state.terminal_lines.is_empty());
+        let action = handle_mouse_click(
+            &mut state,
+            cb_x + cb_w / 2.0,
+            cb_y + cb_h / 2.0,
+            width,
+            height,
+        );
+        assert!(action.is_none());
+        assert!(state.terminal_lines.is_empty());
+    }
+
+    #[test]
+    fn test_host_modal_connection_test_button() {
+        let mut state = AppState::new();
+        state.open_add_modal();
+        assert!(state.show_add_modal);
+
+        let width = 1200.0;
+        let height = 800.0;
+        let mw = 420.0;
+        let mh = 360.0;
+        let mx = (width - mw) / 2.0;
+        let my = (height - mh) / 2.0;
+
+        let (test_x, test_y, test_w, test_h) =
+            crate::render::get_host_modal_test_btn_rect(mx, my, mw, mh);
+
+        let action = handle_mouse_click(
+            &mut state,
+            test_x + test_w / 2.0,
+            test_y + test_h / 2.0,
+            width,
+            height,
+        );
+        assert_eq!(action, Some(UiAction::TestDraftHost));
     }
 }

@@ -128,4 +128,65 @@ impl NodeMetrics {
     pub fn mem_percent(&self) -> f32 {
         self.mem.usage_percent
     }
+
+    pub fn disk_percent(&self) -> f32 {
+        self.disks
+            .iter()
+            .map(|d| d.usage_percent)
+            .fold(0.0, f32::max)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+pub enum CardMetricType {
+    Cpu,
+    Memory,
+    Disk,
+    #[default]
+    All,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+pub enum ChartTimeRange {
+    #[default]
+    R1m,
+    R5m,
+    R30m,
+    R60m,
+}
+
+impl ChartTimeRange {
+    pub const ALL: [ChartTimeRange; 4] = [
+        ChartTimeRange::R1m,
+        ChartTimeRange::R5m,
+        ChartTimeRange::R30m,
+        ChartTimeRange::R60m,
+    ];
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::R1m => "1m",
+            Self::R5m => "5m",
+            Self::R30m => "30m",
+            Self::R60m => "60m",
+        }
+    }
+
+    pub fn duration_secs(&self) -> u64 {
+        match self {
+            Self::R1m => 60,
+            Self::R5m => 300,
+            Self::R30m => 1800,
+            Self::R60m => 3600,
+        }
+    }
+
+    pub fn max_samples(&self) -> usize {
+        match self {
+            Self::R1m => 30,
+            Self::R5m => 150,
+            Self::R30m => 900,
+            Self::R60m => 1800,
+        }
+    }
 }

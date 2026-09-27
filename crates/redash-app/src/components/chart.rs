@@ -435,7 +435,10 @@ impl IntoElement for SparklineChart {
                     }
 
                     // Concentric pulse dot at latest point (when not hovering)
-                    if show_pulse_dot && hover_index.is_none() && let Some(&last_point) = points.last() {
+                    if show_pulse_dot
+                        && hover_index.is_none()
+                        && let Some(&last_point) = points.last()
+                    {
                         let outer_r = px(4.0);
                         let mut outer = fill(
                             Bounds {
@@ -467,32 +470,32 @@ impl IntoElement for SparklineChart {
                         && h_idx < points.len()
                     {
                         let hp = points[h_idx];
-                            let halo_r = px(4.5);
-                            let mut halo = fill(
-                                Bounds {
-                                    origin: point(hp.x - halo_r, hp.y - halo_r),
-                                    size: size(halo_r * 2.0, halo_r * 2.0),
-                                },
-                                Hsla {
-                                    a: 0.35,
-                                    ..*s_stroke_col
-                                },
-                            );
-                            halo.corner_radii = (f32::from(halo_r)).into();
-                            window.paint_quad(halo);
+                        let halo_r = px(4.5);
+                        let mut halo = fill(
+                            Bounds {
+                                origin: point(hp.x - halo_r, hp.y - halo_r),
+                                size: size(halo_r * 2.0, halo_r * 2.0),
+                            },
+                            Hsla {
+                                a: 0.35,
+                                ..*s_stroke_col
+                            },
+                        );
+                        halo.corner_radii = (f32::from(halo_r)).into();
+                        window.paint_quad(halo);
 
-                            let core_r = px(2.0);
-                            let mut core = fill(
-                                Bounds {
-                                    origin: point(hp.x - core_r, hp.y - core_r),
-                                    size: size(core_r * 2.0, core_r * 2.0),
-                                },
-                                *s_stroke_col,
-                            );
-                            core.corner_radii = (f32::from(core_r)).into();
-                            window.paint_quad(core);
-                        }
+                        let core_r = px(2.0);
+                        let mut core = fill(
+                            Bounds {
+                                origin: point(hp.x - core_r, hp.y - core_r),
+                                size: size(core_r * 2.0, core_r * 2.0),
+                            },
+                            *s_stroke_col,
+                        );
+                        core.corner_radii = (f32::from(core_r)).into();
+                        window.paint_quad(core);
                     }
+                }
             },
         )
         .size_full();

@@ -11,7 +11,7 @@ pub mod notifications;
 pub mod render;
 pub mod theme;
 
-use app::{ActiveView, AppState};
+use app::{ActiveView, AppState, UiEffect, WorkbenchTab};
 use gateway::GatewayClient;
 use input::{UiAction, handle_key_down, handle_mouse_click};
 use render::render_frame;
@@ -221,8 +221,14 @@ pub fn start_web_app(canvas_id: &str) -> Result<(), JsValue> {
                     UiAction::OpenTerminal(host_id) => {
                         let app_state_term = app_state_clone.clone();
                         let app_state_agent = app_state_clone.clone();
+                        let (cols, rows) = {
+                            let sm = app_state_clone.borrow();
+                            (sm.terminal_grid.cols as u32, sm.terminal_grid.rows as u32)
+                        };
                         let _ = gateway_clone.borrow_mut().connect_terminal(
                             &host_id,
+                            cols,
+                            rows,
                             Rc::new(move |data| {
                                 app_state_term.borrow_mut().append_terminal_output(&data);
                             }),
@@ -532,6 +538,39 @@ pub fn start_web_app(canvas_id: &str) -> Result<(), JsValue> {
                         gateway_clone.borrow().send_terminal_input("\x03");
                         state.agent = None;
                     }
+                    UiAction::TestDraftHost => {
+                        let hostname = state.modal_hostname.trim().to_string();
+                        let port: u16 = state.modal_port.trim().parse().unwrap_or(22);
+                        let user = if state.modal_user.trim().is_empty() {
+                            "root".to_string()
+                        } else {
+                            state.modal_user.trim().to_string()
+                        };
+
+                        if hostname.is_empty() {
+                            state.set_modal_test_status(Some((
+                                "主机名/IP不能为空".to_string(),
+                                false,
+                            )));
+                        } else {
+                            state.set_modal_is_testing(true);
+                            let app_state_clone2 = app_state_clone.clone();
+                            let on_done =
+                                Rc::new(RefCell::new(move |res: Result<String, String>| {
+                                    let mut sm = app_state_clone2.borrow_mut();
+                                    sm.set_modal_is_testing(false);
+                                    match res {
+                                        Ok(msg) => {
+                                            sm.set_modal_test_status(Some((msg, true)));
+                                        }
+                                        Err(err) => {
+                                            sm.set_modal_test_status(Some((err, false)));
+                                        }
+                                    }
+                                }));
+                            gateway::async_test_draft_host(hostname, port, user, None, on_done);
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -728,6 +767,39 @@ pub fn start_web_app(canvas_id: &str) -> Result<(), JsValue> {
                         gateway_clone.borrow().send_terminal_input("\x03");
                         state.agent = None;
                     }
+                    UiAction::TestDraftHost => {
+                        let hostname = state.modal_hostname.trim().to_string();
+                        let port: u16 = state.modal_port.trim().parse().unwrap_or(22);
+                        let user = if state.modal_user.trim().is_empty() {
+                            "root".to_string()
+                        } else {
+                            state.modal_user.trim().to_string()
+                        };
+
+                        if hostname.is_empty() {
+                            state.set_modal_test_status(Some((
+                                "主机名/IP不能为空".to_string(),
+                                false,
+                            )));
+                        } else {
+                            state.set_modal_is_testing(true);
+                            let app_state_clone2 = app_state_clone.clone();
+                            let on_done =
+                                Rc::new(RefCell::new(move |res: Result<String, String>| {
+                                    let mut sm = app_state_clone2.borrow_mut();
+                                    sm.set_modal_is_testing(false);
+                                    match res {
+                                        Ok(msg) => {
+                                            sm.set_modal_test_status(Some((msg, true)));
+                                        }
+                                        Err(err) => {
+                                            sm.set_modal_test_status(Some((err, false)));
+                                        }
+                                    }
+                                }));
+                            gateway::async_test_draft_host(hostname, port, user, None, on_done);
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -743,12 +815,33 @@ pub fn start_web_app(canvas_id: &str) -> Result<(), JsValue> {
         let g = f.clone();
 
         let app_state_render = app_state.clone();
+        let gateway_render = gateway.clone();
         let window_render = window.clone();
 
         *g.borrow_mut() = Some(Closure::<dyn FnMut()>::new(move || {
             let width = window_render.inner_width().unwrap().as_f64().unwrap();
             let height = window_render.inner_height().unwrap().as_f64().unwrap();
             let dpr = window_render.device_pixel_ratio();
+
+            // Terminal Viewport Auto-Resize (Parity with desktop app)
+            if app_state_render.borrow().active_view == ActiveView::Terminal
+                && app_state_render.borrow().active_workbench_tab == WorkbenchTab::Terminal
+            {
+                let content_w = width - render::LAYOUT.sidebar_width;
+                let mut term_h =
+                    height - render::LAYOUT.topbar_height - render::WORKBENCH_TAB_BAR_HEIGHT;
+                if app_state_render.borrow().agent.is_some() {
+                    term_h -= 32.0;
+                }
+                let cols = ((content_w - 32.0) / 7.8).max(20.0) as usize;
+                let rows = (term_h / 18.0).max(5.0) as usize;
+                let effects = app_state_render.borrow_mut().resize_terminal(cols, rows);
+                for effect in effects {
+                    if let UiEffect::ResizeTerminal { cols, rows } = effect {
+                        gateway_render.borrow().send_terminal_resize(cols, rows);
+                    }
+                }
+            }
 
             ctx.save();
             ctx.scale(dpr, dpr).unwrap();

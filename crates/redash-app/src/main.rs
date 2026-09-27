@@ -1081,7 +1081,8 @@ impl ReDashApp {
                         .update(cx, |app, cx| match result {
                             Ok(metrics) => {
                                 app.fleet_view.update(cx, |view, cx| {
-                                    view.history_limit = current.history_points.clamp(1, 3600);
+                                    view.history_limit =
+                                        current.history_points.max(1800).clamp(1, 3600);
                                     view.update_metrics(host.id.clone(), metrics.clone(), cx);
                                 });
                                 for tab in &app.tabs {
@@ -1171,11 +1172,11 @@ impl Render for ReDashApp {
                     .text_color(DarkTechTheme::status_warn())
                     .child(message.clone())
             }))
-            // 1. Full-Width Top Window Bar (38px)
+            // 1. Full-Width Top Window Bar (increased 10% to 30px)
             .child(
                 div()
                     .id("top_window_bar")
-                    .h(px(38.0))
+                    .h(px(30.0))
                     .flex_shrink_0()
                     .w_full()
                     .bg(DarkTechTheme::bg_panel())
@@ -1230,8 +1231,8 @@ impl Render for ReDashApp {
                                 div()
                                     .id(ElementId::NamedInteger("tab_item".into(), idx as u64))
                                     .flex_shrink_0()
-                                    .h(px(28.0))
-                                    .px_3()
+                                    .h(px(22.0))
+                                    .px_2p5()
                                     .rounded_t_md()
                                     .bg(if is_active {
                                         DarkTechTheme::bg_root()
@@ -1247,7 +1248,7 @@ impl Render for ReDashApp {
                                     .flex()
                                     .flex_row()
                                     .items_center()
-                                    .gap_2()
+                                    .gap_1p5()
                                     .cursor_pointer()
                                     .on_click(cx.listener(
                                         move |this, _e: &ClickEvent, window, cx| {
@@ -1260,10 +1261,10 @@ impl Render for ReDashApp {
                                             cx.notify();
                                         },
                                     ))
-                                    .child(tab_icon.with_size(px(12.0)).with_color(icon_color))
+                                    .child(tab_icon.with_size(px(10.0)).with_color(icon_color))
                                     .child(
                                         div()
-                                            .text_size(px(12.0))
+                                            .text_size(px(11.5))
                                             .text_color(if is_active {
                                                 DarkTechTheme::text_primary()
                                             } else {
@@ -1277,7 +1278,7 @@ impl Render for ReDashApp {
                                                 "btn_close_tab".into(),
                                                 idx as u64,
                                             ))
-                                            .size(px(16.0))
+                                            .size(px(13.0))
                                             .flex()
                                             .items_center()
                                             .justify_center()
@@ -1292,7 +1293,7 @@ impl Render for ReDashApp {
                                             ))
                                             .child(
                                                 Icon::close()
-                                                    .with_size(px(9.0))
+                                                    .with_size(px(8.0))
                                                     .with_color(DarkTechTheme::text_muted()),
                                             )
                                     } else {
@@ -1614,7 +1615,7 @@ fn main() {
                 titlebar: Some(TitlebarOptions {
                     title: Some(crate::t!("app.window_title").into()),
                     appears_transparent: true,
-                    traffic_light_position: Some(point(px(13.0), px(12.0))),
+                    traffic_light_position: Some(point(px(13.0), px(8.0))),
                 }),
                 ..Default::default()
             },

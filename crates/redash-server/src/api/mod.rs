@@ -17,6 +17,7 @@ pub fn api_router() -> Router<AppState> {
             get(hosts::get_host).delete(hosts::delete_host),
         )
         .route("/api/hosts/{id}/test", post(hosts::test_connection))
+        .route("/api/hosts/test", post(hosts::test_draft_connection))
         .route(
             "/api/settings",
             get(settings::get_settings)

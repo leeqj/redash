@@ -307,7 +307,8 @@ Pages occupied by compressor:            100000.
 /dev/disk1s1s1 488245288 20000000 200000000 10% /
 "#;
         let host_id = HostId("fleet-mac-node".into());
-        let metrics = DarwinProbe::parse(&host_id, fleet_output).expect("darwin fleet parse should succeed");
+        let metrics =
+            DarwinProbe::parse(&host_id, fleet_output).expect("darwin fleet parse should succeed");
 
         assert!((metrics.cpu.usage_percent - 20.0).abs() < 1e-3);
         assert_eq!(metrics.cpu.cores, 10);

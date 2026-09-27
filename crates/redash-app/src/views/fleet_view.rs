@@ -113,13 +113,10 @@ impl Render for DraggedHost {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub enum CardMetricType {
-    Cpu,
-    Memory,
-    Disk,
-    #[default]
-    All,
+pub use redash_types::metrics::{CardMetricType, ChartTimeRange};
+
+pub fn slice_history_for_range(history: &[f32], range: ChartTimeRange) -> Vec<f32> {
+    redash_ui_core::state::AppStateMachine::slice_history_for_range(history, range)
 }
 
 pub struct FleetView {
@@ -131,6 +128,7 @@ pub struct FleetView {
     pub mem_histories: HashMap<HostId, Vec<f32>>,
     pub disk_histories: HashMap<HostId, Vec<f32>>,
     pub active_card_metrics: HashMap<HostId, CardMetricType>,
+    pub active_time_ranges: HashMap<HostId, ChartTimeRange>,
     pub chart_bounds: HashMap<HostId, std::sync::Arc<std::sync::Mutex<Bounds<Pixels>>>>,
     pub hovered_chart_points: HashMap<HostId, usize>,
     pub selected_hosts: HashSet<HostId>,
@@ -144,12 +142,13 @@ impl FleetView {
         Self {
             hosts,
             probe_errors: HashMap::new(),
-            history_limit: 30,
+            history_limit: 1800,
             metrics: HashMap::new(),
             cpu_histories: HashMap::new(),
             mem_histories: HashMap::new(),
             disk_histories: HashMap::new(),
             active_card_metrics: HashMap::new(),
+            active_time_ranges: HashMap::new(),
             chart_bounds: HashMap::new(),
             hovered_chart_points: HashMap::new(),
             selected_hosts: HashSet::new(),
@@ -295,6 +294,7 @@ impl FleetView {
         self.chart_bounds.remove(id);
         self.hovered_chart_points.remove(id);
         self.active_card_metrics.remove(id);
+        self.active_time_ranges.remove(id);
     }
     pub fn set_probe_error(&mut self, id: HostId, failure: ProbeFailure, cx: &mut Context<Self>) {
         self.probe_errors.insert(id, failure);
@@ -308,21 +308,21 @@ impl FleetView {
         let disk = metric.disks.first().map(|d| d.usage_percent).unwrap_or(0.0);
         self.metrics.insert(host_id.clone(), metric);
 
-        // CPU ring buffer (30 points)
+        // CPU ring buffer (up to history_limit points)
         let cpu_hist = self.cpu_histories.entry(host_id.clone()).or_default();
         while cpu_hist.len() >= self.history_limit {
             cpu_hist.remove(0);
         }
         cpu_hist.push(cpu);
 
-        // Memory ring buffer (30 points)
+        // Memory ring buffer (up to history_limit points)
         let mem_hist = self.mem_histories.entry(host_id.clone()).or_default();
         while mem_hist.len() >= self.history_limit {
             mem_hist.remove(0);
         }
         mem_hist.push(mem);
 
-        // Disk ring buffer (30 points)
+        // Disk ring buffer (up to history_limit points)
         let disk_hist = self.disk_histories.entry(host_id).or_default();
         while disk_hist.len() >= self.history_limit {
             disk_hist.remove(0);
@@ -339,6 +339,16 @@ impl FleetView {
         cx: &mut Context<Self>,
     ) {
         self.active_card_metrics.insert(host_id.clone(), metric);
+        cx.notify();
+    }
+
+    pub fn set_card_time_range(
+        &mut self,
+        host_id: &HostId,
+        range: ChartTimeRange,
+        cx: &mut Context<Self>,
+    ) {
+        self.active_time_ranges.insert(host_id.clone(), range);
         cx.notify();
     }
 
@@ -416,13 +426,15 @@ impl Render for FleetView {
             .flex()
             .flex_col()
             .overflow_hidden()
-            .p_4()
-            .gap_4()
-            // 1. Top Header Bar
+            .px_4()
+            .pt_2p5()
+            .pb_4()
+            .gap_2p5()
+            // 1. Top Header Bar (reduced 40% from 40px to 24px)
             .child(
                 div()
                     .w_full()
-                    .h(px(40.0))
+                    .h(px(24.0))
                     .flex_shrink_0()
                     .flex()
                     .flex_row()
@@ -433,21 +445,21 @@ impl Render for FleetView {
                             .flex()
                             .flex_row()
                             .items_center()
-                            .gap_3()
+                            .gap_2()
                             .child(
                                 div()
                                     .flex()
                                     .flex_row()
                                     .items_center()
-                                    .gap_2()
+                                    .gap_1p5()
                                     .child(
                                         Icon::server()
-                                            .with_size(px(18.0))
+                                            .with_size(px(12.0))
                                             .with_color(DarkTechTheme::accent_cyan()),
                                     )
                                     .child(
                                         div()
-                                            .text_size(px(18.0))
+                                            .text_size(px(12.5))
                                             .font_weight(FontWeight::BOLD)
                                             .text_color(DarkTechTheme::text_primary())
                                             .child(crate::t!("fleet.title")),
@@ -455,7 +467,7 @@ impl Render for FleetView {
                             )
                             .child(
                                 div()
-                                    .text_size(px(12.0))
+                                    .text_size(px(10.0))
                                     .text_color(DarkTechTheme::text_muted())
                                     .child(crate::t_fmt!(
                                         "fleet.hosts_count",
@@ -469,18 +481,21 @@ impl Render for FleetView {
                             .flex()
                             .flex_row()
                             .items_center()
-                            .gap_2()
+                            .gap_1p5()
                             // Prominent "+ 添加主机" Button
                             .child(
                                 div()
                                     .id("btn_fleet_add_host")
-                                    .px_3()
-                                    .py_1p5()
-                                    .rounded_md()
+                                    .h(px(22.0))
+                                    .px_2p5()
+                                    .rounded_sm()
                                     .bg(DarkTechTheme::border_active())
                                     .text_color(DarkTechTheme::bg_root())
                                     .font_weight(FontWeight::BOLD)
-                                    .text_size(px(12.0))
+                                    .text_size(px(10.5))
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
                                     .hover(|s| s.bg(DarkTechTheme::accent_cyan()))
                                     .cursor_pointer()
                                     .on_click(cx.listener(|this, _event: &ClickEvent, window, cx| {
@@ -494,9 +509,12 @@ impl Render for FleetView {
                             .child(
                                 div()
                                     .id("filter_all")
-                                    .px_2p5()
-                                    .py_1()
-                                    .rounded_md()
+                                    .h(px(20.0))
+                                    .px_2()
+                                    .rounded_sm()
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
                                     .bg(if self.search_query.is_empty() {
                                         DarkTechTheme::bg_panel_hover()
                                     } else {
@@ -513,7 +531,7 @@ impl Render for FleetView {
                                     } else {
                                         DarkTechTheme::text_secondary()
                                     })
-                                    .text_size(px(11.0))
+                                    .text_size(px(10.0))
                                     .cursor_pointer()
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.search_query = "".to_string();
@@ -525,9 +543,12 @@ impl Render for FleetView {
                             .child(
                                 div()
                                     .id("filter_prod")
-                                    .px_2p5()
-                                    .py_1()
-                                    .rounded_md()
+                                    .h(px(20.0))
+                                    .px_2()
+                                    .rounded_sm()
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
                                     .bg(if self.search_query == "production" {
                                         DarkTechTheme::bg_panel_hover()
                                     } else {
@@ -544,7 +565,7 @@ impl Render for FleetView {
                                     } else {
                                         DarkTechTheme::text_secondary()
                                     })
-                                    .text_size(px(11.0))
+                                    .text_size(px(10.0))
                                     .cursor_pointer()
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.search_query = "production".to_string();
@@ -556,9 +577,12 @@ impl Render for FleetView {
                             .child(
                                 div()
                                     .id("filter_staging")
-                                    .px_2p5()
-                                    .py_1()
-                                    .rounded_md()
+                                    .h(px(20.0))
+                                    .px_2()
+                                    .rounded_sm()
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
                                     .bg(if self.search_query == "staging" {
                                         DarkTechTheme::bg_panel_hover()
                                     } else {
@@ -575,7 +599,7 @@ impl Render for FleetView {
                                     } else {
                                         DarkTechTheme::text_secondary()
                                     })
-                                    .text_size(px(11.0))
+                                    .text_size(px(10.0))
                                     .cursor_pointer()
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.search_query = "staging".to_string();
@@ -590,14 +614,17 @@ impl Render for FleetView {
                                     && ids.iter().all(|id| self.selected_hosts.contains(id));
                                 div()
                                     .id("btn_select_all")
-                                    .px_3()
-                                    .py_1()
-                                    .rounded_md()
+                                    .h(px(20.0))
+                                    .px_2()
+                                    .rounded_sm()
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
                                     .bg(DarkTechTheme::bg_panel())
                                     .border_1()
                                     .border_color(DarkTechTheme::border_default())
                                     .text_color(DarkTechTheme::text_secondary())
-                                    .text_size(px(11.0))
+                                    .text_size(px(10.0))
                                     .cursor_pointer()
                                     .on_click(cx.listener(
                                         move |this, _event: &ClickEvent, _window, cx| {
@@ -614,14 +641,17 @@ impl Render for FleetView {
                             .child(
                                 div()
                                     .id("btn_sort_name")
-                                    .px_2p5()
-                                    .py_1()
-                                    .rounded_md()
+                                    .h(px(20.0))
+                                    .px_2()
+                                    .rounded_sm()
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
                                     .bg(DarkTechTheme::bg_panel())
                                     .border_1()
                                     .border_color(DarkTechTheme::border_default())
                                     .text_color(DarkTechTheme::text_secondary())
-                                    .text_size(px(11.0))
+                                    .text_size(px(10.0))
                                     .hover(|s| s.bg(DarkTechTheme::bg_panel_hover()).text_color(DarkTechTheme::accent_cyan()))
                                     .cursor_pointer()
                                     .on_click(cx.listener(|this, _event: &ClickEvent, window, cx| {
@@ -638,7 +668,7 @@ impl Render for FleetView {
                                             .gap_1()
                                             .child(
                                                 Icon::sort()
-                                                    .with_size(px(11.0))
+                                                    .with_size(px(9.0))
                                                     .with_color(DarkTechTheme::text_secondary()),
                                             )
                                             .child(crate::t!("fleet.sort_name")),
@@ -648,14 +678,17 @@ impl Render for FleetView {
                             .child(
                                 div()
                                     .id("btn_sort_group")
-                                    .px_2p5()
-                                    .py_1()
-                                    .rounded_md()
+                                    .h(px(20.0))
+                                    .px_2()
+                                    .rounded_sm()
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
                                     .bg(DarkTechTheme::bg_panel())
                                     .border_1()
                                     .border_color(DarkTechTheme::border_default())
                                     .text_color(DarkTechTheme::text_secondary())
-                                    .text_size(px(11.0))
+                                    .text_size(px(10.0))
                                     .hover(|s| s.bg(DarkTechTheme::bg_panel_hover()).text_color(DarkTechTheme::accent_cyan()))
                                     .cursor_pointer()
                                     .on_click(cx.listener(|this, _event: &ClickEvent, window, cx| {
@@ -672,7 +705,7 @@ impl Render for FleetView {
                                             .gap_1()
                                             .child(
                                                 Icon::sort()
-                                                    .with_size(px(11.0))
+                                                    .with_size(px(9.0))
                                                     .with_color(DarkTechTheme::text_secondary()),
                                             )
                                             .child(crate::t!("fleet.sort_group")),
@@ -682,14 +715,17 @@ impl Render for FleetView {
                             .child(
                                 div()
                                     .id("btn_sort_status")
-                                    .px_2p5()
-                                    .py_1()
-                                    .rounded_md()
+                                    .h(px(20.0))
+                                    .px_2()
+                                    .rounded_sm()
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
                                     .bg(DarkTechTheme::bg_panel())
                                     .border_1()
                                     .border_color(DarkTechTheme::border_default())
                                     .text_color(DarkTechTheme::text_secondary())
-                                    .text_size(px(11.0))
+                                    .text_size(px(10.0))
                                     .hover(|s| s.bg(DarkTechTheme::bg_panel_hover()).text_color(DarkTechTheme::accent_cyan()))
                                     .cursor_pointer()
                                     .on_click(cx.listener(|this, _event: &ClickEvent, window, cx| {
@@ -706,7 +742,7 @@ impl Render for FleetView {
                                             .gap_1()
                                             .child(
                                                 Icon::sort()
-                                                    .with_size(px(11.0))
+                                                    .with_size(px(9.0))
                                                     .with_color(DarkTechTheme::text_secondary()),
                                             )
                                             .child(crate::t!("fleet.sort_status")),
@@ -736,16 +772,22 @@ impl Render for FleetView {
                         let host_id = host.id.clone();
                         let is_selected = self.selected_hosts.contains(&host_id);
                         let metric = self.metrics.get(&host_id);
-                        let cpu_history =
-                            self.cpu_histories.get(&host_id).cloned().unwrap_or_default();
-                        let mem_history =
-                            self.mem_histories.get(&host_id).cloned().unwrap_or_default();
-                        let disk_history =
-                            self.disk_histories.get(&host_id).cloned().unwrap_or_default();
                         let active_metric =
                             self.active_card_metrics.get(&host_id).copied().unwrap_or_default();
+                        let active_time_range =
+                            self.active_time_ranges.get(&host_id).copied().unwrap_or_default();
+                        let cpu_history_raw =
+                            self.cpu_histories.get(&host_id).cloned().unwrap_or_default();
+                        let mem_history_raw =
+                            self.mem_histories.get(&host_id).cloned().unwrap_or_default();
+                        let disk_history_raw =
+                            self.disk_histories.get(&host_id).cloned().unwrap_or_default();
 
-                        let (cpu_val, mem_val, disk_val, mem_used_gb, mem_total_gb, rtt_ms_val, net_used_gb) =
+                        let cpu_history = slice_history_for_range(&cpu_history_raw, active_time_range);
+                        let mem_history = slice_history_for_range(&mem_history_raw, active_time_range);
+                        let disk_history = slice_history_for_range(&disk_history_raw, active_time_range);
+
+                        let (cpu_val, mem_val, disk_val, mem_used_gb, _mem_total_gb, rtt_ms_val, net_used_gb) =
                             if let Some(m) = metric {
                                 let used_g = m.mem.used_bytes as f32 / (1024.0 * 1024.0 * 1024.0);
                                 let total_g =
@@ -799,7 +841,7 @@ impl Render for FleetView {
                             ),
                         };
 
-                        let (os_icon, os_name) = match host.target_os {
+                        let (os_icon, _os_name) = match host.target_os {
                             TargetOs::Linux => (Icon::linux(), "Linux"),
                             TargetOs::Darwin => (Icon::apple(), "macOS"),
                             TargetOs::Windows => (Icon::windows(), "Windows"),
@@ -817,8 +859,8 @@ impl Render for FleetView {
 
                         div()
                             .id(ElementId::Name(format!("host_card_{}", host_id.0).into()))
-                            .w(px(320.0))
-                            .min_h(px(220.0))
+                            .w(px(330.0))
+                            .min_h(px(200.0))
                             .bg(DarkTechTheme::bg_panel())
                             .border_1()
                             .border_color(if is_selected {
@@ -855,7 +897,7 @@ impl Render for FleetView {
                                     .flex()
                                     .flex_col()
                                     .gap_2()
-                                    // Row 1: Status LED, Name, Group Badge, RTT badge, Selection checkbox
+                                    // Row 1: Drag handle, LED, OS Icon, Name with Tooltip, Group Badge, RTT badge, Selection checkbox
                                     .child(
                                         div()
                                             .flex()
@@ -891,7 +933,17 @@ impl Render for FleetView {
                                                             .with_size(px(12.0)),
                                                     )
                                                     .child(
+                                                        os_icon
+                                                            .with_size(px(12.0))
+                                                            .with_color(DarkTechTheme::text_secondary()),
+                                                    )
+                                                    .child(
                                                         div()
+                                                            .id(ElementId::Name(format!("host_name_{}", host_id.0).into()))
+                                                            .tooltip(crate::components::tooltip::tooltip(format!(
+                                                                "{}@{}:{}",
+                                                                host.user, host.hostname, host.port
+                                                            )))
                                                             .font_weight(FontWeight::BOLD)
                                                             .text_size(px(13.5))
                                                             .text_color(
@@ -1000,38 +1052,6 @@ impl Render for FleetView {
                                                     }),
                                             ),
                                     )
-                                    // Row 2: Address & Target OS
-                                    .child(
-                                        div()
-                                            .flex()
-                                            .flex_row()
-                                            .justify_between()
-                                            .items_center()
-                                            .text_size(px(11.0))
-                                            .child(
-                                                div()
-                                                    .font_family("Menlo")
-                                                    .text_color(DarkTechTheme::text_muted())
-                                                    .child(format!(
-                                                        "{}@{}:{}",
-                                                        host.user, host.hostname, host.port
-                                                    )),
-                                             )
-                                            .child(
-                                                div()
-                                                    .flex()
-                                                    .flex_row()
-                                                    .items_center()
-                                                    .gap_1()
-                                                    .text_color(DarkTechTheme::text_secondary())
-                                                    .child(
-                                                        os_icon
-                                                            .with_size(px(11.0))
-                                                            .with_color(DarkTechTheme::text_secondary()),
-                                                    )
-                                                    .child(div().text_size(px(11.0)).child(os_name)),
-                                            ),
-                                    )
                                     .children(self.probe_errors.get(&host_id).map(|failure| {
                                         let details = failure.details.clone();
                                         let host = host.clone();
@@ -1065,7 +1085,7 @@ impl Render for FleetView {
                                                     }))
                                                     .child(t!("common.details"))))
                                     }))
-                                    // Row 3: Full-Width Telemetry Sparkline HUD with Default Composite View & Hover Inspection
+                                    // Row 2: Full-Width Telemetry Sparkline HUD with Default Composite View, Range Switcher & Hover Inspection
                                     .child({
                                         let is_cpu_active = active_metric == CardMetricType::Cpu;
                                         let is_mem_active = active_metric == CardMetricType::Memory;
@@ -1085,25 +1105,38 @@ impl Render for FleetView {
                                         };
 
                                         // Calculate historical or live metric values for readout
+                                        let total_duration_secs = active_time_range.duration_secs();
                                         let (time_tag, display_cpu, display_mem_str, display_disk) = if let Some(idx) = hovered_point {
-                                            let time_ago_secs = (total_samples.saturating_sub(1 + idx)) * 2;
+                                            let time_ago_secs = if total_samples > 1 {
+                                                (total_samples.saturating_sub(1 + idx) as u64 * total_duration_secs) / (total_samples - 1) as u64
+                                            } else {
+                                                0
+                                            };
                                             let tag = if time_ago_secs == 0 {
                                                 "[实时]".to_string()
-                                            } else {
+                                            } else if time_ago_secs < 60 {
                                                 format!("[-{}s]", time_ago_secs)
+                                            } else {
+                                                let mins = (time_ago_secs + 30) / 60;
+                                                format!("[-{}m]", mins)
                                             };
                                             let c = cpu_history.get(idx).copied().unwrap_or(cpu_val);
                                             let m_pct = mem_history.get(idx).copied().unwrap_or(mem_val);
                                             let d = disk_history.get(idx).copied().unwrap_or(disk_val);
                                             (Some(tag), c, format!("{:.0}%", m_pct), d)
                                         } else {
-                                            (None, cpu_val, format!("{:.1}G/{:.1}G ({:.0}%)", mem_used_gb, mem_total_gb, mem_val), disk_val)
+                                            let mem_label = if active_metric == CardMetricType::Memory {
+                                                format!("{:.1}G ({:.0}%)", mem_used_gb, mem_val)
+                                            } else {
+                                                format!("{:.0}%", mem_val)
+                                            };
+                                            (None, cpu_val, mem_label, disk_val)
                                         };
 
                                         div()
                                             .id(ElementId::Name(format!("sparkline_hud_{}", host_id.0).into()))
                                             .w_full()
-                                            .h(px(88.0))
+                                            .h(px(98.0))
                                             .flex()
                                             .flex_col()
                                             .justify_between()
@@ -1147,13 +1180,13 @@ impl Render for FleetView {
                                                     .flex_row()
                                                     .justify_between()
                                                     .items_center()
-                                                    .mb_1()
+                                                    .mb_0p5()
                                                     // Left: Mini Tabs [CPU] [内存] [磁盘] [综合]
                                                     .child(
                                                         div()
                                                             .flex()
                                                             .flex_row()
-                                                            .gap_1()
+                                                            .gap_0p5()
                                                             .child(
                                                                 div()
                                                                     .id(ElementId::Name(format!("tab_cpu_{}", host_id.0).into()))
@@ -1161,7 +1194,7 @@ impl Render for FleetView {
                                                                     .px_1()
                                                                     .py_0p5()
                                                                     .rounded_xs()
-                                                                    .text_size(px(8.5))
+                                                                    .text_size(px(8.0))
                                                                     .font_family("Menlo")
                                                                     .font_weight(FontWeight::BOLD)
                                                                     .border_1()
@@ -1195,7 +1228,7 @@ impl Render for FleetView {
                                                                     .px_1()
                                                                     .py_0p5()
                                                                     .rounded_xs()
-                                                                    .text_size(px(8.5))
+                                                                    .text_size(px(8.0))
                                                                     .font_family("Menlo")
                                                                     .font_weight(FontWeight::BOLD)
                                                                     .border_1()
@@ -1229,7 +1262,7 @@ impl Render for FleetView {
                                                                     .px_1()
                                                                     .py_0p5()
                                                                     .rounded_xs()
-                                                                    .text_size(px(8.5))
+                                                                    .text_size(px(8.0))
                                                                     .font_family("Menlo")
                                                                     .font_weight(FontWeight::BOLD)
                                                                     .border_1()
@@ -1263,7 +1296,7 @@ impl Render for FleetView {
                                                                     .px_1()
                                                                     .py_0p5()
                                                                     .rounded_xs()
-                                                                    .text_size(px(8.5))
+                                                                    .text_size(px(8.0))
                                                                     .font_family("Menlo")
                                                                     .font_weight(FontWeight::BOLD)
                                                                     .border_1()
@@ -1297,10 +1330,11 @@ impl Render for FleetView {
                                                             .flex()
                                                             .flex_row()
                                                             .items_center()
-                                                            .gap_1p5()
-                                                            .text_size(px(8.5))
+                                                            .gap_1()
+                                                            .text_size(px(8.0))
                                                             .font_family("Menlo")
                                                             .font_weight(FontWeight::BOLD)
+                                                            .overflow_hidden()
                                                             .children(time_tag.map(|tag| {
                                                                 div()
                                                                     .px_1()
@@ -1327,9 +1361,7 @@ impl Render for FleetView {
                                                                     ],
                                                                     CardMetricType::All => vec![
                                                                         div().text_color(DarkTechTheme::accent_cyan()).child(format!("CPU: {:.1}%", display_cpu)).into_any_element(),
-                                                                        div().text_color(DarkTechTheme::border_muted()).child("·").into_any_element(),
                                                                         div().text_color(DarkTechTheme::accent_indigo()).child(format!("RAM: {}", display_mem_str)).into_any_element(),
-                                                                        div().text_color(DarkTechTheme::border_muted()).child("·").into_any_element(),
                                                                         div().text_color(DarkTechTheme::status_warn()).child(format!("DISK: {:.0}%", display_disk)).into_any_element(),
                                                                     ],
                                                                 }
@@ -1371,6 +1403,66 @@ impl Render for FleetView {
                                                         .with_hover_index(hovered_point)
                                                         .with_bounds_holder(bounds_holder),
                                                     }),
+                                            )
+                                            // 3. Time Range Selector Bar [1m] [5m] [30m] [60m]
+                                            .child(
+                                                div()
+                                                    .w_full()
+                                                    .flex()
+                                                    .flex_row()
+                                                    .justify_between()
+                                                    .items_center()
+                                                    .pt_0p5()
+                                                    // Left: Time Range Pills [1m] [5m] [30m] [60m]
+                                                    .child(
+                                                        div()
+                                                            .flex()
+                                                            .flex_row()
+                                                            .items_center()
+                                                            .gap_1()
+                                                            .children(ChartTimeRange::ALL.iter().map(|&range| {
+                                                                let is_active = active_time_range == range;
+                                                                let host_id = host_id.clone();
+                                                                div()
+                                                                    .id(ElementId::Name(format!("range_{}_{}", range.label(), host_id.0).into()))
+                                                                    .cursor_pointer()
+                                                                    .px_1()
+                                                                    .py_0p5()
+                                                                    .rounded_xs()
+                                                                    .text_size(px(8.0))
+                                                                    .font_family("Menlo")
+                                                                    .font_weight(FontWeight::BOLD)
+                                                                    .border_1()
+                                                                    .border_color(if is_active {
+                                                                        DarkTechTheme::accent_cyan()
+                                                                    } else {
+                                                                        DarkTechTheme::border_muted()
+                                                                    })
+                                                                    .bg(if is_active {
+                                                                        DarkTechTheme::bg_panel_hover()
+                                                                    } else {
+                                                                        hsla(0.0, 0.0, 0.0, 0.0)
+                                                                    })
+                                                                    .text_color(if is_active {
+                                                                        DarkTechTheme::accent_cyan()
+                                                                    } else {
+                                                                        DarkTechTheme::text_muted()
+                                                                    })
+                                                                    .hover(|s| s.bg(DarkTechTheme::bg_panel_hover()).text_color(DarkTechTheme::text_primary()))
+                                                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                                                        this.set_card_time_range(&host_id, range, cx);
+                                                                    }))
+                                                                    .child(range.label())
+                                                            }))
+                                                    )
+                                                    // Right: Current Window Tag
+                                                    .child(
+                                                        div()
+                                                            .text_size(px(7.5))
+                                                            .font_family("Menlo")
+                                                            .text_color(DarkTechTheme::text_muted())
+                                                            .child(format!("{} 范围", active_time_range.label()))
+                                                    ),
                                             )
                                     })
                                     .child(div().text_xs().text_color(DarkTechTheme::text_muted())
