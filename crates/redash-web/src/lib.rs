@@ -7,6 +7,7 @@ pub mod app;
 pub mod gateway;
 pub mod input;
 pub use redash_types as models;
+pub mod notifications;
 pub mod render;
 pub mod theme;
 
@@ -79,12 +80,84 @@ pub fn start_web_app(canvas_id: &str) -> Result<(), JsValue> {
             if let Some(host_id) = first_host_id {
                 let app_state_metrics = app_state_clone.clone();
                 let hid = host_id.clone();
+                let alert_cooldowns: Rc<RefCell<std::collections::HashMap<String, f64>>> =
+                    Rc::new(RefCell::new(std::collections::HashMap::new()));
+                let cds = alert_cooldowns.clone();
                 let _ = gateway_clone.borrow_mut().connect_metrics(
                     &host_id,
                     Rc::new(move |metrics| {
-                        app_state_metrics
-                            .borrow_mut()
-                            .update_metrics(hid.clone(), metrics);
+                        let mut sm = app_state_metrics.borrow_mut();
+                        let now = js_sys::Date::now();
+                        let host_name = sm
+                            .hosts
+                            .iter()
+                            .find(|h| h.id.0 == hid)
+                            .map(|h| h.name.clone())
+                            .unwrap_or_else(|| hid.clone());
+
+                        // 1. CPU Threshold Check
+                        if sm.settings.alert_cpu_threshold > 0.0
+                            && metrics.cpu.usage_percent >= sm.settings.alert_cpu_threshold
+                        {
+                            let key = format!("{hid}:cpu");
+                            let mut map = cds.borrow_mut();
+                            let last = map.get(&key).copied().unwrap_or(0.0);
+                            if now - last > 300_000.0 {
+                                map.insert(key, now);
+                                let _ = notifications::show_browser_notification(
+                                    &format!("⚠️ CPU 过载告警: {host_name}"),
+                                    &format!(
+                                        "主机 {host_name} CPU 利用率已达 {:.1}% (设定阈值: {:.0}%)",
+                                        metrics.cpu.usage_percent, sm.settings.alert_cpu_threshold
+                                    ),
+                                );
+                            }
+                        }
+
+                        // 2. Memory Threshold Check
+                        if sm.settings.alert_mem_threshold > 0.0
+                            && metrics.mem.usage_percent >= sm.settings.alert_mem_threshold
+                        {
+                            let key = format!("{hid}:mem");
+                            let mut map = cds.borrow_mut();
+                            let last = map.get(&key).copied().unwrap_or(0.0);
+                            if now - last > 300_000.0 {
+                                map.insert(key, now);
+                                let _ = notifications::show_browser_notification(
+                                    &format!("⚠️ 内存过载告警: {host_name}"),
+                                    &format!(
+                                        "主机 {host_name} 内存利用率已达 {:.1}% (设定阈值: {:.0}%)",
+                                        metrics.mem.usage_percent, sm.settings.alert_mem_threshold
+                                    ),
+                                );
+                            }
+                        }
+
+                        // 3. Disk Threshold Check
+                        let max_disk_usage = metrics
+                            .disks
+                            .iter()
+                            .map(|d| d.usage_percent)
+                            .fold(0.0f32, f32::max);
+                        if sm.settings.alert_disk_threshold > 0.0
+                            && max_disk_usage >= sm.settings.alert_disk_threshold
+                        {
+                            let key = format!("{hid}:disk");
+                            let mut map = cds.borrow_mut();
+                            let last = map.get(&key).copied().unwrap_or(0.0);
+                            if now - last > 300_000.0 {
+                                map.insert(key, now);
+                                let _ = notifications::show_browser_notification(
+                                    &format!("⚠️ 磁盘空间告警: {host_name}"),
+                                    &format!(
+                                        "主机 {host_name} 磁盘空间已使用 {:.1}% (设定阈值: {:.0}%)",
+                                        max_disk_usage, sm.settings.alert_disk_threshold
+                                    ),
+                                );
+                            }
+                        }
+
+                        sm.update_metrics(hid.clone(), metrics);
                     }),
                 );
             }
@@ -274,6 +347,35 @@ pub fn start_web_app(canvas_id: &str) -> Result<(), JsValue> {
                                     app_state_save.borrow_mut().settings_save_status = Some(("Webhook 地址已成功保存".to_string(), true));
                                 }));
                                 gateway::async_save_settings(settings, on_done);
+                            }
+                        }
+                    }
+                    UiAction::TestWebhookAlert => {
+                        let webhook_url = state.settings.alert_webhook_url.clone();
+                        let app_state_test = app_state_clone.clone();
+                        state.settings_save_status = Some(("正在向 Webhook/飞书 发送测试消息...".to_string(), true));
+                        let on_done = Rc::new(RefCell::new(move |res: Result<String, String>| {
+                            match res {
+                                Ok(msg) => {
+                                    app_state_test.borrow_mut().settings_save_status = Some((msg, true));
+                                }
+                                Err(err) => {
+                                    app_state_test.borrow_mut().settings_save_status = Some((format!("推送失败: {err}"), false));
+                                }
+                            }
+                        }));
+                        gateway::async_test_webhook(webhook_url, on_done);
+                    }
+                    UiAction::TestBrowserNotification => {
+                        match notifications::show_browser_notification(
+                            "ReDash 告警测试",
+                            "这是一条来自 ReDash Web 运维工作台的自动化测试通知，指标监控系统运转正常。",
+                        ) {
+                            Ok(()) => {
+                                state.settings_save_status = Some(("已发送浏览器桌面测试通知！".to_string(), true));
+                            }
+                            Err(msg) => {
+                                state.settings_save_status = Some((msg, false));
                             }
                         }
                     }

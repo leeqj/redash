@@ -40,3 +40,53 @@ pub async fn save_settings(
         message: Some("Settings saved successfully".to_string()),
     }))
 }
+
+#[derive(serde::Deserialize)]
+pub struct TestWebhookRequest {
+    pub webhook_url: Option<String>,
+}
+
+pub async fn test_webhook(
+    State(state): State<AppState>,
+    Json(payload): Json<TestWebhookRequest>,
+) -> impl IntoResponse {
+    let saved_url = state.app_settings.read().await.alert_webhook_url.clone();
+    let url = payload.webhook_url.filter(|u| !u.trim().is_empty()).or(saved_url);
+
+    let Some(webhook_url) = url else {
+        return Json(ApiResponse {
+            success: false,
+            data: None,
+            message: Some("未配置 Webhook URL，请先在界面设置或保存 Webhook 地址".to_string()),
+        });
+    };
+
+    let is_feishu = redash_core::config::alert::AlertDispatcher::is_feishu_webhook(&webhook_url);
+    let event = redash_core::config::alert::AlertEvent {
+        host_id: "server-node-01".to_string(),
+        host_name: "ReDash-Monitor-Service".to_string(),
+        alert_type: "test".to_string(),
+        message: "这是一条来自 ReDash 监控中心的告警测试通知，指标监控与机器人通道运转正常。".to_string(),
+        timestamp: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs(),
+    };
+
+    match redash_core::config::alert::AlertDispatcher::send_webhook(&webhook_url, &event).await {
+        Ok(()) => {
+            let target = if is_feishu { "飞书群机器人" } else { "Webhook" };
+            Json(ApiResponse {
+                success: true,
+                data: Some(format!("{} 测试消息推送成功！", target)),
+                message: None,
+            })
+        }
+        Err(e) => Json(ApiResponse {
+            success: false,
+            data: None,
+            message: Some(format!("推送失败: {:#}", e)),
+        }),
+    }
+}
+

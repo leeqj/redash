@@ -17,13 +17,13 @@ pub fn api_router() -> Router<AppState> {
             get(hosts::get_host).delete(hosts::delete_host),
         )
         .route("/api/hosts/{id}/test", post(hosts::test_connection))
-        // Settings management
         .route(
             "/api/settings",
             get(settings::get_settings)
                 .post(settings::save_settings)
                 .put(settings::save_settings),
         )
+        .route("/api/settings/test-webhook", post(settings::test_webhook))
         // SFTP management
         .route("/api/sftp/{host_id}/list", get(sftp::list_directory))
         .route("/api/sftp/{host_id}/read", get(sftp::read_file_content))

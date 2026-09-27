@@ -17,6 +17,8 @@ pub enum UiAction {
     ImportSettingsJson,
     PromptPingTarget,
     PromptWebhookUrl,
+    TestWebhookAlert,
+    TestBrowserNotification,
     RunBatch { host_ids: Vec<String>, command: String },
     ApplyAgentSuggestion,
     AbortAgentTask,
@@ -727,6 +729,16 @@ pub fn handle_mouse_click(
                     state.settings_save_status = Some(("已清除 Webhook 推送地址".to_string(), true));
                     return Some(UiAction::SaveSettings);
                 }
+
+                let (tx, ty, tw, th) = crate::render::get_settings_webhook_test_btn_rect(right_x, sec4_y);
+                if (tx..=tx + tw).contains(&x) && (ty..=ty + th).contains(&y) {
+                    return Some(UiAction::TestWebhookAlert);
+                }
+
+                let (nx, ny, nw, nh) = crate::render::get_settings_notification_test_btn_rect(right_x, sec4_y);
+                if (nx..=nx + nw).contains(&x) && (ny..=ny + nh).contains(&y) {
+                    return Some(UiAction::TestBrowserNotification);
+                }
             }
             SettingsCategory::Backup => {
                 let sec1_y = right_y + 56.0;
@@ -1393,6 +1405,16 @@ mod tests {
         let action = handle_mouse_click(&mut state, cx + cw / 2.0, cy + ch / 2.0, 1200.0, 800.0);
         assert_eq!(action, Some(UiAction::SaveSettings));
         assert!(state.settings.alert_webhook_url.is_none());
+
+        // Click Test Webhook button
+        let (tx, ty, tw, th) = crate::render::get_settings_webhook_test_btn_rect(right_x, alert_sec4_y);
+        let action = handle_mouse_click(&mut state, tx + tw / 2.0, ty + th / 2.0, 1200.0, 800.0);
+        assert_eq!(action, Some(UiAction::TestWebhookAlert));
+
+        // Click Test Browser Notification button
+        let (nx, ny, nw, nh) = crate::render::get_settings_notification_test_btn_rect(right_x, alert_sec4_y);
+        let action = handle_mouse_click(&mut state, nx + nw / 2.0, ny + nh / 2.0, 1200.0, 800.0);
+        assert_eq!(action, Some(UiAction::TestBrowserNotification));
 
         // 8. Backup Tab: Export JSON, Import JSON, Reset Defaults
         state.switch_settings_category(SettingsCategory::Backup);

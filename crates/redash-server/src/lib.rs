@@ -1,3 +1,4 @@
+pub mod alert_monitor;
 pub mod api;
 pub mod state;
 pub mod web_assets;

@@ -7,6 +7,7 @@ async fn main() -> anyhow::Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     let state = AppState::new();
+    redash_server::alert_monitor::start_alert_monitor(state.clone());
 
     let mut port = 8080;
     let mut host = "127.0.0.1".to_string();

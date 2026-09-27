@@ -50,6 +50,9 @@ web-sys = { version = "0.3", features = [
     "File",
     "FileList",
     "CssStyleDeclaration",
+    "Notification",
+    "NotificationPermission",
+    "NotificationOptions",
 ] }
 
 [features]

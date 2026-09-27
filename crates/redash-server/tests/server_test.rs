@@ -234,3 +234,56 @@ async fn test_batch_exec_api() {
     assert_eq!(json["data"]["command"], "uptime");
     assert!(json["data"]["job_id"].is_string());
 }
+
+#[tokio::test]
+async fn test_webhook_test_api() {
+    let state = AppState::new();
+    state.app_settings.write().await.alert_webhook_url = None;
+    let app = build_router(state);
+
+    // 1. Without webhook configured -> returns error message
+    let req = serde_json::json!({
+        "webhook_url": null,
+    });
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/settings/test-webhook")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&req).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), StatusCode::OK);
+    let body = res.into_body().collect().await.unwrap().to_bytes();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["success"], false);
+    assert!(json["message"].as_str().unwrap().contains("未配置 Webhook"));
+
+    // 2. With invalid / mock target url -> triggers send_webhook and returns outcome
+    let req_mock = serde_json::json!({
+        "webhook_url": "http://127.0.0.1:9/invalid-webhook",
+    });
+    let res2 = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/settings/test-webhook")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&req_mock).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(res2.status(), StatusCode::OK);
+    let body2 = res2.into_body().collect().await.unwrap().to_bytes();
+    let json2: serde_json::Value = serde_json::from_slice(&body2).unwrap();
+    assert_eq!(json2["success"], false);
+    assert!(json2["message"].as_str().unwrap().contains("推送失败"));
+}
+

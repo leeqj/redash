@@ -2468,6 +2468,14 @@ pub fn get_settings_webhook_clear_btn_rect(right_x: f64, sec_y: f64) -> (f64, f6
     (right_x + 610.0, sec_y + 26.0, 70.0, 36.0)
 }
 
+pub fn get_settings_webhook_test_btn_rect(right_x: f64, sec_y: f64) -> (f64, f64, f64, f64) {
+    (right_x, sec_y + 72.0, 185.0, 32.0)
+}
+
+pub fn get_settings_notification_test_btn_rect(right_x: f64, sec_y: f64) -> (f64, f64, f64, f64) {
+    (right_x + 195.0, sec_y + 72.0, 160.0, 32.0)
+}
+
 pub const FONT_FAMILIES: [&str; 4] = [
     "JetBrains Mono",
     "Fira Code",
@@ -2983,6 +2991,29 @@ fn render_settings_view(
             ctx.set_font("12px sans-serif");
             ctx.set_text_align("center");
             let _ = ctx.fill_text("✕ 清空", cx + cw / 2.0, cy + 23.0);
+
+            // Test Buttons Row
+            let (tx, ty, tw, th) = get_settings_webhook_test_btn_rect(right_x, sec4_y);
+            ctx.set_fill_style_str(theme.bg_card);
+            ctx.fill_rect(tx, ty, tw, th);
+            ctx.set_stroke_style_str(theme.accent_cyan);
+            ctx.set_line_width(1.0);
+            ctx.stroke_rect(tx, ty, tw, th);
+            ctx.set_fill_style_str(theme.accent_cyan);
+            ctx.set_font("12px sans-serif");
+            ctx.set_text_align("center");
+            let _ = ctx.fill_text("🚀 测试 Webhook / 飞书推送", tx + tw / 2.0, ty + 21.0);
+
+            let (nx, ny, nw, nh) = get_settings_notification_test_btn_rect(right_x, sec4_y);
+            ctx.set_fill_style_str(theme.bg_card);
+            ctx.fill_rect(nx, ny, nw, nh);
+            ctx.set_stroke_style_str(theme.accent_purple);
+            ctx.set_line_width(1.0);
+            ctx.stroke_rect(nx, ny, nw, nh);
+            ctx.set_fill_style_str(theme.accent_purple);
+            ctx.set_font("12px sans-serif");
+            ctx.set_text_align("center");
+            let _ = ctx.fill_text("🔔 测试浏览器通知", nx + nw / 2.0, ny + 21.0);
             ctx.set_text_align("left");
         }
         SettingsCategory::Backup => {
@@ -4027,6 +4058,14 @@ pub fn is_interactive_element(x: f64, y: f64, width: f64, height: f64, state: &A
                     }
                     let (cx, cy, cw, ch) = get_settings_webhook_clear_btn_rect(right_x, sec4_y);
                     if (cx..=cx + cw).contains(&x) && (cy..=cy + ch).contains(&y) {
+                        return (true, "pointer");
+                    }
+                    let (tx, ty, tw, th) = get_settings_webhook_test_btn_rect(right_x, sec4_y);
+                    if (tx..=tx + tw).contains(&x) && (ty..=ty + th).contains(&y) {
+                        return (true, "pointer");
+                    }
+                    let (nx, ny, nw, nh) = get_settings_notification_test_btn_rect(right_x, sec4_y);
+                    if (nx..=nx + nw).contains(&x) && (ny..=ny + nh).contains(&y) {
                         return (true, "pointer");
                     }
                 }

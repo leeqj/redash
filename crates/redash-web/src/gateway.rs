@@ -730,3 +730,91 @@ pub fn async_run_batch(
     });
 }
 
+pub type WebhookTestCallback = Rc<RefCell<dyn FnMut(Result<String, String>)>>;
+
+pub fn async_test_webhook(
+    webhook_url: Option<String>,
+    on_done: WebhookTestCallback,
+) {
+    wasm_bindgen_futures::spawn_local(async move {
+        let Some(window) = web_sys::window() else {
+            (on_done.borrow_mut())(Err("Window not found".to_string()));
+            return;
+        };
+
+        let payload = serde_json::json!({
+            "webhook_url": webhook_url,
+        });
+        let payload_str = payload.to_string();
+
+        let opts = web_sys::RequestInit::new();
+        opts.set_method("POST");
+        opts.set_body(&wasm_bindgen::JsValue::from_str(&payload_str));
+
+        let headers = match web_sys::Headers::new() {
+            Ok(h) => h,
+            Err(e) => {
+                (on_done.borrow_mut())(Err(format!("Failed to create headers: {:?}", e)));
+                return;
+            }
+        };
+        let _ = headers.set("Content-Type", "application/json");
+        opts.set_headers(&headers);
+
+        let req = match web_sys::Request::new_with_str_and_init("/api/settings/test-webhook", &opts) {
+            Ok(r) => r,
+            Err(e) => {
+                (on_done.borrow_mut())(Err(format!("Failed to build request: {:?}", e)));
+                return;
+            }
+        };
+
+        let resp_val = match wasm_bindgen_futures::JsFuture::from(window.fetch_with_request(&req)).await {
+            Ok(v) => v,
+            Err(e) => {
+                (on_done.borrow_mut())(Err(format!("Network request failed: {:?}", e)));
+                return;
+            }
+        };
+        let resp: web_sys::Response = resp_val.unchecked_into();
+        let json_prom = match resp.json() {
+            Ok(p) => p,
+            Err(e) => {
+                (on_done.borrow_mut())(Err(format!("Failed to parse response JSON: {:?}", e)));
+                return;
+            }
+        };
+        let json_val = match wasm_bindgen_futures::JsFuture::from(json_prom).await {
+            Ok(v) => v,
+            Err(e) => {
+                (on_done.borrow_mut())(Err(format!("Failed to await JSON: {:?}", e)));
+                return;
+            }
+        };
+        if let Some(json_str) = js_sys::JSON::stringify(&json_val).ok().and_then(|s| s.as_string()) {
+            #[derive(serde::Deserialize)]
+            struct ApiResp {
+                success: bool,
+                data: Option<String>,
+                message: Option<String>,
+            }
+            match serde_json::from_str::<ApiResp>(&json_str) {
+                Ok(res) if res.success => {
+                    let msg = res.data.unwrap_or_else(|| "测试消息推送成功！".to_string());
+                    (on_done.borrow_mut())(Ok(msg));
+                }
+                Ok(res) => {
+                    let msg = res.message.unwrap_or_else(|| "测试消息推送失败".to_string());
+                    (on_done.borrow_mut())(Err(msg));
+                }
+                Err(e) => {
+                    (on_done.borrow_mut())(Err(format!("Failed to deserialize response: {}", e)));
+                }
+            }
+        } else {
+            (on_done.borrow_mut())(Err("Failed to stringify JSON response".to_string()));
+        }
+    });
+}
+
+
