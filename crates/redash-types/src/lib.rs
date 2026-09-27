@@ -41,7 +41,6 @@ mod tests {
         assert_eq!(format_bytes(1048576), "1.0 MB");
         assert_eq!(format_bytes(1073741824), "1.00 GB");
         assert_eq!(format_percent(45.678), "45.7%");
-        assert_eq!(format_duration(3665), "1h 1m 5s");
         assert_eq!(format_bytes_rate(1024), "1.0 KB/s");
     }
 

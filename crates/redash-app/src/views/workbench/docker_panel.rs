@@ -8,6 +8,7 @@ use crate::components::theme::DarkTechTheme;
 use redash_core::config::HostConfig;
 use redash_core::probe::docker::{DockerContainerDetail, DockerManager};
 use redash_core::session::SessionManager;
+use redash_types::formatters::format_bytes;
 
 pub struct DockerPanel {
     pub host: HostConfig,
@@ -222,10 +223,6 @@ impl DockerPanel {
         self.log_content = None;
         cx.notify();
     }
-
-    pub fn format_bytes(bytes: u64) -> String {
-        redash_types::formatters::format_bytes(bytes)
-    }
 }
 
 impl Render for DockerPanel {
@@ -305,11 +302,11 @@ impl Render for DockerPanel {
                     let mem_str = if c.mem_limit_bytes > 0 {
                         format!(
                             "{}/{}",
-                            Self::format_bytes(c.mem_usage_bytes),
-                            Self::format_bytes(c.mem_limit_bytes)
+                            format_bytes(c.mem_usage_bytes),
+                            format_bytes(c.mem_limit_bytes)
                         )
                     } else if c.mem_usage_bytes > 0 {
-                        Self::format_bytes(c.mem_usage_bytes)
+                        format_bytes(c.mem_usage_bytes)
                     } else {
                         "-".to_string()
                     };
@@ -1168,11 +1165,11 @@ mod tests {
 
     #[test]
     fn test_docker_panel_format_bytes() {
-        assert_eq!(DockerPanel::format_bytes(0), "0 B");
-        assert_eq!(DockerPanel::format_bytes(500), "500 B");
-        assert_eq!(DockerPanel::format_bytes(1024), "1.0 KB");
-        assert_eq!(DockerPanel::format_bytes(1048576 * 12), "12.0 MB");
-        assert_eq!(DockerPanel::format_bytes(1073741824 * 2), "2.00 GB");
+        assert_eq!(format_bytes(0), "0 B");
+        assert_eq!(format_bytes(500), "500 B");
+        assert_eq!(format_bytes(1024), "1.0 KB");
+        assert_eq!(format_bytes(1048576 * 12), "12.0 MB");
+        assert_eq!(format_bytes(1073741824 * 2), "2.00 GB");
     }
 
     #[test]

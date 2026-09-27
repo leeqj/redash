@@ -33,21 +33,3 @@ pub fn format_bytes_rate(bytes_per_sec: u64) -> String {
 pub fn format_percent(pct: f32) -> String {
     format!("{:.1}%", pct.clamp(0.0, 100.0))
 }
-
-/// Formats seconds into uptime duration string (e.g. "12d 4h 32m" or "2h 15m 30s").
-pub fn format_duration(total_secs: u64) -> String {
-    let days = total_secs / 86400;
-    let hours = (total_secs % 86400) / 3600;
-    let mins = (total_secs % 3600) / 60;
-    let secs = total_secs % 60;
-
-    if days > 0 {
-        format!("{}d {}h {}m", days, hours, mins)
-    } else if hours > 0 {
-        format!("{}h {}m {}s", hours, mins, secs)
-    } else if mins > 0 {
-        format!("{}m {}s", mins, secs)
-    } else {
-        format!("{}s", secs)
-    }
-}

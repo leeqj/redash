@@ -8,6 +8,7 @@ use crate::components::theme::DarkTechTheme;
 use redash_core::config::HostConfig;
 use redash_core::probe::network::{ListeningPort, NetworkDiagnostics};
 use redash_core::session::SessionManager;
+use redash_types::formatters::{format_bytes, format_speed};
 
 pub struct NetworkPanel {
     pub rates_available: bool,
@@ -83,20 +84,6 @@ impl NetworkPanel {
             }
         })
         .detach();
-    }
-
-    pub fn format_speed(bytes_per_sec: u64) -> String {
-        if bytes_per_sec >= 1024 * 1024 {
-            format!("{:.1} MB/s", bytes_per_sec as f64 / 1048576.0)
-        } else if bytes_per_sec >= 1024 {
-            format!("{:.1} KB/s", bytes_per_sec as f64 / 1024.0)
-        } else {
-            format!("{} B/s", bytes_per_sec)
-        }
-    }
-
-    pub fn format_bytes(bytes: u64) -> String {
-        redash_types::formatters::format_bytes(bytes)
     }
 }
 
@@ -403,7 +390,7 @@ impl Render for NetworkPanel {
                                                     .text_size(px(15.0))
                                                     .text_color(DarkTechTheme::accent_emerald())
                                                     .child(if self.rates_available {
-                                                        Self::format_speed(self.rx_bytes_sec)
+                                                        format_speed(self.rx_bytes_sec)
                                                     } else {
                                                         "未采集".into()
                                                     }),
@@ -427,7 +414,7 @@ impl Render for NetworkPanel {
                                                     .text_size(px(15.0))
                                                     .text_color(DarkTechTheme::accent_cyan())
                                                     .child(if self.rates_available {
-                                                        Self::format_speed(self.tx_bytes_sec)
+                                                        format_speed(self.tx_bytes_sec)
                                                     } else {
                                                         "未采集".into()
                                                     }),
@@ -490,7 +477,7 @@ impl Render for NetworkPanel {
                                                     .text_size(px(14.0))
                                                     .text_color(DarkTechTheme::text_primary())
                                                     .child(if self.totals_available {
-                                                        Self::format_bytes(self.total_rx_bytes)
+                                                        format_bytes(self.total_rx_bytes)
                                                     } else {
                                                         "未采集".into()
                                                     }),
@@ -514,7 +501,7 @@ impl Render for NetworkPanel {
                                                     .text_size(px(14.0))
                                                     .text_color(DarkTechTheme::text_primary())
                                                     .child(if self.totals_available {
-                                                        Self::format_bytes(self.total_tx_bytes)
+                                                        format_bytes(self.total_tx_bytes)
                                                     } else {
                                                         "未采集".into()
                                                     }),
@@ -847,14 +834,14 @@ mod tests {
 
     #[test]
     fn test_network_panel_format_speed_and_bytes() {
-        assert_eq!(NetworkPanel::format_speed(500), "500 B/s");
-        assert_eq!(NetworkPanel::format_speed(2048), "2.0 KB/s");
-        assert_eq!(NetworkPanel::format_speed(1048576 * 5), "5.0 MB/s");
+        assert_eq!(format_speed(500), "500 B/s");
+        assert_eq!(format_speed(2048), "2.0 KB/s");
+        assert_eq!(format_speed(1048576 * 5), "5.0 MB/s");
 
-        assert_eq!(NetworkPanel::format_bytes(100), "100 B");
-        assert_eq!(NetworkPanel::format_bytes(1024), "1.0 KB");
-        assert_eq!(NetworkPanel::format_bytes(1048576 * 10), "10.0 MB");
-        assert_eq!(NetworkPanel::format_bytes(1073741824 * 3), "3.00 GB");
+        assert_eq!(format_bytes(100), "100 B");
+        assert_eq!(format_bytes(1024), "1.0 KB");
+        assert_eq!(format_bytes(1048576 * 10), "10.0 MB");
+        assert_eq!(format_bytes(1073741824 * 3), "3.00 GB");
     }
 
     #[test]

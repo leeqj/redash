@@ -100,7 +100,6 @@ pub enum UserAction {
     TriggerRunBatch,
     SetHoverPos(Option<(f64, f64)>),
     SetFilterFocused(bool),
-    SetProcessFilterQuery(String),
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -135,8 +134,6 @@ pub struct AppStateMachine {
     pub modal_port: String,
     pub modal_user: String,
     pub modal_field_idx: usize,
-    pub is_connected: bool,
-    pub scroll_y: f64,
     pub active_workbench_tab: WorkbenchTab,
     pub process_sort_by: ProcessSortField,
     pub selected_snippet_category: String,
@@ -161,7 +158,6 @@ pub struct AppStateMachine {
     pub terminal_search_match_count: usize,
     pub hover_pos: Option<(f64, f64)>,
     pub is_filter_focused: bool,
-    pub process_filter_query: String,
 }
 
 impl Default for AppStateMachine {
@@ -196,8 +192,6 @@ impl AppStateMachine {
             modal_port: "22".to_string(),
             modal_user: "root".to_string(),
             modal_field_idx: 0,
-            is_connected: true,
-            scroll_y: 0.0,
             active_workbench_tab: WorkbenchTab::Terminal,
             process_sort_by: ProcessSortField::CpuDesc,
             selected_snippet_category: "All".to_string(),
@@ -222,7 +216,6 @@ impl AppStateMachine {
             terminal_search_match_count: 0,
             hover_pos: None,
             is_filter_focused: false,
-            process_filter_query: String::new(),
         }
     }
 
@@ -532,9 +525,6 @@ impl AppStateMachine {
             UserAction::SetFilterFocused(focused) => {
                 self.is_filter_focused = focused;
             }
-            UserAction::SetProcessFilterQuery(q) => {
-                self.process_filter_query = q;
-            }
         }
 
         effects
@@ -546,10 +536,6 @@ impl AppStateMachine {
 
     pub fn set_filter_focused(&mut self, focused: bool) -> Vec<UiEffect> {
         self.handle_action(UserAction::SetFilterFocused(focused))
-    }
-
-    pub fn set_process_filter_query(&mut self, q: String) -> Vec<UiEffect> {
-        self.handle_action(UserAction::SetProcessFilterQuery(q))
     }
 
     pub fn toggle_batch_host(&mut self, id: String) -> Vec<UiEffect> {

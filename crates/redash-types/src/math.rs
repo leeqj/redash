@@ -7,24 +7,6 @@ pub enum MeterLevel {
     Critical,
 }
 
-impl MeterLevel {
-    pub fn color_hex(&self) -> &'static str {
-        match self {
-            MeterLevel::Normal => "#3fb950",   // Green
-            MeterLevel::Warning => "#d29922",  // Amber
-            MeterLevel::Critical => "#f85149", // Coral red
-        }
-    }
-
-    pub fn color_rgb(&self) -> u32 {
-        match self {
-            MeterLevel::Normal => 0x3fb950,
-            MeterLevel::Warning => 0xd29922,
-            MeterLevel::Critical => 0xf85149,
-        }
-    }
-}
-
 /// Evaluates health level based on load percentage (0.0 to 100.0).
 pub fn evaluate_meter_level(pct: f32) -> MeterLevel {
     if pct >= 90.0 {

@@ -42,13 +42,3 @@ pub enum MetricsMessage {
     #[serde(rename = "error")]
     Error { message: String },
 }
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct BatchProgressEvent {
-    pub task_id: String,
-    pub host_id: String,
-    pub host_name: String,
-    pub output_chunk: String,
-    pub exit_code: Option<i32>,
-    pub is_finished: bool,
-}

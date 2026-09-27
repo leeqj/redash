@@ -3,11 +3,6 @@ pub use redash_types::agent::{AgentDefinition, AgentStatus, DetectedAgent, KNOWN
 pub struct AgentDetector;
 
 impl AgentDetector {
-    /// Returns the global catalogue of all recognized AI agents (25 total).
-    pub fn all_agents() -> &'static [AgentDefinition] {
-        KNOWN_AGENTS
-    }
-
     /// Extracts ANSI OSC 0 and OSC 2 window title sequences from a raw terminal byte stream.
     pub fn extract_osc_titles(bytes: &[u8]) -> Vec<String> {
         let mut titles = Vec::new();
