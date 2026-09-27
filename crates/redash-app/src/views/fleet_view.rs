@@ -4,7 +4,6 @@ use std::collections::{HashMap, HashSet};
 
 use crate::components::chart::{SparklineChart, SparklineSeries};
 use crate::components::icon::Icon;
-use crate::components::micro_meter::MicroMeter;
 use crate::components::status_led::{HostLedState, StatusLed};
 use crate::components::theme::DarkTechTheme;
 use crate::{t, t_fmt};
@@ -116,10 +115,10 @@ impl Render for DraggedHost {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum CardMetricType {
-    #[default]
     Cpu,
     Memory,
     Disk,
+    #[default]
     All,
 }
 
@@ -132,6 +131,8 @@ pub struct FleetView {
     pub mem_histories: HashMap<HostId, Vec<f32>>,
     pub disk_histories: HashMap<HostId, Vec<f32>>,
     pub active_card_metrics: HashMap<HostId, CardMetricType>,
+    pub chart_bounds: HashMap<HostId, std::sync::Arc<std::sync::Mutex<Bounds<Pixels>>>>,
+    pub hovered_chart_points: HashMap<HostId, usize>,
     pub selected_hosts: HashSet<HostId>,
     pub search_query: String,
     pub on_action: Option<FleetActionCallback>,
@@ -149,6 +150,8 @@ impl FleetView {
             mem_histories: HashMap::new(),
             disk_histories: HashMap::new(),
             active_card_metrics: HashMap::new(),
+            chart_bounds: HashMap::new(),
+            hovered_chart_points: HashMap::new(),
             selected_hosts: HashSet::new(),
             search_query: String::new(),
             on_action: None,
@@ -289,6 +292,9 @@ impl FleetView {
         self.cpu_histories.remove(id);
         self.mem_histories.remove(id);
         self.disk_histories.remove(id);
+        self.chart_bounds.remove(id);
+        self.hovered_chart_points.remove(id);
+        self.active_card_metrics.remove(id);
     }
     pub fn set_probe_error(&mut self, id: HostId, failure: ProbeFailure, cx: &mut Context<Self>) {
         self.probe_errors.insert(id, failure);
@@ -334,6 +340,24 @@ impl FleetView {
     ) {
         self.active_card_metrics.insert(host_id.clone(), metric);
         cx.notify();
+    }
+
+    pub fn set_hovered_chart_point(
+        &mut self,
+        host_id: &HostId,
+        index: usize,
+        cx: &mut Context<Self>,
+    ) {
+        if self.hovered_chart_points.get(host_id) != Some(&index) {
+            self.hovered_chart_points.insert(host_id.clone(), index);
+            cx.notify();
+        }
+    }
+
+    pub fn clear_hovered_chart_point(&mut self, host_id: &HostId, cx: &mut Context<Self>) {
+        if self.hovered_chart_points.remove(host_id).is_some() {
+            cx.notify();
+        }
     }
 
     pub fn toggle_selection(&mut self, host_id: &HostId, cx: &mut Context<Self>) {
@@ -1041,294 +1065,312 @@ impl Render for FleetView {
                                                     }))
                                                     .child(t!("common.details"))))
                                     }))
-                                    // Row 3: Precision Telemetry MicroMeters & Interactive Sparkline HUD
+                                    // Row 3: Full-Width Telemetry Sparkline HUD with Default Composite View & Hover Inspection
                                     .child({
                                         let is_cpu_active = active_metric == CardMetricType::Cpu;
                                         let is_mem_active = active_metric == CardMetricType::Memory;
                                         let is_disk_active = active_metric == CardMetricType::Disk;
                                         let is_all_active = active_metric == CardMetricType::All;
 
+                                        let bounds_holder = self.chart_bounds.entry(host_id.clone()).or_insert_with(|| {
+                                            std::sync::Arc::new(std::sync::Mutex::new(Bounds::default()))
+                                        }).clone();
+                                        let hovered_point = self.hovered_chart_points.get(&host_id).copied();
+
+                                        let total_samples = match active_metric {
+                                            CardMetricType::Cpu => cpu_history.len(),
+                                            CardMetricType::Memory => mem_history.len(),
+                                            CardMetricType::Disk => disk_history.len(),
+                                            CardMetricType::All => cpu_history.len().max(mem_history.len()).max(disk_history.len()),
+                                        };
+
+                                        // Calculate historical or live metric values for readout
+                                        let (time_tag, display_cpu, display_mem_str, display_disk) = if let Some(idx) = hovered_point {
+                                            let time_ago_secs = (total_samples.saturating_sub(1 + idx)) * 2;
+                                            let tag = if time_ago_secs == 0 {
+                                                "[实时]".to_string()
+                                            } else {
+                                                format!("[-{}s]", time_ago_secs)
+                                            };
+                                            let c = cpu_history.get(idx).copied().unwrap_or(cpu_val);
+                                            let m_pct = mem_history.get(idx).copied().unwrap_or(mem_val);
+                                            let d = disk_history.get(idx).copied().unwrap_or(disk_val);
+                                            (Some(tag), c, format!("{:.0}%", m_pct), d)
+                                        } else {
+                                            (None, cpu_val, format!("{:.1}G/{:.1}G ({:.0}%)", mem_used_gb, mem_total_gb, mem_val), disk_val)
+                                        };
+
                                         div()
+                                            .id(ElementId::Name(format!("sparkline_hud_{}", host_id.0).into()))
+                                            .w_full()
+                                            .h(px(88.0))
                                             .flex()
-                                            .flex_row()
-                                            .items_center()
+                                            .flex_col()
                                             .justify_between()
-                                            .gap_2()
-                                            // Left Column: Interactive MicroMeters
+                                            .bg(DarkTechTheme::bg_input())
+                                            .border_1()
+                                            .border_color(DarkTechTheme::border_muted())
+                                            .rounded_sm()
+                                            .p_1()
+                                            .on_hover(cx.listener({
+                                                let host_id = host_id.clone();
+                                                move |this, is_hovered: &bool, _window, cx| {
+                                                    if !*is_hovered {
+                                                        this.clear_hovered_chart_point(&host_id, cx);
+                                                    }
+                                                }
+                                            }))
+                                            .on_mouse_move(cx.listener({
+                                                let host_id = host_id.clone();
+                                                let bounds_holder = bounds_holder.clone();
+                                                move |this, event: &MouseMoveEvent, _window, cx| {
+                                                    if let Ok(bounds) = bounds_holder.lock() {
+                                                        let width = f32::from(bounds.size.width);
+                                                        let origin_x = f32::from(bounds.origin.x);
+                                                        let mouse_x = f32::from(event.position.x);
+
+                                                        if width > 0.0 && total_samples > 1 && mouse_x >= origin_x - 5.0 && mouse_x <= origin_x + width + 5.0 {
+                                                            let rel_x = (mouse_x - origin_x).clamp(0.0, width);
+                                                            let step = width / (total_samples - 1) as f32;
+                                                            let idx = ((rel_x + step * 0.5) / step).floor() as usize;
+                                                            let sample_idx = idx.min(total_samples - 1);
+                                                            this.set_hovered_chart_point(&host_id, sample_idx, cx);
+                                                        }
+                                                    }
+                                                }
+                                            }))
+                                            // 1. Metric Switcher Mini Tabs + Real-Time / Hovered Value Readout
+                                            .child(
+                                                div()
+                                                    .w_full()
+                                                    .flex()
+                                                    .flex_row()
+                                                    .justify_between()
+                                                    .items_center()
+                                                    .mb_1()
+                                                    // Left: Mini Tabs [CPU] [内存] [磁盘] [综合]
+                                                    .child(
+                                                        div()
+                                                            .flex()
+                                                            .flex_row()
+                                                            .gap_1()
+                                                            .child(
+                                                                div()
+                                                                    .id(ElementId::Name(format!("tab_cpu_{}", host_id.0).into()))
+                                                                    .cursor_pointer()
+                                                                    .px_1()
+                                                                    .py_0p5()
+                                                                    .rounded_xs()
+                                                                    .text_size(px(8.5))
+                                                                    .font_family("Menlo")
+                                                                    .font_weight(FontWeight::BOLD)
+                                                                    .border_1()
+                                                                    .border_color(if is_cpu_active {
+                                                                        DarkTechTheme::accent_cyan()
+                                                                    } else {
+                                                                        DarkTechTheme::border_muted()
+                                                                    })
+                                                                    .bg(if is_cpu_active {
+                                                                        DarkTechTheme::bg_panel_hover()
+                                                                    } else {
+                                                                        hsla(0.0, 0.0, 0.0, 0.0)
+                                                                    })
+                                                                    .text_color(if is_cpu_active {
+                                                                        DarkTechTheme::accent_cyan()
+                                                                    } else {
+                                                                        DarkTechTheme::text_muted()
+                                                                    })
+                                                                    .on_click(cx.listener({
+                                                                        let host_id = host_id.clone();
+                                                                        move |this, _, _, cx| {
+                                                                            this.set_card_metric(&host_id, CardMetricType::Cpu, cx);
+                                                                        }
+                                                                    }))
+                                                                    .child("CPU"),
+                                                            )
+                                                            .child(
+                                                                div()
+                                                                    .id(ElementId::Name(format!("tab_mem_{}", host_id.0).into()))
+                                                                    .cursor_pointer()
+                                                                    .px_1()
+                                                                    .py_0p5()
+                                                                    .rounded_xs()
+                                                                    .text_size(px(8.5))
+                                                                    .font_family("Menlo")
+                                                                    .font_weight(FontWeight::BOLD)
+                                                                    .border_1()
+                                                                    .border_color(if is_mem_active {
+                                                                        DarkTechTheme::accent_indigo()
+                                                                    } else {
+                                                                        DarkTechTheme::border_muted()
+                                                                    })
+                                                                    .bg(if is_mem_active {
+                                                                        DarkTechTheme::bg_panel_hover()
+                                                                    } else {
+                                                                        hsla(0.0, 0.0, 0.0, 0.0)
+                                                                    })
+                                                                    .text_color(if is_mem_active {
+                                                                        DarkTechTheme::accent_indigo()
+                                                                    } else {
+                                                                        DarkTechTheme::text_muted()
+                                                                    })
+                                                                    .on_click(cx.listener({
+                                                                        let host_id = host_id.clone();
+                                                                        move |this, _, _, cx| {
+                                                                            this.set_card_metric(&host_id, CardMetricType::Memory, cx);
+                                                                        }
+                                                                    }))
+                                                                    .child(t!("metric.memory")),
+                                                            )
+                                                            .child(
+                                                                div()
+                                                                    .id(ElementId::Name(format!("tab_disk_{}", host_id.0).into()))
+                                                                    .cursor_pointer()
+                                                                    .px_1()
+                                                                    .py_0p5()
+                                                                    .rounded_xs()
+                                                                    .text_size(px(8.5))
+                                                                    .font_family("Menlo")
+                                                                    .font_weight(FontWeight::BOLD)
+                                                                    .border_1()
+                                                                    .border_color(if is_disk_active {
+                                                                        DarkTechTheme::status_warn()
+                                                                    } else {
+                                                                        DarkTechTheme::border_muted()
+                                                                    })
+                                                                    .bg(if is_disk_active {
+                                                                        DarkTechTheme::bg_panel_hover()
+                                                                    } else {
+                                                                        hsla(0.0, 0.0, 0.0, 0.0)
+                                                                    })
+                                                                    .text_color(if is_disk_active {
+                                                                        DarkTechTheme::status_warn()
+                                                                    } else {
+                                                                        DarkTechTheme::text_muted()
+                                                                    })
+                                                                    .on_click(cx.listener({
+                                                                        let host_id = host_id.clone();
+                                                                        move |this, _, _, cx| {
+                                                                            this.set_card_metric(&host_id, CardMetricType::Disk, cx);
+                                                                        }
+                                                                    }))
+                                                                    .child(t!("metric.disk")),
+                                                            )
+                                                            .child(
+                                                                div()
+                                                                    .id(ElementId::Name(format!("tab_all_{}", host_id.0).into()))
+                                                                    .cursor_pointer()
+                                                                    .px_1()
+                                                                    .py_0p5()
+                                                                    .rounded_xs()
+                                                                    .text_size(px(8.5))
+                                                                    .font_family("Menlo")
+                                                                    .font_weight(FontWeight::BOLD)
+                                                                    .border_1()
+                                                                    .border_color(if is_all_active {
+                                                                        DarkTechTheme::accent_emerald()
+                                                                    } else {
+                                                                        DarkTechTheme::border_muted()
+                                                                    })
+                                                                    .bg(if is_all_active {
+                                                                        DarkTechTheme::bg_panel_hover()
+                                                                    } else {
+                                                                        hsla(0.0, 0.0, 0.0, 0.0)
+                                                                    })
+                                                                    .text_color(if is_all_active {
+                                                                        DarkTechTheme::accent_emerald()
+                                                                    } else {
+                                                                        DarkTechTheme::text_muted()
+                                                                    })
+                                                                    .on_click(cx.listener({
+                                                                        let host_id = host_id.clone();
+                                                                        move |this, _, _, cx| {
+                                                                            this.set_card_metric(&host_id, CardMetricType::All, cx);
+                                                                        }
+                                                                    }))
+                                                                    .child(t!("metric.all")),
+                                                            ),
+                                                    )
+                                                    // Right: Value Readout (Live or Hovered Historical Point)
+                                                    .child(
+                                                        div()
+                                                            .flex()
+                                                            .flex_row()
+                                                            .items_center()
+                                                            .gap_1p5()
+                                                            .text_size(px(8.5))
+                                                            .font_family("Menlo")
+                                                            .font_weight(FontWeight::BOLD)
+                                                            .children(time_tag.map(|tag| {
+                                                                div()
+                                                                    .px_1()
+                                                                    .py_0p5()
+                                                                    .rounded_xs()
+                                                                    .bg(DarkTechTheme::bg_panel_hover())
+                                                                    .border_1()
+                                                                    .border_color(DarkTechTheme::accent_cyan())
+                                                                    .text_color(DarkTechTheme::accent_cyan())
+                                                                    .child(tag)
+                                                            }))
+                                                            .children(if metric.is_none() {
+                                                                vec![div().text_color(DarkTechTheme::text_muted()).child(t!("fleet.not_collected")).into_any_element()]
+                                                            } else {
+                                                                match active_metric {
+                                                                    CardMetricType::Cpu => vec![
+                                                                        div().text_color(DarkTechTheme::accent_cyan()).child(format!("CPU: {:.1}%", display_cpu)).into_any_element(),
+                                                                    ],
+                                                                    CardMetricType::Memory => vec![
+                                                                        div().text_color(DarkTechTheme::accent_indigo()).child(format!("RAM: {}", display_mem_str)).into_any_element(),
+                                                                    ],
+                                                                    CardMetricType::Disk => vec![
+                                                                        div().text_color(DarkTechTheme::status_warn()).child(format!("DISK: {:.0}%", display_disk)).into_any_element(),
+                                                                    ],
+                                                                    CardMetricType::All => vec![
+                                                                        div().text_color(DarkTechTheme::accent_cyan()).child(format!("CPU: {:.1}%", display_cpu)).into_any_element(),
+                                                                        div().text_color(DarkTechTheme::border_muted()).child("·").into_any_element(),
+                                                                        div().text_color(DarkTechTheme::accent_indigo()).child(format!("RAM: {}", display_mem_str)).into_any_element(),
+                                                                        div().text_color(DarkTechTheme::border_muted()).child("·").into_any_element(),
+                                                                        div().text_color(DarkTechTheme::status_warn()).child(format!("DISK: {:.0}%", display_disk)).into_any_element(),
+                                                                    ],
+                                                                }
+                                                            })
+                                                    )
+                                            )
+                                            // 2. Interactive HUD Sparkline Chart with Scale & Hover Inspection
                                             .child(
                                                 div()
                                                     .flex_1()
-                                                    .flex()
-                                                    .flex_col()
-                                                    .gap_1()
-                                                    // CPU row
-                                                    .child(
-                                                        div()
-                                                            .id(ElementId::Name(format!("meter_cpu_{}", host_id.0).into()))
-                                                            .cursor_pointer()
-                                                            .rounded_xs()
-                                                            .px_1()
-                                                            .py_0p5()
-                                                            .when(is_cpu_active, |this| {
-                                                                this.bg(DarkTechTheme::bg_panel_hover())
-                                                                    .border_l_2()
-                                                                    .border_color(DarkTechTheme::accent_cyan())
-                                                            })
-                                                            .hover(|s| s.bg(DarkTechTheme::bg_panel_hover()))
-                                                            .on_click(cx.listener({
-                                                                let host_id = host_id.clone();
-                                                                move |this, _, _, cx| {
-                                                                    this.set_card_metric(&host_id, CardMetricType::Cpu, cx);
-                                                                }
-                                                            }))
-                                                            .child(if metric.is_some() { MicroMeter::cpu(cpu_val).into_any_element() } else { div().text_sm().text_color(DarkTechTheme::text_secondary()).child(t!("fleet.cpu_not_collected")).into_any_element() }),
-                                                    )
-                                                    // RAM row
-                                                    .child(
-                                                        div()
-                                                            .id(ElementId::Name(format!("meter_mem_{}", host_id.0).into()))
-                                                            .cursor_pointer()
-                                                            .rounded_xs()
-                                                            .px_1()
-                                                            .py_0p5()
-                                                            .when(is_mem_active, |this| {
-                                                                this.bg(DarkTechTheme::bg_panel_hover())
-                                                                    .border_l_2()
-                                                                    .border_color(DarkTechTheme::accent_indigo())
-                                                            })
-                                                            .hover(|s| s.bg(DarkTechTheme::bg_panel_hover()))
-                                                            .on_click(cx.listener({
-                                                                let host_id = host_id.clone();
-                                                                move |this, _, _, cx| {
-                                                                    this.set_card_metric(&host_id, CardMetricType::Memory, cx);
-                                                                }
-                                                            }))
-                                                            .child(if metric.is_some() {
-                                                                MicroMeter::memory(mem_used_gb, mem_total_gb, mem_val).into_any_element()
-                                                            } else {
-                                                                div().text_sm().text_color(DarkTechTheme::text_secondary()).child(t!("fleet.mem_not_collected")).into_any_element()
-                                                            }),
-                                                    )
-                                                    // DISK row
-                                                    .child(
-                                                        div()
-                                                            .id(ElementId::Name(format!("meter_disk_{}", host_id.0).into()))
-                                                            .cursor_pointer()
-                                                            .rounded_xs()
-                                                            .px_1()
-                                                            .py_0p5()
-                                                            .when(is_disk_active, |this| {
-                                                                this.bg(DarkTechTheme::bg_panel_hover())
-                                                                    .border_l_2()
-                                                                    .border_color(DarkTechTheme::status_warn())
-                                                            })
-                                                            .hover(|s| s.bg(DarkTechTheme::bg_panel_hover()))
-                                                            .on_click(cx.listener({
-                                                                let host_id = host_id.clone();
-                                                                move |this, _, _, cx| {
-                                                                    this.set_card_metric(&host_id, CardMetricType::Disk, cx);
-                                                                }
-                                                            }))
-                                                            .child(if metric.is_some_and(|m| !m.disks.is_empty()) { MicroMeter::disk(disk_val).into_any_element() } else { div().text_sm().text_color(DarkTechTheme::text_secondary()).child(t!("fleet.disk_not_collected")).into_any_element() }),
-                                                    ),
-                                            )
-                                            // Right Column: Interactive Sparkline HUD Box
-                                            .child(
-                                                div()
-                                                    .w(px(144.0))
-                                                    .h(px(84.0))
-                                                    .flex()
-                                                    .flex_col()
-                                                    .justify_between()
-                                                    .bg(DarkTechTheme::bg_input())
-                                                    .border_1()
-                                                    .border_color(DarkTechTheme::border_muted())
-                                                    .rounded_sm()
-                                                    .p_1()
-                                                    // 1. Metric Switcher Mini Tabs
-                                                    .child(
-                                                        div()
-                                                            .w_full()
-                                                            .flex()
-                                                            .flex_row()
-                                                            .justify_between()
-                                                            .items_center()
-                                                            .mb_1()
-                                                            .child(
-                                                                div()
-                                                                    .flex()
-                                                                    .flex_row()
-                                                                    .gap_1()
-                                                                    .child(
-                                                                        div()
-                                                                            .id(ElementId::Name(format!("tab_cpu_{}", host_id.0).into()))
-                                                                            .cursor_pointer()
-                                                                            .px_1()
-                                                                            .py_0p5()
-                                                                            .rounded_xs()
-                                                                            .text_size(px(8.5))
-                                                                            .font_family("Menlo")
-                                                                            .font_weight(FontWeight::BOLD)
-                                                                            .border_1()
-                                                                            .border_color(if is_cpu_active {
-                                                                                DarkTechTheme::accent_cyan()
-                                                                            } else {
-                                                                                DarkTechTheme::border_muted()
-                                                                            })
-                                                                            .bg(if is_cpu_active {
-                                                                                DarkTechTheme::bg_panel_hover()
-                                                                            } else {
-                                                                                hsla(0.0, 0.0, 0.0, 0.0)
-                                                                            })
-                                                                            .text_color(if is_cpu_active {
-                                                                                DarkTechTheme::accent_cyan()
-                                                                            } else {
-                                                                                DarkTechTheme::text_muted()
-                                                                            })
-                                                                            .on_click(cx.listener({
-                                                                                let host_id = host_id.clone();
-                                                                                move |this, _, _, cx| {
-                                                                                    this.set_card_metric(&host_id, CardMetricType::Cpu, cx);
-                                                                                }
-                                                                            }))
-                                                                            .child("CPU"),
-                                                                    )
-                                                                    .child(
-                                                                        div()
-                                                                            .id(ElementId::Name(format!("tab_mem_{}", host_id.0).into()))
-                                                                            .cursor_pointer()
-                                                                            .px_1()
-                                                                            .py_0p5()
-                                                                            .rounded_xs()
-                                                                            .text_size(px(8.5))
-                                                                            .font_family("Menlo")
-                                                                            .font_weight(FontWeight::BOLD)
-                                                                            .border_1()
-                                                                            .border_color(if is_mem_active {
-                                                                                DarkTechTheme::accent_indigo()
-                                                                            } else {
-                                                                                DarkTechTheme::border_muted()
-                                                                            })
-                                                                            .bg(if is_mem_active {
-                                                                                DarkTechTheme::bg_panel_hover()
-                                                                            } else {
-                                                                                hsla(0.0, 0.0, 0.0, 0.0)
-                                                                            })
-                                                                            .text_color(if is_mem_active {
-                                                                                DarkTechTheme::accent_indigo()
-                                                                            } else {
-                                                                                DarkTechTheme::text_muted()
-                                                                            })
-                                                                            .on_click(cx.listener({
-                                                                                let host_id = host_id.clone();
-                                                                                move |this, _, _, cx| {
-                                                                                    this.set_card_metric(&host_id, CardMetricType::Memory, cx);
-                                                                                }
-                                                                            }))
-                                                                            .child(t!("metric.memory")),
-                                                                    )
-                                                                    .child(
-                                                                        div()
-                                                                            .id(ElementId::Name(format!("tab_disk_{}", host_id.0).into()))
-                                                                            .cursor_pointer()
-                                                                            .px_1()
-                                                                            .py_0p5()
-                                                                            .rounded_xs()
-                                                                            .text_size(px(8.5))
-                                                                            .font_family("Menlo")
-                                                                            .font_weight(FontWeight::BOLD)
-                                                                            .border_1()
-                                                                            .border_color(if is_disk_active {
-                                                                                DarkTechTheme::status_warn()
-                                                                            } else {
-                                                                                DarkTechTheme::border_muted()
-                                                                            })
-                                                                            .bg(if is_disk_active {
-                                                                                DarkTechTheme::bg_panel_hover()
-                                                                            } else {
-                                                                                hsla(0.0, 0.0, 0.0, 0.0)
-                                                                            })
-                                                                            .text_color(if is_disk_active {
-                                                                                DarkTechTheme::status_warn()
-                                                                            } else {
-                                                                                DarkTechTheme::text_muted()
-                                                                            })
-                                                                            .on_click(cx.listener({
-                                                                                let host_id = host_id.clone();
-                                                                                move |this, _, _, cx| {
-                                                                                    this.set_card_metric(&host_id, CardMetricType::Disk, cx);
-                                                                                }
-                                                                            }))
-                                                                            .child(t!("metric.disk")),
-                                                                    )
-                                                                    .child(
-                                                                        div()
-                                                                            .id(ElementId::Name(format!("tab_all_{}", host_id.0).into()))
-                                                                            .cursor_pointer()
-                                                                            .px_1()
-                                                                            .py_0p5()
-                                                                            .rounded_xs()
-                                                                            .text_size(px(8.5))
-                                                                            .font_family("Menlo")
-                                                                            .font_weight(FontWeight::BOLD)
-                                                                            .border_1()
-                                                                            .border_color(if is_all_active {
-                                                                                DarkTechTheme::accent_emerald()
-                                                                            } else {
-                                                                                DarkTechTheme::border_muted()
-                                                                            })
-                                                                            .bg(if is_all_active {
-                                                                                DarkTechTheme::bg_panel_hover()
-                                                                            } else {
-                                                                                hsla(0.0, 0.0, 0.0, 0.0)
-                                                                            })
-                                                                            .text_color(if is_all_active {
-                                                                                DarkTechTheme::accent_emerald()
-                                                                            } else {
-                                                                                DarkTechTheme::text_muted()
-                                                                            })
-                                                                            .on_click(cx.listener({
-                                                                                let host_id = host_id.clone();
-                                                                                move |this, _, _, cx| {
-                                                                                    this.set_card_metric(&host_id, CardMetricType::All, cx);
-                                                                                }
-                                                                            }))
-                                                                            .child(t!("metric.all")),
-                                                                    ),
-                                                            ),
-                                                    )
-                                                    // 2. Interactive HUD Sparkline Chart with Scale & Value
-                                                    .child(
-                                                        div()
-                                                            .flex_1()
-                                                            .w_full()
-                                                            .min_h(px(0.0))
-                                                            .child(match active_metric {
-                                                                CardMetricType::Cpu => SparklineChart::tech(cpu_history)
-                                                                    .with_value(if metric.is_some() { format!("{:.1}%", cpu_val) } else { t!("fleet.not_collected").into() })
-                                                                    .with_scale_labels(true)
-                                                                    .with_range(true)
-                                                                    .with_pulse_dot(true),
-                                                                CardMetricType::Memory => SparklineChart::new(mem_history, DarkTechTheme::accent_indigo())
-                                                                    .with_value(if metric.is_some() { format!("{:.1}G ({:.0}%)", mem_used_gb, mem_val) } else { t!("fleet.not_collected").into() })
-                                                                    .with_scale_labels(true)
-                                                                    .with_range(true)
-                                                                    .with_pulse_dot(true),
-                                                                CardMetricType::Disk => SparklineChart::new(disk_history, DarkTechTheme::status_warn())
-                                                                    .with_value(if metric.is_some_and(|m| !m.disks.is_empty()) { format!("{:.0}%", disk_val) } else { t!("fleet.not_collected").into() })
-                                                                    .with_scale_labels(true)
-                                                                    .with_range(true)
-                                                                    .with_pulse_dot(true),
-                                                                CardMetricType::All => SparklineChart::multi(vec![
-                                                                    SparklineSeries::new("CPU", cpu_history, DarkTechTheme::accent_cyan()),
-                                                                    SparklineSeries::new("RAM", mem_history, DarkTechTheme::accent_indigo()),
-                                                                    SparklineSeries::new("DISK", disk_history, DarkTechTheme::status_warn()),
-                                                                ])
-                                                                .with_value(if metric.is_some() { format!("{:.0}%/{:.0}%/{:.0}%", cpu_val, mem_val, disk_val) } else { t!("fleet.not_collected").into() })
-                                                                .with_scale_labels(true)
-                                                                .with_pulse_dot(true),
-                                                            }),
-                                                    ),
+                                                    .w_full()
+                                                    .min_h(px(0.0))
+                                                    .child(match active_metric {
+                                                        CardMetricType::Cpu => SparklineChart::tech(cpu_history)
+                                                            .with_scale_labels(true)
+                                                            .with_range(true)
+                                                            .with_pulse_dot(true)
+                                                            .with_hover_index(hovered_point)
+                                                            .with_bounds_holder(bounds_holder),
+                                                        CardMetricType::Memory => SparklineChart::new(mem_history, DarkTechTheme::accent_indigo())
+                                                            .with_scale_labels(true)
+                                                            .with_range(true)
+                                                            .with_pulse_dot(true)
+                                                            .with_hover_index(hovered_point)
+                                                            .with_bounds_holder(bounds_holder),
+                                                        CardMetricType::Disk => SparklineChart::new(disk_history, DarkTechTheme::status_warn())
+                                                            .with_scale_labels(true)
+                                                            .with_range(true)
+                                                            .with_pulse_dot(true)
+                                                            .with_hover_index(hovered_point)
+                                                            .with_bounds_holder(bounds_holder),
+                                                        CardMetricType::All => SparklineChart::multi(vec![
+                                                            SparklineSeries::new("CPU", cpu_history, DarkTechTheme::accent_cyan()),
+                                                            SparklineSeries::new("RAM", mem_history, DarkTechTheme::accent_indigo()),
+                                                            SparklineSeries::new("DISK", disk_history, DarkTechTheme::status_warn()),
+                                                        ])
+                                                        .with_scale_labels(true)
+                                                        .with_pulse_dot(true)
+                                                        .with_hover_index(hovered_point)
+                                                        .with_bounds_holder(bounds_holder),
+                                                    }),
                                             )
                                     })
                                     .child(div().text_xs().text_color(DarkTechTheme::text_muted())
@@ -1835,6 +1877,10 @@ mod tests {
         let mut fleet = FleetView::new(vec![h1]);
 
         assert_eq!(fleet.active_card_metrics.get(&id1), None);
+        assert_eq!(CardMetricType::default(), CardMetricType::All);
+        assert_eq!(fleet.hovered_chart_points.get(&id1), None);
+        fleet.hovered_chart_points.insert(id1.clone(), 12);
+        assert_eq!(fleet.hovered_chart_points.get(&id1), Some(&12));
 
         // Switch to Memory
         fleet

@@ -1,6 +1,7 @@
 use crate::components::theme::DarkTechTheme;
 use gpui::*;
 
+#[allow(dead_code)]
 #[derive(Clone)]
 pub struct MicroMeter {
     pub label: String,
@@ -10,6 +11,7 @@ pub struct MicroMeter {
     pub height: Pixels,
 }
 
+#[allow(dead_code)]
 impl MicroMeter {
     pub fn new(
         label: impl Into<String>,

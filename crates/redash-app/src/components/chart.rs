@@ -44,6 +44,8 @@ pub struct SparklineChart {
     pub show_scale_labels: bool,
     pub show_range: bool,
     pub unit: &'static str,
+    pub hover_index: Option<usize>,
+    pub bounds_holder: Option<std::sync::Arc<std::sync::Mutex<Bounds<Pixels>>>>,
 }
 
 impl SparklineChart {
@@ -68,6 +70,8 @@ impl SparklineChart {
             show_scale_labels: false,
             show_range: false,
             unit: "%",
+            hover_index: None,
+            bounds_holder: None,
         }
     }
 
@@ -85,6 +89,21 @@ impl SparklineChart {
         let mut chart = Self::new(Vec::new(), stroke_color);
         chart.series = series;
         chart
+    }
+
+    #[allow(dead_code)]
+    pub fn with_hover_index(mut self, index: Option<usize>) -> Self {
+        self.hover_index = index;
+        self
+    }
+
+    #[allow(dead_code)]
+    pub fn with_bounds_holder(
+        mut self,
+        holder: std::sync::Arc<std::sync::Mutex<Bounds<Pixels>>>,
+    ) -> Self {
+        self.bounds_holder = Some(holder);
+        self
     }
 
     #[allow(dead_code)]
@@ -188,6 +207,8 @@ impl IntoElement for SparklineChart {
         let show_scale_labels = self.show_scale_labels;
         let show_range = self.show_range;
         let unit = self.unit;
+        let hover_index = self.hover_index;
+        let bounds_holder = self.bounds_holder;
 
         // Build series list
         let series_list: Vec<(Vec<f32>, Hsla, Hsla)> = if !self.series.is_empty() {
@@ -223,7 +244,13 @@ impl IntoElement for SparklineChart {
         };
 
         let canvas_el = canvas(
-            |_bounds, _window, _cx| (),
+            move |bounds, _window, _cx| {
+                if let Some(holder) = &bounds_holder
+                    && let Ok(mut lock) = holder.lock()
+                {
+                    *lock = bounds;
+                }
+            },
             move |bounds, (), window, _cx| {
                 let width = f32::from(bounds.size.width);
                 let height = f32::from(bounds.size.height);
@@ -288,6 +315,25 @@ impl IntoElement for SparklineChart {
                     grid.line_to(point(bounds.origin.x + px(width), px(y_0)));
                     if let Ok(path) = grid.build() {
                         window.paint_path(path, grid_col);
+                    }
+                }
+
+                // 2.5 Vertical crosshair for hover point
+                if let Some(h_idx) = hover_index {
+                    let max_len = series_list
+                        .iter()
+                        .map(|(d, _, _)| d.len())
+                        .max()
+                        .unwrap_or(0);
+                    if max_len > 1 && h_idx < max_len {
+                        let step = width / (max_len - 1) as f32;
+                        let h_x = origin_x + (h_idx as f32 * step);
+                        let mut crosshair = PathBuilder::stroke(px(1.0));
+                        crosshair.move_to(point(px(h_x), px(origin_y + padding_y)));
+                        crosshair.line_to(point(px(h_x), px(origin_y + padding_y + eff_height)));
+                        if let Ok(path) = crosshair.build() {
+                            window.paint_path(path, hsla(187.0 / 360.0, 0.9, 0.65, 0.45));
+                        }
                     }
                 }
 
@@ -388,8 +434,8 @@ impl IntoElement for SparklineChart {
                         }
                     }
 
-                    // Concentric pulse dot at latest point
-                    if show_pulse_dot && let Some(&last_point) = points.last() {
+                    // Concentric pulse dot at latest point (when not hovering)
+                    if show_pulse_dot && hover_index.is_none() && let Some(&last_point) = points.last() {
                         let outer_r = px(4.0);
                         let mut outer = fill(
                             Bounds {
@@ -415,7 +461,38 @@ impl IntoElement for SparklineChart {
                         core.corner_radii = (f32::from(core_r)).into();
                         window.paint_quad(core);
                     }
-                }
+
+                    // Concentric glowing indicator dot at hovered point
+                    if let Some(h_idx) = hover_index
+                        && h_idx < points.len()
+                    {
+                        let hp = points[h_idx];
+                            let halo_r = px(4.5);
+                            let mut halo = fill(
+                                Bounds {
+                                    origin: point(hp.x - halo_r, hp.y - halo_r),
+                                    size: size(halo_r * 2.0, halo_r * 2.0),
+                                },
+                                Hsla {
+                                    a: 0.35,
+                                    ..*s_stroke_col
+                                },
+                            );
+                            halo.corner_radii = (f32::from(halo_r)).into();
+                            window.paint_quad(halo);
+
+                            let core_r = px(2.0);
+                            let mut core = fill(
+                                Bounds {
+                                    origin: point(hp.x - core_r, hp.y - core_r),
+                                    size: size(core_r * 2.0, core_r * 2.0),
+                                },
+                                *s_stroke_col,
+                            );
+                            core.corner_radii = (f32::from(core_r)).into();
+                            window.paint_quad(core);
+                        }
+                    }
             },
         )
         .size_full();
@@ -555,5 +632,15 @@ mod tests {
         let chart = SparklineChart::multi(vec![s1, s2]).with_scale_labels(true);
         assert_eq!(chart.series.len(), 2);
         assert!(chart.show_scale_labels);
+    }
+
+    #[core::prelude::v1::test]
+    fn test_sparkline_hover_and_bounds() {
+        let holder = std::sync::Arc::new(std::sync::Mutex::new(Bounds::default()));
+        let chart = SparklineChart::tech(vec![10.0, 20.0, 30.0])
+            .with_hover_index(Some(1))
+            .with_bounds_holder(holder.clone());
+        assert_eq!(chart.hover_index, Some(1));
+        assert!(chart.bounds_holder.is_some());
     }
 }
