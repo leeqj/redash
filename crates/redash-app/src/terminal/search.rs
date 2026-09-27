@@ -14,12 +14,12 @@ pub struct TerminalSearch {
     pub active_match_idx: usize,
 }
 
-#[allow(dead_code)]
 impl TerminalSearch {
     pub fn new() -> Self {
         Self::default()
     }
 
+    #[cfg(test)]
     pub fn open(&mut self) {
         self.is_active = true;
     }
@@ -28,14 +28,6 @@ impl TerminalSearch {
         self.is_active = false;
         self.matches.clear();
         self.active_match_idx = 0;
-    }
-
-    pub fn toggle(&mut self) {
-        if self.is_active {
-            self.close();
-        } else {
-            self.open();
-        }
     }
 
     pub fn set_query(&mut self, query: String, lines: &[String]) {

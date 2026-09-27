@@ -1,7 +1,6 @@
 use crate::components::theme::DarkTechTheme;
 use gpui::*;
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IconType {
     // Navigation & Primary
@@ -41,7 +40,9 @@ pub enum IconType {
     // Systems & Diagnostics
     Docker,
     Cpu,
+    #[allow(dead_code)]
     Memory,
+    #[allow(dead_code)]
     Disk,
     Network,
     Tunnel,
@@ -60,7 +61,6 @@ pub enum IconType {
     Clock,
 }
 
-#[allow(dead_code)]
 #[derive(Clone)]
 pub struct Icon {
     pub icon_type: IconType,
@@ -68,7 +68,6 @@ pub struct Icon {
     pub color: Option<Hsla>,
 }
 
-#[allow(dead_code)]
 impl Icon {
     pub fn new(icon_type: IconType) -> Self {
         Self {
@@ -179,9 +178,11 @@ impl Icon {
     pub fn cpu() -> Self {
         Self::new(IconType::Cpu)
     }
+    #[allow(dead_code)]
     pub fn memory() -> Self {
         Self::new(IconType::Memory)
     }
+    #[allow(dead_code)]
     pub fn disk() -> Self {
         Self::new(IconType::Disk)
     }

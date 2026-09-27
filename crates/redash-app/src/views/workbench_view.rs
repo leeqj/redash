@@ -42,8 +42,6 @@ pub struct WorkbenchView {
     settings: AppSettings,
     pub host: HostConfig,
     pub session_mgr: Arc<SessionManager>,
-    #[allow(dead_code)]
-    pub tunnel_mgr: Arc<TunnelManager>,
     pub terminal_view: Entity<TerminalView>,
     pub split_manager: SplitLayoutManager,
     pub terminal_views: HashMap<String, Entity<TerminalView>>,
@@ -132,7 +130,6 @@ impl WorkbenchView {
             settings: AppSettings::default(),
             host,
             session_mgr,
-            tunnel_mgr,
             terminal_view,
             split_manager,
             terminal_views,

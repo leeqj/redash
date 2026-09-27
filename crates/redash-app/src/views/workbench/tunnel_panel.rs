@@ -19,7 +19,6 @@ pub enum TunnelModalField {
     RemotePort,
 }
 
-#[allow(dead_code)]
 pub struct TunnelPanel {
     pub host: HostConfig,
     pub tunnel_mgr: Arc<TunnelManager>,
@@ -38,7 +37,6 @@ pub struct TunnelPanel {
     pub scroll_handle: ScrollHandle,
 }
 
-#[allow(dead_code)]
 impl TunnelPanel {
     pub fn new(host: HostConfig, tunnel_mgr: Arc<TunnelManager>) -> Self {
         Self {

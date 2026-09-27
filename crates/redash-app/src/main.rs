@@ -96,7 +96,6 @@ where
     }
 }
 
-#[allow(dead_code)]
 enum TabContent {
     Fleet(Entity<FleetView>),
     Workbench(HostId, Entity<WorkbenchView>),

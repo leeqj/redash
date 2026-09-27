@@ -12,7 +12,6 @@ use redash_core::session::SessionManager;
 pub type SnippetInjectCallback =
     Box<dyn Fn(String, &mut Window, &mut Context<SnippetsPanel>) + 'static>;
 
-#[allow(dead_code)]
 pub struct SnippetsPanel {
     pub snippets: SnippetLibrary,
     pub selected_category: String,
@@ -30,24 +29,10 @@ impl Default for SnippetsPanel {
     }
 }
 
-#[allow(dead_code)]
 impl SnippetsPanel {
     pub fn new() -> Self {
         Self {
             snippets: SnippetLibrary::new(),
-            selected_category: "全部".to_string(),
-            search_query: String::new(),
-            execution_output: None,
-            on_inject_terminal: None,
-            host: None,
-            session_mgr: None,
-            scroll_handle: ScrollHandle::new(),
-        }
-    }
-
-    pub fn with_library(snippets: SnippetLibrary) -> Self {
-        Self {
-            snippets,
             selected_category: "全部".to_string(),
             search_query: String::new(),
             execution_output: None,

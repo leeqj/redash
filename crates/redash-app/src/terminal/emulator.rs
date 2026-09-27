@@ -288,7 +288,6 @@ impl TerminalEmulator {
         self.processor.advance(&mut self.term, bytes);
     }
 
-    #[allow(dead_code)]
     pub fn resize(&mut self, cols: usize, rows: usize) {
         self.cols = cols;
         self.rows = rows;

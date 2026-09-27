@@ -6,14 +6,12 @@ use crate::components::icon::Icon;
 use crate::components::theme::DarkTechTheme;
 use redash_core::config::{AuthMethod, HostConfig, HostId, TargetOs};
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HostModalMode {
     Create,
     Edit(Box<HostConfig>),
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AuthTypeSelection {
     Password,
@@ -21,7 +19,6 @@ pub enum AuthTypeSelection {
     Agent,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HostModalField {
     Name,
@@ -37,7 +34,7 @@ pub enum HostModalField {
     BandwidthResetDay,
 }
 
-#[allow(dead_code, clippy::large_enum_variant)]
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub enum HostModalAction {
     Save {
@@ -53,7 +50,6 @@ pub enum HostModalAction {
 pub type HostModalCallback =
     Box<dyn Fn(HostModalAction, &mut Window, &mut Context<HostModal>) + 'static>;
 
-#[allow(dead_code)]
 pub struct HostModal {
     pub mode: HostModalMode,
     pub name: String,
@@ -79,7 +75,6 @@ pub struct HostModal {
     pub on_action: Option<HostModalCallback>,
 }
 
-#[allow(dead_code)]
 impl HostModal {
     pub fn new_create() -> Self {
         Self {

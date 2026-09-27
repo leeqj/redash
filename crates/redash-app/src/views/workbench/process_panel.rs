@@ -9,7 +9,6 @@ use redash_core::config::HostConfig;
 use redash_core::probe::process::{ProcessItem, ProcessManager};
 use redash_core::session::SessionManager;
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProcessSortField {
     CpuDesc,
@@ -17,7 +16,6 @@ pub enum ProcessSortField {
     PidAsc,
 }
 
-#[allow(dead_code)]
 pub struct ProcessPanel {
     pub host: HostConfig,
     pub session_mgr: Arc<SessionManager>,
@@ -28,7 +26,6 @@ pub struct ProcessPanel {
     pub scroll_handle: ScrollHandle,
 }
 
-#[allow(dead_code)]
 impl ProcessPanel {
     pub fn new(host: HostConfig, session_mgr: Arc<SessionManager>) -> Self {
         Self {

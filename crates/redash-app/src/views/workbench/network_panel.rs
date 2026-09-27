@@ -9,7 +9,6 @@ use redash_core::config::HostConfig;
 use redash_core::probe::network::{ListeningPort, NetworkDiagnostics};
 use redash_core::session::SessionManager;
 
-#[allow(dead_code)]
 pub struct NetworkPanel {
     pub rates_available: bool,
     pub totals_available: bool,
@@ -26,7 +25,6 @@ pub struct NetworkPanel {
     pub scroll_handle: ScrollHandle,
 }
 
-#[allow(dead_code)]
 impl NetworkPanel {
     pub fn new(host: HostConfig, session_mgr: Arc<SessionManager>) -> Self {
         Self {

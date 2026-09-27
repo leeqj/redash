@@ -27,7 +27,6 @@ impl SparklineSeries {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Clone)]
 pub struct SparklineChart {
     pub data: Vec<f32>,
@@ -73,13 +72,11 @@ impl SparklineChart {
     }
 
     /// Convenience constructor using DarkTech cyan accent color.
-    #[allow(dead_code)]
     pub fn tech(data: Vec<f32>) -> Self {
         Self::new(data, DarkTechTheme::accent_cyan())
     }
 
     /// Constructor for multi-series overlaid charts (e.g. CPU + RAM + DISK on one scale).
-    #[allow(dead_code)]
     pub fn multi(series: Vec<SparklineSeries>) -> Self {
         let stroke_color = series
             .first()

@@ -9,7 +9,6 @@ use redash_core::config::HostConfig;
 use redash_core::probe::docker::{DockerContainerDetail, DockerManager};
 use redash_core::session::SessionManager;
 
-#[allow(dead_code)]
 pub struct DockerPanel {
     pub host: HostConfig,
     pub session_mgr: Arc<SessionManager>,
@@ -22,7 +21,6 @@ pub struct DockerPanel {
     pub scroll_handle: ScrollHandle,
 }
 
-#[allow(dead_code)]
 impl DockerPanel {
     pub fn new(host: HostConfig, session_mgr: Arc<SessionManager>) -> Self {
         Self {

@@ -243,7 +243,6 @@ pub struct TerminalView {
     pub search: TerminalSearch,
 }
 
-#[allow(dead_code)]
 impl TerminalView {
     pub fn new(
         cols: usize,
@@ -396,6 +395,7 @@ impl TerminalView {
     }
 
     /// Feeds raw terminal bytes directly (useful for testing or local replay)
+    #[allow(dead_code)]
     pub fn process_input_bytes(&mut self, bytes: &[u8], cx: &mut Context<Self>) {
         self.emulator.process_input(bytes);
         let osc_titles = AgentDetector::extract_osc_titles(bytes);
@@ -425,16 +425,19 @@ impl TerminalView {
     }
 
     /// Check if this view currently has input focus
+    #[allow(dead_code)]
     pub fn is_focused(&self, window: &Window) -> bool {
         self.focus_handle.is_focused(window)
     }
 
     /// Access the underlying FocusHandle
+    #[allow(dead_code)]
     pub fn focus_handle(&self) -> &FocusHandle {
         &self.focus_handle
     }
 
     /// Resize terminal emulation grid and propagate window change to remote SSH PTY
+    #[allow(dead_code)]
     pub fn resize(&mut self, cols: usize, rows: usize) {
         let cols = cols.clamp(20, 500);
         let rows = rows.clamp(5, 200);
@@ -492,15 +495,18 @@ impl TerminalView {
     }
 
     /// Scroll terminal buffer by delta lines
+    #[allow(dead_code)]
     pub fn scroll(&mut self, delta: i32, cx: &mut Context<Self>) {
         self.emulator.scroll(delta);
         cx.notify();
     }
 
+    #[allow(dead_code)]
     pub fn cols(&self) -> usize {
         self.emulator.cols
     }
 
+    #[allow(dead_code)]
     pub fn rows(&self) -> usize {
         self.emulator.rows
     }
