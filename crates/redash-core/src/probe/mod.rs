@@ -57,12 +57,129 @@ impl ProbeScheduler {
         }
     }
 
-    pub async fn poll_host(&self, host: &HostConfig) -> anyhow::Result<NodeMetrics> {
-        self.poll_host_with_settings(host, &AppSettings::default())
-            .await
+    /// Tier 1: Lightweight background monitoring for Fleet overview and Alerts.
+    ///
+    /// Executes a single, minimal command querying ONLY lightweight kernel virtual file
+    /// interfaces (/proc/stat, /proc/meminfo, /proc/loadavg, /proc/uptime, /proc/net/dev, df -k /)
+    /// plus a single ping RTT measurement over 1 SSH channel.
+    ///
+    /// Completely avoids high-overhead process scans (`ps`), container statistics (`docker stats`),
+    /// container listings (`docker ps`), and network port scans (`ss`).
+    pub async fn poll_host_fleet(
+        &self,
+        host: &HostConfig,
+        settings: &AppSettings,
+    ) -> anyhow::Result<NodeMetrics> {
+        let (cmd, darwin) = match host.target_os {
+            TargetOs::Darwin => (DarwinProbe::fleet_command(), true),
+            TargetOs::Linux => (LinuxProbe::fleet_command(), false),
+            _ => anyhow::bail!(
+                "当前平台不支持自动指标采集，请选择 Linux 或 macOS；终端和 SFTP 可独立使用"
+            ),
+        };
+        let duration = Duration::from_secs(settings.probe_timeout_secs.clamp(1, 120));
+        let (basic, ping) = tokio::join!(
+            self.session_mgr.exec(host, cmd, duration),
+            tokio::time::timeout(duration, self.session_mgr.ping_host(host)),
+        );
+        let basic = basic?;
+        anyhow::ensure!(
+            basic.exit_code == 0,
+            "Probe command failed ({}): {}",
+            basic.exit_code,
+            basic.stderr
+        );
+        let mut metrics = if darwin {
+            DarwinProbe::parse(&host.id, &basic.stdout)?
+        } else {
+            LinuxProbe::parse(&host.id, &basic.stdout)?
+        };
+        metrics.rtt_ms = ping
+            .ok()
+            .and_then(Result::ok)
+            .map(|elapsed| elapsed.as_millis().min(u32::MAX as u128) as u32);
+
+        // Tier 1 explicitly leaves heavy panels as not queried
+        metrics.listening_ports_available = false;
+        metrics.containers_available = false;
+        metrics.processes_available = false;
+
+        self.record_history(host, &mut metrics, settings).await;
+        Ok(metrics)
     }
 
-    pub async fn poll_host_with_settings(
+    /// Tier 2 on-demand probe: Query Docker containers and live stats for a specific host.
+    pub async fn poll_host_containers(
+        &self,
+        host: &HostConfig,
+        timeout: Duration,
+    ) -> anyhow::Result<Vec<DockerContainerDetail>> {
+        let (list_res, stats_res) = tokio::join!(
+            self.session_mgr
+                .exec(host, DockerManager::list_containers_cmd(), timeout),
+            self.session_mgr
+                .exec(host, DockerManager::stats_cmd(), timeout),
+        );
+        let list = list_res?;
+        let stats = stats_res?;
+        anyhow::ensure!(
+            list.exit_code == 0,
+            "Docker ps failed ({}): {}",
+            list.exit_code,
+            list.stderr
+        );
+        anyhow::ensure!(
+            stats.exit_code == 0,
+            "Docker stats failed ({}): {}",
+            stats.exit_code,
+            stats.stderr
+        );
+        Ok(DockerManager::parse_containers(&list.stdout, &stats.stdout))
+    }
+
+    /// Tier 2 on-demand probe: Query process table for a specific host.
+    pub async fn poll_host_processes(
+        &self,
+        host: &HostConfig,
+        sort_by: &str,
+        limit: usize,
+        timeout: Duration,
+    ) -> anyhow::Result<Vec<ProcessItem>> {
+        let cmd = ProcessManager::list_cmd(sort_by, limit);
+        let res = self.session_mgr.exec(host, &cmd, timeout).await?;
+        anyhow::ensure!(
+            res.exit_code == 0,
+            "Process query failed ({}): {}",
+            res.exit_code,
+            res.stderr
+        );
+        Ok(ProcessManager::parse_processes(&res.stdout))
+    }
+
+    /// Tier 2 on-demand probe: Query listening ports for a specific host.
+    pub async fn poll_host_ports(
+        &self,
+        host: &HostConfig,
+        timeout: Duration,
+    ) -> anyhow::Result<Vec<ListeningPort>> {
+        let cmd = NetworkDiagnostics::listening_ports_cmd();
+        let res = self.session_mgr.exec(host, cmd, timeout).await?;
+        anyhow::ensure!(
+            res.exit_code == 0,
+            "Listening ports query failed ({}): {}",
+            res.exit_code,
+            res.stderr
+        );
+        Ok(NetworkDiagnostics::parse_listening_ports(&res.stdout))
+    }
+
+    /// Default polling method for general callers (defaults to lightweight Tier 1 fleet polling).
+    pub async fn poll_host(&self, host: &HostConfig) -> anyhow::Result<NodeMetrics> {
+        self.poll_host_fleet(host, &AppSettings::default()).await
+    }
+
+    /// Tiered full poll (executes basic metrics + ports + processes + containers + stats + ping in parallel).
+    pub async fn poll_host_full(
         &self,
         host: &HostConfig,
         settings: &AppSettings,
@@ -136,6 +253,24 @@ impl ProbeScheduler {
                 .collection_errors
                 .push("容器信息未采集（Docker 不可用或权限不足）".into()),
         }
+        self.record_history(host, &mut metrics, settings).await;
+        Ok(metrics)
+    }
+
+    pub async fn poll_host_with_settings(
+        &self,
+        host: &HostConfig,
+        settings: &AppSettings,
+    ) -> anyhow::Result<NodeMetrics> {
+        self.poll_host_full(host, settings).await
+    }
+
+    async fn record_history(
+        &self,
+        host: &HostConfig,
+        metrics: &mut NodeMetrics,
+        settings: &AppSettings,
+    ) {
         let now = std::time::Instant::now();
         let mut histories = self.histories.write().await;
         let history = histories.entry(host.id.clone()).or_default();
@@ -175,7 +310,6 @@ impl ProbeScheduler {
         while history.metrics_history.len() > limit {
             history.metrics_history.pop_front();
         }
-        Ok(metrics)
     }
 
     pub async fn forget_hosts(&self, ids: &[HostId]) {
@@ -219,5 +353,64 @@ mod tests {
         assert_eq!(history.metrics_history.front().unwrap().uptime_secs, 10);
         assert_eq!(history.metrics_history.back().unwrap().uptime_secs, 69);
         assert_eq!(history.latest().unwrap().uptime_secs, 69);
+    }
+
+    #[tokio::test]
+    async fn test_record_history_calculates_network_rates() {
+        let scheduler = ProbeScheduler::new(Arc::new(SessionManager::new()));
+        let mut host = HostConfig::new("Test Rates", "127.0.0.1", "root");
+        host.id = HostId("test-rates".into());
+        let settings = AppSettings::default();
+
+        let mut m1 = NodeMetrics {
+            host_id: host.id.clone(),
+            uptime_secs: 100,
+            net_available: true,
+            net: NetMetrics {
+                total_rx_bytes: 1000,
+                total_tx_bytes: 500,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        scheduler.record_history(&host, &mut m1, &settings).await;
+
+        let history = scheduler.get_history(&host.id).await.unwrap();
+        assert_eq!(history.len(), 1);
+        assert!(!history[0].net_rates_available);
+
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let mut m2 = NodeMetrics {
+            host_id: host.id.clone(),
+            uptime_secs: 101,
+            net_available: true,
+            net: NetMetrics {
+                total_rx_bytes: 2000,
+                total_tx_bytes: 1000,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        scheduler.record_history(&host, &mut m2, &settings).await;
+
+        let latest = scheduler.get_latest(&host.id).await.unwrap();
+        assert!(latest.net_rates_available);
+        assert!(latest.net.rx_bytes_per_sec > 0);
+        assert!(latest.net.tx_bytes_per_sec > 0);
+    }
+
+    #[test]
+    fn test_tiered_flags_contract() {
+        let m = NodeMetrics {
+            containers_available: false,
+            processes_available: false,
+            listening_ports_available: false,
+            ..Default::default()
+        };
+
+        assert!(!m.containers_available);
+        assert!(!m.processes_available);
+        assert!(!m.listening_ports_available);
     }
 }

@@ -5,6 +5,31 @@ use anyhow::Result;
 pub struct LinuxProbe;
 
 impl LinuxProbe {
+    /// Lightweight Tier 1 probe command: queries virtual filesystem counters only (/proc/stat, /proc/meminfo, /proc/loadavg, /proc/uptime, /proc/net/dev, df -k /).
+    /// Eliminates process listing (`ps`) and Docker daemon calls (`docker ps` / `docker stats`).
+    pub fn fleet_command() -> &'static str {
+        r#"
+export LC_ALL=C
+echo "===CPU_BEFORE==="
+head -n 1 /proc/stat
+sleep 0.05 2>/dev/null || sleep 0.1 2>/dev/null || sleep 1
+echo "===CPU_AFTER==="
+head -n 1 /proc/stat
+echo "===UPTIME==="
+cat /proc/uptime 2>/dev/null
+echo "===NPROC==="
+nproc 2>/dev/null || grep -c ^processor /proc/cpuinfo 2>/dev/null || echo 1
+echo "===LOAD==="
+cat /proc/loadavg 2>/dev/null
+echo "===MEM==="
+cat /proc/meminfo 2>/dev/null | head -n 10
+echo "===DF==="
+df -k -P / 2>/dev/null | tail -n +2
+echo "===NET==="
+cat /proc/net/dev 2>/dev/null | tail -n +3
+"#
+    }
+
     pub fn command() -> &'static str {
         r#"
 export LC_ALL=C
@@ -284,5 +309,52 @@ abc12345	my-redis	redis:7-alpine	Up 2 days	running
         assert_eq!(metrics.containers.len(), 1);
         assert_eq!(metrics.containers[0].name, "my-redis");
         assert_eq!(metrics.containers[0].state, "running");
+    }
+
+    #[test]
+    fn test_linux_probe_fleet_command_parsing() {
+        let fleet_cmd = LinuxProbe::fleet_command();
+        assert!(fleet_cmd.contains("/proc/stat"));
+        assert!(fleet_cmd.contains("/proc/meminfo"));
+        assert!(fleet_cmd.contains("/proc/loadavg"));
+        assert!(fleet_cmd.contains("/proc/uptime"));
+        assert!(fleet_cmd.contains("/proc/net/dev"));
+        assert!(fleet_cmd.contains("df -k -P /"));
+        assert!(!fleet_cmd.contains("ps -eo"));
+        assert!(!fleet_cmd.contains("docker ps"));
+
+        let fleet_output = r#"
+===CPU_BEFORE===
+cpu 100 0 100 800 0 0 0 0 0 0
+===CPU_AFTER===
+cpu 150 0 150 900 0 0 0 0 0 0
+===UPTIME===
+86400.12 654321.00
+===LOAD===
+1.20 0.85 0.55 2/300 9999
+===NPROC===
+8
+===MEM===
+MemTotal:        32768000 kB
+MemFree:          8192000 kB
+MemAvailable:    16384000 kB
+===DF===
+/dev/nvme0n1p2   209715200 104857600 104857600  50% /
+===NET===
+  eth0: 500000000 50000 0 0 0 0 0 0 250000000 25000 0 0 0 0 0 0
+"#;
+        let host_id = HostId("fleet-linux-node".into());
+        let metrics = LinuxProbe::parse(&host_id, fleet_output).expect("fleet parse should succeed");
+
+        assert_eq!(metrics.uptime_secs, 86400);
+        assert!((metrics.cpu.load_1 - 1.20).abs() < 1e-5);
+        assert_eq!(metrics.cpu.cores, 8);
+        assert_eq!(metrics.mem.total_bytes, 32768000 * 1024);
+        assert_eq!(metrics.net.total_rx_bytes, 500000000);
+        assert_eq!(metrics.disks.len(), 1);
+        assert_eq!(metrics.disks[0].mount_point, "/");
+        assert_eq!(metrics.disks[0].usage_percent, 50.0);
+        assert!(metrics.top_processes.is_empty());
+        assert!(metrics.containers.is_empty());
     }
 }

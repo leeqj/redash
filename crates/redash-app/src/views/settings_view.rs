@@ -583,8 +583,8 @@ impl SettingsView {
             // 4. 自动刷新开关
             .child(Self::render_toggle(
                 draft.auto_refresh,
-                &crate::t!("settings.auto_probe_title"),
-                &crate::t!("settings.auto_probe_desc"),
+                crate::t!("settings.auto_probe_title"),
+                crate::t!("settings.auto_probe_desc"),
                 |v, this, cx| {
                     this.draft.auto_refresh = v;
                     cx.notify();
@@ -933,8 +933,8 @@ impl SettingsView {
             // 5. 选中文本自动复制开关
             .child(Self::render_toggle(
                 draft.terminal_copy_on_select,
-                &crate::t!("settings.copy_on_select_title"),
-                &crate::t!("settings.copy_on_select_desc"),
+                crate::t!("settings.copy_on_select_title"),
+                crate::t!("settings.copy_on_select_desc"),
                 |v, this, cx| {
                     this.draft.terminal_copy_on_select = v;
                     cx.notify();
@@ -1608,7 +1608,7 @@ impl SettingsView {
             .child(Self::render_toggle(
                 draft.alert_notify_offline,
                 crate::t!("settings.notify_offline"),
-                &crate::t!("settings.notify_offline_desc"),
+                crate::t!("settings.notify_offline_desc"),
                 |v, this, cx| {
                     this.draft.alert_notify_offline = v;
                     cx.notify();
@@ -1619,7 +1619,7 @@ impl SettingsView {
             .child(Self::render_toggle(
                 draft.alert_macos_notification,
                 crate::t!("settings.notify_macos"),
-                &crate::t!("settings.notify_macos_desc"),
+                crate::t!("settings.notify_macos_desc"),
                 |v, this, cx| {
                     this.draft.alert_macos_notification = v;
                     cx.notify();
@@ -1875,8 +1875,8 @@ impl SettingsView {
                                     .on_click(cx.listener(|_this, _, _, cx| {
                                         cx.spawn(async move |this, cx| {
                                             let res = AlertDispatcher::send_macos_notification(
-                                                &crate::t!("settings.status_macos_notify_title"),
-                                                &crate::t!("settings.status_macos_notify_body"),
+                                                crate::t!("settings.status_macos_notify_title"),
+                                                crate::t!("settings.status_macos_notify_body"),
                                             )
                                             .await;
                                             let _ = this.update(cx, |this, cx| {

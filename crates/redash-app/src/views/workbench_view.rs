@@ -289,6 +289,21 @@ impl WorkbenchView {
             WorkbenchMode::Sftp => {
                 self.ensure_sftp_initialized(cx);
             }
+            WorkbenchMode::Docker => {
+                self.docker_panel.update(cx, |p, cx| {
+                    p.refresh(cx);
+                });
+            }
+            WorkbenchMode::Processes => {
+                self.process_panel.update(cx, |p, cx| {
+                    p.refresh(cx);
+                });
+            }
+            WorkbenchMode::Network => {
+                self.network_panel.update(cx, |p, cx| {
+                    p.refresh_ports(cx);
+                });
+            }
             _ => {}
         }
         cx.notify();

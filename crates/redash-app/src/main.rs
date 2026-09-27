@@ -1037,7 +1037,7 @@ impl ReDashApp {
                     let scheduler = Arc::clone(&scheduler);
                     let current = current.clone();
                     async move {
-                        let result = scheduler.poll_host_with_settings(&host, &current).await;
+                        let result = scheduler.poll_host_fleet(&host, &current).await;
                         (host, result)
                     }
                 }))

@@ -5,6 +5,29 @@ use anyhow::Result;
 pub struct DarwinProbe;
 
 impl DarwinProbe {
+    /// Lightweight Tier 1 probe command for macOS: excludes high-overhead process listing (`ps`).
+    pub fn fleet_command() -> &'static str {
+        r#"
+export LC_ALL=C
+echo "===CPU==="
+top -l 2 -s 1 -n 0 | grep 'CPU usage' | tail -n 1
+echo "===NET==="
+netstat -ibn
+echo "===BOOT==="
+sysctl -n kern.boottime 2>/dev/null
+echo "===NPROC==="
+sysctl -n hw.ncpu 2>/dev/null || echo 4
+echo "===UPTIME==="
+uptime 2>/dev/null
+echo "===MEM==="
+sysctl -n hw.memsize 2>/dev/null
+echo "===VMSTAT==="
+vm_stat 2>/dev/null
+echo "===DF==="
+df -k -P / 2>/dev/null | tail -n +2
+"#
+    }
+
     pub fn command() -> &'static str {
         r#"
 export LC_ALL=C
@@ -242,5 +265,57 @@ mod tests {
         assert_eq!(metrics.mem.used_bytes, 35 * 4096);
         assert!(!metrics.net_available);
         assert!(DarwinProbe::parse(&HostId::new(), "===MEM===\n1048576").is_err());
+    }
+
+    #[test]
+    fn test_darwin_probe_fleet_command_parsing() {
+        let fleet_cmd = DarwinProbe::fleet_command();
+        assert!(fleet_cmd.contains("vm_stat"));
+        assert!(fleet_cmd.contains("sysctl -n hw.memsize"));
+        assert!(fleet_cmd.contains("top -l 2 -s 1 -n 0"));
+        assert!(!fleet_cmd.contains("ps -eo"));
+
+        let fleet_output = r#"
+===CPU===
+CPU usage: 12.50% user, 7.50% sys, 80.00% idle
+===NET===
+Name  Mtu   Network       Address            Ipkts Ierrs     Ibytes    Opkts Oerrs     Obytes  Coll
+en0   1500  <Link#4>      00:11:22:33:44:55  10000     0   10485760     8000     0    5242880     0
+===BOOT===
+{ sec = 1700000000, usec = 0 }
+===NPROC===
+10
+===UPTIME===
+12:00  up 10 days,  2:30, 3 users, load averages: 1.50 1.20 0.90
+===MEM===
+17179869184
+===VMSTAT===
+Mach Virtual Memory Statistics: (page size of 4096 bytes)
+Pages free:                              100000.
+Pages active:                            500000.
+Pages inactive:                          300000.
+Pages speculative:                        50000.
+Pages throttled:                              0.
+Pages wired down:                        200000.
+Pages purgeable:                          10000.
+"Pages purgeable and non-volatile":           0.
+File-backed pages:                       150000.
+"Anonymous pages":                       650000.
+Pages used for internal operations:           0.
+Pages occupied by compressor:            100000.
+===DF===
+/dev/disk1s1s1 488245288 20000000 200000000 10% /
+"#;
+        let host_id = HostId("fleet-mac-node".into());
+        let metrics = DarwinProbe::parse(&host_id, fleet_output).expect("darwin fleet parse should succeed");
+
+        assert!((metrics.cpu.usage_percent - 20.0).abs() < 1e-3);
+        assert_eq!(metrics.cpu.cores, 10);
+        assert_eq!(metrics.mem.total_bytes, 17179869184);
+        assert!(metrics.mem.used_bytes > 0);
+        assert!(metrics.net_available);
+        assert_eq!(metrics.net.total_rx_bytes, 10485760);
+        assert_eq!(metrics.net.total_tx_bytes, 5242880);
+        assert!(metrics.top_processes.is_empty());
     }
 }

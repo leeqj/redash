@@ -50,7 +50,9 @@ pub fn start_alert_monitor(state: AppState) -> tokio::task::JoinHandle<()> {
                     let host_id_str = host.id.0.clone();
                     let host_name = host.name.clone();
 
-                    let poll_res = scheduler.poll_host(&host).await;
+                    let poll_res = scheduler
+                        .poll_host_fleet(&host, &redash_core::config::AppSettings::default())
+                        .await;
                     let events = match &poll_res {
                         Ok(metrics) => {
                             // Update server metrics cache for fast dashboard queries
