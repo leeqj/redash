@@ -972,7 +972,7 @@ impl Render for FleetView {
                                                             .items_center()
                                                             .gap_1()
                                                             .child(Icon::plus().with_size(px(9.0)).with_color(DarkTechTheme::text_muted()))
-                                                            .child("+")
+                                                            .child(crate::t!("fleet.select"))
                                                     }),
                                             ),
                                     )
