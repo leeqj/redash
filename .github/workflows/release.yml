@@ -1,0 +1,111 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release Git Tag (e.g. v0.1.0-beta)'
+        required: true
+        default: 'v0.1.0-beta'
+
+permissions:
+  contents: write
+
+jobs:
+  build-macos:
+    name: Build macOS Desktop (Apple Silicon)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust 1.96.0
+        run: rustup toolchain install 1.96.0 --profile minimal
+      - name: Package macOS App Bundle
+        run: ./scripts/bundle_mac.sh
+      - name: Archive Desktop Artifacts
+        run: |
+          ditto -c -k --keepParent target/release/ReDash.app ReDash-macos-arm64.zip
+          tar -czvf redash-cli-macos-arm64.tar.gz -C target/release redash
+      - name: Upload macOS Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-artifacts
+          path: |
+            ReDash-macos-arm64.zip
+            redash-cli-macos-arm64.tar.gz
+
+  build-linux-server:
+    name: Build Linux Server Gateway (x86_64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust 1.96.0
+        run: rustup toolchain install 1.96.0 --profile minimal
+      - name: Build redash-server
+        run: cargo build --release --bin redash-server
+      - name: Package Server Artifact
+        run: |
+          mkdir -p dist-server/web
+          cp target/release/redash-server dist-server/
+          cp -r crates/redash-server/web/* dist-server/web/
+          tar -czvf redash-server-linux-x86_64.tar.gz -C dist-server .
+      - name: Upload Linux Server Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-server-artifact
+          path: redash-server-linux-x86_64.tar.gz
+
+  build-wasm-client:
+    name: Build WebAssembly Client
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust 1.96.0 and WASM target
+        run: |
+          rustup toolchain install 1.96.0 --profile minimal
+          rustup target add wasm32-unknown-unknown
+      - name: Install wasm-bindgen-cli
+        run: cargo install wasm-bindgen-cli --version 0.2.105
+      - name: Build WASM client
+        run: |
+          cargo build --target wasm32-unknown-unknown -p redash-web --release
+          wasm-bindgen target/wasm32-unknown-unknown/release/redash_web.wasm \
+            --out-dir crates/redash-server/web/pkg \
+            --target web \
+            --no-typescript
+      - name: Archive WASM Bundle
+        run: |
+          cd crates/redash-server/web
+          zip -r ../../../redash-web-wasm.zip .
+      - name: Upload WASM Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm-artifact
+          path: redash-web-wasm.zip
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: [build-macos, build-linux-server, build-wasm-client]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+      - name: List Artifacts
+        run: ls -la release-assets
+      - name: Publish Release to GitHub
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release-assets/ReDash-macos-arm64.zip
+            release-assets/redash-cli-macos-arm64.tar.gz
+            release-assets/redash-server-linux-x86_64.tar.gz
+            release-assets/redash-web-wasm.zip
+          generate_release_notes: true
+          draft: false
+          prerelease: false
