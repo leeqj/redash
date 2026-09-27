@@ -1620,7 +1620,7 @@ mod tests {
         let content_w = width - content_x;
 
         // 1. Click search bar to focus
-        let (sb_x, sb_y, sb_w, sb_h) = crate::render::get_fleet_search_bar_rect(content_x, content_y, content_w);
+        let (sb_x, sb_y, _sb_w, sb_h) = crate::render::get_fleet_search_bar_rect(content_x, content_y, content_w);
         assert!(!state.is_filter_focused);
         let action = handle_mouse_click(&mut state, sb_x + 10.0, sb_y + sb_h / 2.0, width, height);
         assert!(action.is_none());

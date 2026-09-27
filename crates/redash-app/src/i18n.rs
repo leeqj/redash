@@ -1,4 +1,4 @@
-pub use redash_core::i18n::{I18n, Locale};
+pub use redash_ui_core::i18n::{I18n, Locale};
 
 /// Ergonomic translation macro for static strings.
 /// Returns `&'static str` with zero heap allocation.
@@ -30,7 +30,7 @@ mod tests {
 
     #[test]
     fn test_app_i18n_macros() {
-        let _guard = redash_core::i18n::TEST_LOCALE_MUTEX.lock().unwrap();
+        let _guard = redash_ui_core::i18n::TEST_LOCALE_MUTEX.lock().unwrap();
         I18n::set_locale(Locale::ZhCn);
         assert_eq!(t!("nav.fleet"), "全局脉搏大盘");
         assert_eq!(t!("common.save"), "保存修改");
@@ -62,7 +62,7 @@ mod tests {
 
     #[test]
     fn test_app_i18n_hot_language_switch_consistency() {
-        let _guard = redash_core::i18n::TEST_LOCALE_MUTEX.lock().unwrap();
+        let _guard = redash_ui_core::i18n::TEST_LOCALE_MUTEX.lock().unwrap();
         for loc in Locale::all() {
             I18n::set_locale(*loc);
             assert_eq!(I18n::locale(), *loc);

@@ -253,13 +253,6 @@ impl WorkbenchView {
         self.close_pane_by_id(&active_id, cx);
     }
 
-    #[allow(dead_code)]
-    pub fn swap_panes(&mut self, pane_a: &str, pane_b: &str, cx: &mut Context<Self>) {
-        if self.split_manager.swap_panes(pane_a, pane_b) {
-            cx.notify();
-        }
-    }
-
     pub fn swap_active_pane(&mut self, cx: &mut Context<Self>) {
         let active_id = self.split_manager.active_pane_id.clone();
         let panes = self.split_manager.panes();

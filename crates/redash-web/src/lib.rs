@@ -6,7 +6,7 @@
 pub mod app;
 pub mod gateway;
 pub mod input;
-pub mod models;
+pub use redash_types as models;
 pub mod render;
 pub mod theme;
 

@@ -7,7 +7,6 @@ license.workspace = true
 
 [dependencies]
 redash-types = { workspace = true }
-redash-ui-core = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 log = { workspace = true }

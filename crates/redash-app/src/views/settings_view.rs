@@ -2801,7 +2801,7 @@ mod tests {
 
     #[test]
     fn test_settings_view_language_preview_and_revert() {
-        let _guard = redash_core::i18n::TEST_LOCALE_MUTEX.lock().unwrap();
+        let _guard = redash_ui_core::i18n::TEST_LOCALE_MUTEX.lock().unwrap();
         let initial = AppSettings::default();
         let mut view = SettingsView {
             category: SettingsCategory::Appearance,

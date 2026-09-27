@@ -137,17 +137,6 @@ impl BatchView {
         }
     }
 
-    #[allow(dead_code)]
-    pub fn with_cx(
-        targets: Vec<HostConfig>,
-        session_mgr: Arc<SessionManager>,
-        cx: &mut Context<Self>,
-    ) -> Self {
-        let mut view = Self::new(targets, session_mgr);
-        view.focus_handle = Some(cx.focus_handle());
-        view
-    }
-
     pub fn set_hosts(&mut self, targets: Vec<HostConfig>, cx: &mut Context<Self>) {
         self.targets = targets;
         cx.notify();

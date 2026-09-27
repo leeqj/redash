@@ -4083,14 +4083,14 @@ mod tests {
         assert_eq!(cursor, "pointer");
 
         // 3. Fleet search bar returns text
-        let (sb_x, sb_y, sb_w, sb_h) = get_fleet_search_bar_rect(content_x, content_y, content_w);
+        let (sb_x, sb_y, _sb_w, sb_h) = get_fleet_search_bar_rect(content_x, content_y, content_w);
         let (inter, cursor) = is_interactive_element(sb_x + 10.0, sb_y + sb_h / 2.0, width, height, &state);
         assert!(inter);
         assert_eq!(cursor, "text");
 
         // 4. Host card returns pointer
         let padding = 24.0;
-        let card_w = ((content_w - padding * 3.0) / 2.0).max(340.0);
+        let _card_w = ((content_w - padding * 3.0) / 2.0).max(340.0);
         let card_x = content_x + padding;
         let card_y = content_y + 54.0;
         let (inter, cursor) = is_interactive_element(card_x + 20.0, card_y + 20.0, width, height, &state);
