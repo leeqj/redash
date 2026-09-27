@@ -10,7 +10,7 @@ pub mod models;
 pub mod render;
 pub mod theme;
 
-use app::AppState;
+use app::{ActiveView, AppState};
 use gateway::GatewayClient;
 use input::{handle_key_down, handle_mouse_click, UiAction};
 use render::render_frame;
@@ -115,17 +115,28 @@ pub fn start_web_app(canvas_id: &str) -> Result<(), JsValue> {
         gateway::async_load_settings(on_settings_loaded);
     }
 
+    // Auto-focus canvas on startup
+    {
+        let html_el: &web_sys::HtmlElement = canvas.unchecked_ref();
+        let _ = html_el.focus();
+    }
+
     // Register Mouse Event Listener on Canvas
     {
         let app_state_clone = app_state.clone();
         let gateway_clone = gateway.clone();
+        let canvas_clone = canvas.clone();
         let window = window.clone();
 
         let on_mousedown = Closure::<dyn FnMut(_)>::new(move |e: MouseEvent| {
-            let x = e.client_x() as f64;
-            let y = e.client_y() as f64;
+            let rect = canvas_clone.get_bounding_client_rect();
+            let x = e.client_x() as f64 - rect.left();
+            let y = e.client_y() as f64 - rect.top();
             let width = window.inner_width().unwrap().as_f64().unwrap();
             let height = window.inner_height().unwrap().as_f64().unwrap();
+
+            let html_el: &web_sys::HtmlElement = canvas_clone.unchecked_ref();
+            let _ = html_el.focus();
 
             let mut state = app_state_clone.borrow_mut();
             if let Some(action) = handle_mouse_click(&mut state, x, y, width, height) {
@@ -229,8 +240,32 @@ pub fn start_web_app(canvas_id: &str) -> Result<(), JsValue> {
                     }
                     UiAction::SaveNewHost => {
                         if let Some(new_host) = state.build_new_host() {
-                            state.hosts.push(new_host);
+                            state.hosts.push(new_host.clone());
+                            let on_done = Rc::new(RefCell::new(move |res: Result<models::HostConfig, String>| match res {
+                                Ok(saved) => {
+                                    console::log_1(&format!("Saved host to backend: {}", saved.name).into());
+                                }
+                                Err(err) => {
+                                    console::log_1(&format!("Failed to persist host: {}", err).into());
+                                }
+                            }));
+                            gateway::async_save_host(new_host, on_done);
                         }
+                    }
+                    UiAction::DeleteHost(host_id) => {
+                        state.hosts.retain(|h| h.id.0 != host_id);
+                        if state.selected_host_id.as_deref() == Some(&host_id) {
+                            state.selected_host_id = state.hosts.first().map(|h| h.id.0.clone());
+                        }
+                        let on_done = Rc::new(RefCell::new(move |res: Result<(), String>| match res {
+                            Ok(()) => {
+                                console::log_1(&"Host deleted from backend".into());
+                            }
+                            Err(err) => {
+                                console::log_1(&format!("Failed to delete host from backend: {}", err).into());
+                            }
+                        }));
+                        gateway::async_delete_host(host_id, on_done);
                     }
                     UiAction::RunBatch { host_ids, command } => {
                         let app_state_batch = app_state_clone.clone();
@@ -267,6 +302,45 @@ pub fn start_web_app(canvas_id: &str) -> Result<(), JsValue> {
         on_mousedown.forget();
     }
 
+    // Register Mouse Move and Hover Event Listener on Canvas
+    {
+        let app_state_clone = app_state.clone();
+        let canvas_clone = canvas.clone();
+        let window = window.clone();
+
+        let on_mousemove = Closure::<dyn FnMut(_)>::new(move |e: MouseEvent| {
+            let rect = canvas_clone.get_bounding_client_rect();
+            let x = e.client_x() as f64 - rect.left();
+            let y = e.client_y() as f64 - rect.top();
+            let width = window.inner_width().unwrap().as_f64().unwrap();
+            let height = window.inner_height().unwrap().as_f64().unwrap();
+
+            let mut state = app_state_clone.borrow_mut();
+            let (_, cursor) = render::is_interactive_element(x, y, width, height, &state);
+            let html_el: &web_sys::HtmlElement = canvas_clone.unchecked_ref();
+            let _ = html_el.style().set_property("cursor", cursor);
+            let _ = state.set_hover_pos(Some((x, y)));
+        });
+
+        canvas.set_onmousemove(Some(on_mousemove.as_ref().unchecked_ref()));
+        on_mousemove.forget();
+    }
+
+    // Register Mouse Leave Event Listener on Canvas
+    {
+        let app_state_clone = app_state.clone();
+        let canvas_clone = canvas.clone();
+
+        let on_mouseleave = Closure::<dyn FnMut()>::new(move || {
+            let html_el: &web_sys::HtmlElement = canvas_clone.unchecked_ref();
+            let _ = html_el.style().set_property("cursor", "default");
+            let _ = app_state_clone.borrow_mut().set_hover_pos(None);
+        });
+
+        canvas.set_onmouseleave(Some(on_mouseleave.as_ref().unchecked_ref()));
+        on_mouseleave.forget();
+    }
+
     // Register Keyboard Event Listener on Canvas
     {
         let app_state_clone = app_state.clone();
@@ -277,6 +351,24 @@ pub fn start_web_app(canvas_id: &str) -> Result<(), JsValue> {
             let is_ctrl = e.ctrl_key() || e.meta_key();
 
             let mut state = app_state_clone.borrow_mut();
+
+            // Prevent browser default on application shortcuts
+            if (key == "s" || key == "S") && is_ctrl {
+                e.prevent_default();
+            }
+            if (key == "f" || key == "F") && is_ctrl {
+                e.prevent_default();
+            }
+            if key == "Tab" && state.show_add_modal {
+                e.prevent_default();
+            }
+            if key == "Backspace" && (state.is_filter_focused || state.show_add_modal || state.terminal_search_active) {
+                e.prevent_default();
+            }
+            if key == "Enter" && is_ctrl && state.active_view == ActiveView::Batch {
+                e.prevent_default();
+            }
+
             if let Some(action) = handle_key_down(&mut state, &key, is_ctrl) {
                 match action {
                     UiAction::SendTerminalInput(input) => {
@@ -319,8 +411,32 @@ pub fn start_web_app(canvas_id: &str) -> Result<(), JsValue> {
                     }
                     UiAction::SaveNewHost => {
                         if let Some(new_host) = state.build_new_host() {
-                            state.hosts.push(new_host);
+                            state.hosts.push(new_host.clone());
+                            let on_done = Rc::new(RefCell::new(move |res: Result<models::HostConfig, String>| match res {
+                                Ok(saved) => {
+                                    console::log_1(&format!("Saved host to backend: {}", saved.name).into());
+                                }
+                                Err(err) => {
+                                    console::log_1(&format!("Failed to persist host: {}", err).into());
+                                }
+                            }));
+                            gateway::async_save_host(new_host, on_done);
                         }
+                    }
+                    UiAction::DeleteHost(host_id) => {
+                        state.hosts.retain(|h| h.id.0 != host_id);
+                        if state.selected_host_id.as_deref() == Some(&host_id) {
+                            state.selected_host_id = state.hosts.first().map(|h| h.id.0.clone());
+                        }
+                        let on_done = Rc::new(RefCell::new(move |res: Result<(), String>| match res {
+                            Ok(()) => {
+                                console::log_1(&"Host deleted from backend".into());
+                            }
+                            Err(err) => {
+                                console::log_1(&format!("Failed to delete host from backend: {}", err).into());
+                            }
+                        }));
+                        gateway::async_delete_host(host_id, on_done);
                     }
                     UiAction::RunBatch { host_ids, command } => {
                         let app_state_batch = app_state_clone.clone();

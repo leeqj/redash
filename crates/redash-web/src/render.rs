@@ -210,24 +210,66 @@ fn render_fleet_view(
     ctx.set_fill_style_str(theme.text_secondary);
     ctx.set_font("12px sans-serif");
     let count_text = format!("{} Nodes", state.hosts.len());
-    let _ = ctx.fill_text(&count_text, x + padding + 180.0, 30.0 + y);
+    let _ = ctx.fill_text(&count_text, x + padding + 140.0, 30.0 + y);
 
-    let start_y = y + 50.0;
+    // Fleet Search / Filter Bar
+    let (sb_x, sb_y, sb_w, sb_h) = get_fleet_search_bar_rect(x, y, w);
+    ctx.set_fill_style_str(theme.bg_input);
+    ctx.fill_rect(sb_x, sb_y, sb_w, sb_h);
+    ctx.set_stroke_style_str(if state.is_filter_focused {
+        theme.accent_cyan
+    } else {
+        theme.border_default
+    });
+    ctx.set_line_width(1.0);
+    ctx.stroke_rect(sb_x, sb_y, sb_w, sb_h);
+
+    if state.filter_query.is_empty() {
+        ctx.set_fill_style_str(theme.text_muted);
+        ctx.set_font("12px sans-serif");
+        ctx.set_text_align("left");
+        let _ = ctx.fill_text("🔍 搜索节点名称、IP 或标签...", sb_x + 10.0, sb_y + 19.0);
+    } else {
+        ctx.set_fill_style_str(theme.text_primary);
+        ctx.set_font("12px 'JetBrains Mono', monospace");
+        ctx.set_text_align("left");
+        let cursor_suffix = if state.is_filter_focused { "|" } else { "" };
+        let display = format!("{}{}", state.filter_query, cursor_suffix);
+        let _ = ctx.fill_text(&display, sb_x + 10.0, sb_y + 19.0);
+    }
+
+    let start_y = y + 54.0;
 
     if state.hosts.is_empty() {
         ctx.set_fill_style_str(theme.text_muted);
         ctx.set_font("14px sans-serif");
         ctx.set_text_align("center");
         let empty_msg = format!("暂无主机节点，请点击上方 '+ {}' 添加服务器", state.t("host.add_title"));
-        let _ = ctx.fill_text(
-            &empty_msg,
-            x + w / 2.0,
-            y + 120.0,
-        );
+        let _ = ctx.fill_text(&empty_msg, x + w / 2.0, y + 120.0);
         return;
     }
 
-    for (idx, host) in state.hosts.iter().enumerate() {
+    let q = state.filter_query.trim().to_lowercase();
+    let filtered_hosts: Vec<&crate::models::HostConfig> = state.hosts.iter().filter(|h| {
+        if q.is_empty() {
+            true
+        } else {
+            h.name.to_lowercase().contains(&q)
+                || h.hostname.to_lowercase().contains(&q)
+                || h.user.to_lowercase().contains(&q)
+                || h.tags.iter().any(|t| t.to_lowercase().contains(&q))
+        }
+    }).collect();
+
+    if filtered_hosts.is_empty() {
+        ctx.set_fill_style_str(theme.text_muted);
+        ctx.set_font("14px sans-serif");
+        ctx.set_text_align("center");
+        let _ = ctx.fill_text("未匹配到符合条件的主机节点", x + w / 2.0, y + 120.0);
+        return;
+    }
+
+    for (idx, host) in filtered_hosts.iter().enumerate() {
         let col = idx % 2;
         let row = idx / 2;
         let card_x = x + padding + (col as f64) * (card_w + padding);
@@ -241,6 +283,23 @@ fn render_fleet_view(
     }
 }
 
+pub fn get_fleet_search_bar_rect(x: f64, y: f64, w: f64) -> (f64, f64, f64, f64) {
+    let padding = 24.0;
+    let sb_x = x + padding + 220.0;
+    let sb_y = y + 16.0;
+    let sb_w = (w - padding * 2.0 - 240.0).clamp(180.0, 320.0);
+    let sb_h = 28.0;
+    (sb_x, sb_y, sb_w, sb_h)
+}
+
+pub fn get_fleet_host_delete_btn_rect(cx: f64, cy: f64, cw: f64) -> (f64, f64, f64, f64) {
+    let del_w = 20.0;
+    let del_h = 20.0;
+    let del_x = cx + cw - 28.0;
+    let del_y = cy + 10.0;
+    (del_x, del_y, del_w, del_h)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn render_host_card(
     ctx: &CanvasRenderingContext2d,
@@ -252,14 +311,39 @@ fn render_host_card(
     cw: f64,
     ch: f64,
 ) {
+    let is_selected = state.selected_host_id.as_deref() == Some(&host.id.0);
+    let is_hovered = state.hover_pos.is_some_and(|(hx, hy)| hx >= cx && hx <= cx + cw && hy >= cy && hy <= cy + ch);
+
     // Card Box
-    ctx.set_fill_style_str(theme.bg_card);
+    ctx.set_fill_style_str(if is_hovered { theme.bg_card_hover } else { theme.bg_card });
     ctx.fill_rect(cx, cy, cw, ch);
-    ctx.set_stroke_style_str(theme.border_default);
+    ctx.set_stroke_style_str(if is_selected {
+        theme.accent_cyan
+    } else if is_hovered {
+        theme.border_accent
+    } else {
+        theme.border_default
+    });
+    ctx.set_line_width(if is_selected { 1.5 } else { 1.0 });
     ctx.stroke_rect(cx, cy, cw, ch);
 
-    // Online Status LED
-    ctx.set_fill_style_str(theme.status_online);
+    let metrics = state.metrics.get(&host.id.0);
+
+    // Dynamic Status LED based on real metrics
+    let led_color = if let Some(m) = metrics {
+        let max_pct = m.cpu_percent().max(m.mem_percent());
+        if max_pct >= 85.0 {
+            theme.status_crit
+        } else if max_pct >= 70.0 {
+            theme.status_warn
+        } else {
+            theme.status_online
+        }
+    } else {
+        theme.text_muted
+    };
+
+    ctx.set_fill_style_str(led_color);
     ctx.begin_path();
     let _ = ctx.arc(cx + 16.0, cy + 22.0, 4.0, 0.0, std::f64::consts::PI * 2.0);
     ctx.fill();
@@ -270,14 +354,26 @@ fn render_host_card(
     ctx.set_text_align("left");
     let _ = ctx.fill_text(&host.name, cx + 28.0, cy + 26.0);
 
+    // Delete Button [ ✕ ]
+    let (del_x, del_y, del_w, del_h) = get_fleet_host_delete_btn_rect(cx, cy, cw);
+    let is_del_hovered = state.hover_pos.is_some_and(|(hx, hy)| hx >= del_x && hx <= del_x + del_w && hy >= del_y && hy <= del_y + del_h);
+    if is_del_hovered {
+        ctx.set_fill_style_str("rgba(248, 81, 73, 0.15)");
+        ctx.fill_rect(del_x, del_y, del_w, del_h);
+    }
+    ctx.set_fill_style_str(if is_del_hovered { theme.status_crit } else { theme.text_muted });
+    ctx.set_font("12px sans-serif");
+    ctx.set_text_align("center");
+    let _ = ctx.fill_text("✕", del_x + del_w / 2.0, del_y + 14.0);
+
     // Host Endpoint
     ctx.set_fill_style_str(theme.text_secondary);
     ctx.set_font("12px 'JetBrains Mono', monospace");
+    ctx.set_text_align("left");
     let endpoint = format!("{}@{}:{}", host.user, host.hostname, host.port);
     let _ = ctx.fill_text(&endpoint, cx + 28.0, cy + 44.0);
 
     // Metrics (if available)
-    let metrics = state.metrics.get(&host.id.0);
     let cpu_pct = metrics.map(|m| m.cpu_percent()).unwrap_or(0.0);
     let mem_pct = metrics.map(|m| m.mem_percent()).unwrap_or(0.0);
 
@@ -317,7 +413,7 @@ fn render_host_card(
     {
         let spark_x = cx + cw - 120.0;
         let spark_y = cy + 20.0;
-        let spark_w = 100.0;
+        let spark_w = 85.0;
         let spark_h = 36.0;
 
         let points = redash_types::math::normalize_sparkline(history, spark_x, spark_y, spark_w, spark_h);
@@ -3460,3 +3556,239 @@ fn render_add_modal(ctx: &CanvasRenderingContext2d, state: &AppState, theme: &Th
     ctx.set_font("bold 12px sans-serif");
     let _ = ctx.fill_text(state.t("host.btn_submit"), mx + mw - 60.0, btn_y + 18.0);
 }
+
+pub fn is_interactive_element(x: f64, y: f64, width: f64, height: f64, state: &AppState) -> (bool, &'static str) {
+    // 1. Modals have top priority
+    if state.show_add_modal {
+        let mw = 420.0;
+        let mh = 320.0;
+        let mx = (width - mw) / 2.0;
+        let my = (height - mh) / 2.0;
+        let btn_y = my + mh - 42.0;
+        if (btn_y..=btn_y + 28.0).contains(&y) && (mx + mw - 180.0..=mx + mw - 20.0).contains(&x) {
+            return (true, "pointer");
+        }
+        let mut iy = my + 60.0;
+        for _ in 0..4 {
+            if (iy + 20.0..=iy + 48.0).contains(&y) && (mx + 20.0..=mx + mw - 20.0).contains(&x) {
+                return (true, "text");
+            }
+            iy += 56.0;
+        }
+        return (false, "default");
+    }
+
+    if state.sftp_editor.is_some() {
+        let (save_x, save_y, save_w, save_h) = get_sftp_editor_save_btn_rect(width, height);
+        if (save_x..=save_x + save_w).contains(&x) && (save_y..=save_y + save_h).contains(&y) {
+            return (true, "pointer");
+        }
+        let (close_x, close_y, close_w, close_h) = get_sftp_editor_close_btn_rect(width, height);
+        if (close_x..=close_x + close_w).contains(&x) && (close_y..=close_y + close_h).contains(&y) {
+            return (true, "pointer");
+        }
+        let (mx, my, mw, mh) = get_sftp_editor_modal_rect(width, height);
+        if (mx..=mx + mw).contains(&x) && (my + 40.0..=my + mh - 30.0).contains(&y) {
+            return (true, "text");
+        }
+        return (false, "default");
+    }
+
+    if state.docker_log_modal.is_some() || state.batch_selected_log_host.is_some() {
+        return (true, "pointer");
+    }
+
+    // 2. Left Sidebar
+    if x <= LAYOUT.sidebar_width && (50.0..=290.0).contains(&y) {
+        return (true, "pointer");
+    }
+
+    // 3. Topbar Add Button
+    if y <= LAYOUT.topbar_height {
+        let btn_x = width - 110.0;
+        if (btn_x..=btn_x + 95.0).contains(&x) && (12.0..=38.0).contains(&y) {
+            return (true, "pointer");
+        }
+    }
+
+    let content_x = LAYOUT.sidebar_width;
+    let content_y = LAYOUT.topbar_height;
+    let content_w = width - content_x;
+
+    // 4. View-specific hit testing
+    match state.active_view {
+        ActiveView::Fleet => {
+            let (sb_x, sb_y, sb_w, sb_h) = get_fleet_search_bar_rect(content_x, content_y, content_w);
+            if (sb_x..=sb_x + sb_w).contains(&x) && (sb_y..=sb_y + sb_h).contains(&y) {
+                return (true, "text");
+            }
+            let padding = 24.0;
+            let card_w = ((content_w - padding * 3.0) / 2.0).max(340.0);
+            let card_h = 160.0;
+            let start_y = content_y + 54.0;
+            for idx in 0..state.hosts.len() {
+                let col = idx % 2;
+                let row = idx / 2;
+                let cx = content_x + padding + (col as f64) * (card_w + padding);
+                let cy = start_y + (row as f64) * (card_h + padding);
+                if (cx..=cx + card_w).contains(&x) && (cy..=cy + card_h).contains(&y) {
+                    return (true, "pointer");
+                }
+            }
+        }
+        ActiveView::Terminal => {
+            if (content_y..=content_y + WORKBENCH_TAB_BAR_HEIGHT).contains(&y) {
+                return (true, "pointer");
+            }
+            if state.active_workbench_tab == WorkbenchTab::Processes {
+                let panel_y = content_y + WORKBENCH_TAB_BAR_HEIGHT;
+                if (content_x + 16.0..=content_x + 186.0).contains(&x) && (panel_y + 10.0..=panel_y + 36.0).contains(&y) {
+                    return (true, "text");
+                }
+                for b_idx in 0..3 {
+                    let (bx, by, bw, bh) = get_process_sort_btn_rect(b_idx, content_x, panel_y);
+                    if (bx..=bx + bw).contains(&x) && (by..=by + bh).contains(&y) {
+                        return (true, "pointer");
+                    }
+                }
+            }
+            if state.active_workbench_tab == WorkbenchTab::Snippets
+                || state.active_workbench_tab == WorkbenchTab::Docker
+                || state.active_workbench_tab == WorkbenchTab::Tunnels
+            {
+                return (true, "pointer");
+            }
+            if state.active_workbench_tab == WorkbenchTab::Terminal {
+                if state.agent.is_some() {
+                    let panel_y = content_y + WORKBENCH_TAB_BAR_HEIGHT;
+                    let (ax, ay, aw, ah) = get_agent_hud_apply_btn_rect(content_x, panel_y, content_w);
+                    if (ax..=ax + aw).contains(&x) && (ay..=ay + ah).contains(&y) {
+                        return (true, "pointer");
+                    }
+                    let (ox, oy, ow, oh) = get_agent_hud_abort_btn_rect(content_x, panel_y, content_w);
+                    if (ox..=ox + ow).contains(&x) && (oy..=oy + oh).contains(&y) {
+                        return (true, "pointer");
+                    }
+                }
+                if state.terminal_search_active {
+                    let panel_y = content_y + WORKBENCH_TAB_BAR_HEIGHT;
+                    let term_y = panel_y + if state.agent.is_some() { 32.0 } else { 0.0 };
+                    let (sb_x, sb_y, sb_w, sb_h) = get_terminal_search_bar_rect(content_x, term_y, content_w);
+                    let (cx, cy, cw, ch) = get_terminal_search_close_btn_rect(sb_x, sb_y, sb_w);
+                    if (cx..=cx + cw).contains(&x) && (cy..=cy + ch).contains(&y) {
+                        return (true, "pointer");
+                    }
+                    if (sb_x..=sb_x + sb_w).contains(&x) && (sb_y..=sb_y + sb_h).contains(&y) {
+                        return (true, "text");
+                    }
+                }
+            }
+        }
+        ActiveView::Batch => {
+            let (ax, ay, aw, ah) = get_batch_select_all_btn_rect(content_x, content_y);
+            if (ax..=ax + aw).contains(&x) && (ay..=ay + ah).contains(&y) {
+                return (true, "pointer");
+            }
+            let (cx, cy, cw, ch) = get_batch_clear_btn_rect(content_x, content_y);
+            if (cx..=cx + cw).contains(&x) && (cy..=cy + ch).contains(&y) {
+                return (true, "pointer");
+            }
+            let (bx, by, bw, bh) = get_batch_run_btn_rect(content_x, content_y, content_w);
+            if (bx..=bx + bw).contains(&x) && (by..=by + bh).contains(&y) {
+                return (true, "pointer");
+            }
+            for idx in 0..state.hosts.len() {
+                let (rx, ry, rw, rh) = get_batch_host_row_rect(idx, content_x, content_y);
+                if (rx..=rx + rw).contains(&x) && (ry..=ry + rh).contains(&y) {
+                    return (true, "pointer");
+                }
+            }
+            for pidx in 0..4 {
+                let (px, py, pw, ph) = get_batch_pill_rect(pidx, content_x, content_y);
+                if (px..=px + pw).contains(&x) && (py..=py + ph).contains(&y) {
+                    return (true, "pointer");
+                }
+            }
+        }
+        ActiveView::Sftp => {
+            let (ref_x, ref_y, ref_w, ref_h) = get_sftp_refresh_btn_rect(content_x, content_y, content_w);
+            if (ref_x..=ref_x + ref_w).contains(&x) && (ref_y..=ref_y + ref_h).contains(&y) {
+                return (true, "pointer");
+            }
+            let (p_x, p_y, p_w, p_h) = get_sftp_parent_dir_btn_rect(content_x, content_y);
+            if (p_x..=p_x + p_w).contains(&x) && (p_y..=p_y + p_h).contains(&y) {
+                return (true, "pointer");
+            }
+            let breadcrumbs = get_sftp_breadcrumb_rects(content_x, content_y, &state.sftp_current_path);
+            for (_, sx, sy, sw, sh) in breadcrumbs {
+                if (sx..=sx + sw).contains(&x) && (sy..=sy + sh).contains(&y) {
+                    return (true, "pointer");
+                }
+            }
+            for idx in 0..state.sftp_files.len() {
+                let (rx, ry, rw, rh) = get_sftp_file_row_rect(idx, content_x, content_y, content_w);
+                if (rx..=rx + rw).contains(&x) && (ry..=ry + rh).contains(&y) {
+                    return (true, "pointer");
+                }
+            }
+        }
+        ActiveView::Settings => {
+            return (true, "pointer");
+        }
+    }
+
+    (false, "default")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_interactive_element_detection() {
+        let mut state = AppState::new();
+        state.switch_view(ActiveView::Fleet);
+
+        let mut h1 = crate::models::HostConfig::new("Alpha-Server", "192.168.1.10", "root");
+        h1.id = redash_types::HostId("h1".to_string());
+        state.hosts = vec![h1];
+
+        let width = 1200.0;
+        let height = 800.0;
+        let content_x = LAYOUT.sidebar_width;
+        let content_y = LAYOUT.topbar_height;
+        let content_w = width - content_x;
+
+        // 1. Sidebar items return pointer
+        let (inter, cursor) = is_interactive_element(30.0, 70.0, width, height, &state);
+        assert!(inter);
+        assert_eq!(cursor, "pointer");
+
+        // 2. Topbar Add Host button returns pointer
+        let btn_x = width - 110.0;
+        let (inter, cursor) = is_interactive_element(btn_x + 10.0, 20.0, width, height, &state);
+        assert!(inter);
+        assert_eq!(cursor, "pointer");
+
+        // 3. Fleet search bar returns text
+        let (sb_x, sb_y, sb_w, sb_h) = get_fleet_search_bar_rect(content_x, content_y, content_w);
+        let (inter, cursor) = is_interactive_element(sb_x + 10.0, sb_y + sb_h / 2.0, width, height, &state);
+        assert!(inter);
+        assert_eq!(cursor, "text");
+
+        // 4. Host card returns pointer
+        let padding = 24.0;
+        let card_w = ((content_w - padding * 3.0) / 2.0).max(340.0);
+        let card_x = content_x + padding;
+        let card_y = content_y + 54.0;
+        let (inter, cursor) = is_interactive_element(card_x + 20.0, card_y + 20.0, width, height, &state);
+        assert!(inter);
+        assert_eq!(cursor, "pointer");
+
+        // 5. Blank background returns default
+        let (inter, cursor) = is_interactive_element(width - 50.0, height - 50.0, width, height, &state);
+        assert!(!inter);
+        assert_eq!(cursor, "default");
+    }
+}
+

@@ -96,6 +96,9 @@ pub enum UserAction {
     SetTerminalSearchQuery(String),
     CloseTerminalSearch,
     TriggerRunBatch,
+    SetHoverPos(Option<(f64, f64)>),
+    SetFilterFocused(bool),
+    SetProcessFilterQuery(String),
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -154,6 +157,9 @@ pub struct AppStateMachine {
     pub terminal_search_active: bool,
     pub terminal_search_query: String,
     pub terminal_search_match_count: usize,
+    pub hover_pos: Option<(f64, f64)>,
+    pub is_filter_focused: bool,
+    pub process_filter_query: String,
 }
 
 impl Default for AppStateMachine {
@@ -212,6 +218,9 @@ impl AppStateMachine {
             terminal_search_active: false,
             terminal_search_query: String::new(),
             terminal_search_match_count: 0,
+            hover_pos: None,
+            is_filter_focused: false,
+            process_filter_query: String::new(),
         }
     }
 
@@ -221,6 +230,9 @@ impl AppStateMachine {
         match action {
             UserAction::SwitchView(view) => {
                 self.active_view = view;
+                if (view == ActiveView::Terminal || view == ActiveView::Sftp) && self.selected_host_id.is_none() {
+                    self.selected_host_id = self.hosts.first().map(|h| h.id.0.clone());
+                }
                 if view == ActiveView::Sftp
                     && self.sftp_files.is_empty()
                     && !self.sftp_loading
@@ -504,9 +516,30 @@ impl AppStateMachine {
                     });
                 }
             }
+            UserAction::SetHoverPos(pos) => {
+                self.hover_pos = pos;
+            }
+            UserAction::SetFilterFocused(focused) => {
+                self.is_filter_focused = focused;
+            }
+            UserAction::SetProcessFilterQuery(q) => {
+                self.process_filter_query = q;
+            }
         }
 
         effects
+    }
+
+    pub fn set_hover_pos(&mut self, pos: Option<(f64, f64)>) -> Vec<UiEffect> {
+        self.handle_action(UserAction::SetHoverPos(pos))
+    }
+
+    pub fn set_filter_focused(&mut self, focused: bool) -> Vec<UiEffect> {
+        self.handle_action(UserAction::SetFilterFocused(focused))
+    }
+
+    pub fn set_process_filter_query(&mut self, q: String) -> Vec<UiEffect> {
+        self.handle_action(UserAction::SetProcessFilterQuery(q))
     }
 
     pub fn toggle_batch_host(&mut self, id: String) -> Vec<UiEffect> {

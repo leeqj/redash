@@ -152,49 +152,72 @@ pub fn handle_mouse_click(
         }
     }
 
-    // 5. Check Fleet View Card button clicks
+    // 5. Check Fleet View Card button clicks and search bar
     if state.active_view == ActiveView::Fleet {
         let padding = 24.0;
         let content_x = LAYOUT.sidebar_width;
         let content_w = width - LAYOUT.sidebar_width;
         let card_w = ((content_w - padding * 3.0) / 2.0).max(340.0);
         let card_h = 160.0;
-        let start_y = LAYOUT.topbar_height + 50.0;
+        let start_y = LAYOUT.topbar_height + 54.0;
 
-        let mut clicked_terminal = None;
-        let mut clicked_sftp = None;
+        // Check Fleet Search Bar
+        let (sb_x, sb_y, sb_w, sb_h) = crate::render::get_fleet_search_bar_rect(content_x, LAYOUT.topbar_height, content_w);
+        if (sb_x..=sb_x + sb_w).contains(&x) && (sb_y..=sb_y + sb_h).contains(&y) {
+            state.set_filter_focused(true);
+            return None;
+        } else {
+            state.set_filter_focused(false);
+        }
 
-        for (idx, host) in state.hosts.iter().enumerate() {
-            let col = idx % 2;
-            let row = idx / 2;
+        let q = state.filter_query.trim().to_lowercase();
+        let filtered_ids: Vec<String> = state.hosts.iter().filter_map(|h| {
+            if q.is_empty()
+                || h.name.to_lowercase().contains(&q)
+                || h.hostname.to_lowercase().contains(&q)
+                || h.user.to_lowercase().contains(&q)
+                || h.tags.iter().any(|t| t.to_lowercase().contains(&q))
+            {
+                Some(h.id.0.clone())
+            } else {
+                None
+            }
+        }).collect();
+
+        for (grid_idx, host_id) in filtered_ids.into_iter().enumerate() {
+            let col = grid_idx % 2;
+            let row = grid_idx / 2;
             let card_x = content_x + padding + (col as f64) * (card_w + padding);
             let card_y = start_y + (row as f64) * (card_h + padding);
 
+            // 1. Delete button [ ✕ ]
+            let (del_x, del_y, del_w, del_h) = crate::render::get_fleet_host_delete_btn_rect(card_x, card_y, card_w);
+            if (del_x..=del_x + del_w).contains(&x) && (del_y..=del_y + del_h).contains(&y) {
+                return Some(UiAction::DeleteHost(host_id));
+            }
+
+            // 2. Action buttons
             let btn_y = card_y + 126.0;
             if (btn_y..=btn_y + 22.0).contains(&y) {
                 // [ Terminal ]
                 if (card_x + 16.0..=card_x + 86.0).contains(&x) {
-                    clicked_terminal = Some(host.id.0.clone());
-                    break;
+                    state.selected_host_id = Some(host_id.clone());
+                    state.switch_view(ActiveView::Terminal);
+                    return Some(UiAction::OpenTerminal(host_id));
                 }
                 // [ SFTP ]
                 if (card_x + 96.0..=card_x + 146.0).contains(&x) {
-                    clicked_sftp = Some(host.id.0.clone());
-                    break;
+                    state.selected_host_id = Some(host_id.clone());
+                    state.switch_view(ActiveView::Sftp);
+                    return Some(UiAction::OpenSftp(host_id));
                 }
             }
-        }
 
-        if let Some(hid) = clicked_terminal {
-            state.selected_host_id = Some(hid.clone());
-            state.switch_view(ActiveView::Terminal);
-            return Some(UiAction::OpenTerminal(hid));
-        }
-
-        if let Some(hid) = clicked_sftp {
-            state.selected_host_id = Some(hid.clone());
-            state.switch_view(ActiveView::Sftp);
-            return Some(UiAction::OpenSftp(hid));
+            // 3. Card click selects host
+            if (card_x..=card_x + card_w).contains(&x) && (card_y..=card_y + card_h).contains(&y) {
+                state.selected_host_id = Some(host_id);
+                return None;
+            }
         }
     }
 
@@ -712,6 +735,34 @@ pub fn handle_key_down(state: &mut AppState, key: &str, is_ctrl: bool) -> Option
 
         return None;
     }
+
+    // If Fleet filter search is focused:
+    if state.is_filter_focused {
+        match key {
+            "Escape" => {
+                state.set_filter_focused(false);
+                return None;
+            }
+            "Backspace" => {
+                let mut q = state.filter_query.clone();
+                q.pop();
+                state.filter_query = q;
+                return None;
+            }
+            "Enter" => {
+                state.set_filter_focused(false);
+                return None;
+            }
+            c if c.len() == 1 && !is_ctrl => {
+                let mut q = state.filter_query.clone();
+                q.push_str(c);
+                state.filter_query = q;
+                return None;
+            }
+            _ => return None,
+        }
+    }
+
     // If Docker Log Modal is open, Escape closes it
     if state.docker_log_modal.is_some() && key == "Escape" {
         state.close_docker_logs();
@@ -1422,5 +1473,58 @@ mod tests {
         let (ox, oy, ow, oh) = crate::render::get_agent_hud_abort_btn_rect(base_x, panel_y, panel_w);
         let action = handle_mouse_click(&mut state, ox + ow / 2.0, oy + oh / 2.0, 1200.0, 800.0);
         assert_eq!(action, Some(UiAction::AbortAgentTask));
+    }
+
+    #[test]
+    fn test_fleet_search_filter_and_delete_interaction() {
+        let mut state = AppState::new();
+        state.switch_view(ActiveView::Fleet);
+
+        let mut h1 = crate::models::HostConfig::new("Alpha-Server", "192.168.1.10", "root");
+        h1.id = redash_types::HostId("h1".to_string());
+        let mut h2 = crate::models::HostConfig::new("Beta-Worker", "10.0.0.5", "ubuntu");
+        h2.id = redash_types::HostId("h2".to_string());
+        state.hosts = vec![h1, h2];
+
+        let width = 1200.0;
+        let height = 800.0;
+        let content_x = LAYOUT.sidebar_width;
+        let content_y = LAYOUT.topbar_height;
+        let content_w = width - content_x;
+
+        // 1. Click search bar to focus
+        let (sb_x, sb_y, sb_w, sb_h) = crate::render::get_fleet_search_bar_rect(content_x, content_y, content_w);
+        assert!(!state.is_filter_focused);
+        let action = handle_mouse_click(&mut state, sb_x + 10.0, sb_y + sb_h / 2.0, width, height);
+        assert!(action.is_none());
+        assert!(state.is_filter_focused);
+
+        // 2. Type "beta" to filter
+        for c in ["b", "e", "t", "a"] {
+            handle_key_down(&mut state, c, false);
+        }
+        assert_eq!(state.filter_query, "beta");
+
+        // 3. Backspace
+        handle_key_down(&mut state, "Backspace", false);
+        assert_eq!(state.filter_query, "bet");
+
+        // Clear query for delete test
+        state.filter_query.clear();
+
+        // 4. Click delete button [ ✕ ] on host card 0 (Alpha-Server, "h1")
+        let padding = 24.0;
+        let card_w = ((content_w - padding * 3.0) / 2.0).max(340.0);
+        let card_x = content_x + padding;
+        let card_y = content_y + 54.0;
+        let (del_x, del_y, del_w, del_h) = crate::render::get_fleet_host_delete_btn_rect(card_x, card_y, card_w);
+
+        let action = handle_mouse_click(&mut state, del_x + del_w / 2.0, del_y + del_h / 2.0, width, height);
+        assert_eq!(action, Some(UiAction::DeleteHost("h1".to_string())));
+
+        // 5. Click host card body (select host)
+        let action = handle_mouse_click(&mut state, card_x + 50.0, card_y + 50.0, width, height);
+        assert!(action.is_none());
+        assert_eq!(state.selected_host_id, Some("h1".to_string()));
     }
 }
