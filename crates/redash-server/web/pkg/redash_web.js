@@ -1,5 +1,3 @@
-/* @ts-self-types="./redash_web.d.ts" */
-
 /**
  * @param {string} canvas_id
  */

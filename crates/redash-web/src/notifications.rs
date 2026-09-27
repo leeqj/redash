@@ -16,9 +16,10 @@ pub fn show_browser_notification(title: &str, body: &str) -> Result<(), String> 
                 .map_err(|e| format!("创建系统通知失败: {e:?}"))?;
             Ok(())
         }
-        NotificationPermission::Denied => {
-            Err("浏览器桌面通知权限已被禁用。请在浏览器地址栏左侧网站设置中开启「通知」权限。".to_string())
-        }
+        NotificationPermission::Denied => Err(
+            "浏览器桌面通知权限已被禁用。请在浏览器地址栏左侧网站设置中开启「通知」权限。"
+                .to_string(),
+        ),
         _ => {
             let _ = Notification::request_permission();
             Err("已向浏览器申请桌面通知权限，请在弹出的系统提示中点击「允许」后再试。".to_string())

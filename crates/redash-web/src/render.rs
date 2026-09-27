@@ -43,11 +43,21 @@ pub fn render_frame(
     let content_h = height - LAYOUT.topbar_height;
 
     match state.active_view {
-        ActiveView::Fleet => render_fleet_view(ctx, state, &theme, content_x, content_y, content_w, content_h),
-        ActiveView::Terminal => render_workbench_view(ctx, state, &theme, content_x, content_y, content_w, content_h),
-        ActiveView::Batch => render_batch_view(ctx, state, &theme, content_x, content_y, content_w, content_h),
-        ActiveView::Sftp => render_sftp_view(ctx, state, &theme, content_x, content_y, content_w, content_h),
-        ActiveView::Settings => render_settings_view(ctx, state, &theme, content_x, content_y, content_w, content_h),
+        ActiveView::Fleet => render_fleet_view(
+            ctx, state, &theme, content_x, content_y, content_w, content_h,
+        ),
+        ActiveView::Terminal => render_workbench_view(
+            ctx, state, &theme, content_x, content_y, content_w, content_h,
+        ),
+        ActiveView::Batch => render_batch_view(
+            ctx, state, &theme, content_x, content_y, content_w, content_h,
+        ),
+        ActiveView::Sftp => render_sftp_view(
+            ctx, state, &theme, content_x, content_y, content_w, content_h,
+        ),
+        ActiveView::Settings => render_settings_view(
+            ctx, state, &theme, content_x, content_y, content_w, content_h,
+        ),
     }
 
     // 5. Draw Add Host Modal if active
@@ -73,7 +83,12 @@ pub fn render_frame(
     Ok(())
 }
 
-fn render_sidebar(ctx: &CanvasRenderingContext2d, state: &AppState, theme: &ThemeColors, height: f64) {
+fn render_sidebar(
+    ctx: &CanvasRenderingContext2d,
+    state: &AppState,
+    theme: &ThemeColors,
+    height: f64,
+) {
     let w = LAYOUT.sidebar_width;
 
     // Sidebar background
@@ -127,7 +142,12 @@ fn render_sidebar(ctx: &CanvasRenderingContext2d, state: &AppState, theme: &Them
     }
 }
 
-fn render_topbar(ctx: &CanvasRenderingContext2d, state: &AppState, theme: &ThemeColors, width: f64) {
+fn render_topbar(
+    ctx: &CanvasRenderingContext2d,
+    state: &AppState,
+    theme: &ThemeColors,
+    width: f64,
+) {
     let x = LAYOUT.sidebar_width;
     let h = LAYOUT.topbar_height;
     let w = width - x;
@@ -244,22 +264,29 @@ fn render_fleet_view(
         ctx.set_fill_style_str(theme.text_muted);
         ctx.set_font("14px sans-serif");
         ctx.set_text_align("center");
-        let empty_msg = format!("暂无主机节点，请点击上方 '+ {}' 添加服务器", state.t("host.add_title"));
+        let empty_msg = format!(
+            "暂无主机节点，请点击上方 '+ {}' 添加服务器",
+            state.t("host.add_title")
+        );
         let _ = ctx.fill_text(&empty_msg, x + w / 2.0, y + 120.0);
         return;
     }
 
     let q = state.filter_query.trim().to_lowercase();
-    let filtered_hosts: Vec<&crate::models::HostConfig> = state.hosts.iter().filter(|h| {
-        if q.is_empty() {
-            true
-        } else {
-            h.name.to_lowercase().contains(&q)
-                || h.hostname.to_lowercase().contains(&q)
-                || h.user.to_lowercase().contains(&q)
-                || h.tags.iter().any(|t| t.to_lowercase().contains(&q))
-        }
-    }).collect();
+    let filtered_hosts: Vec<&crate::models::HostConfig> = state
+        .hosts
+        .iter()
+        .filter(|h| {
+            if q.is_empty() {
+                true
+            } else {
+                h.name.to_lowercase().contains(&q)
+                    || h.hostname.to_lowercase().contains(&q)
+                    || h.user.to_lowercase().contains(&q)
+                    || h.tags.iter().any(|t| t.to_lowercase().contains(&q))
+            }
+        })
+        .collect();
 
     if filtered_hosts.is_empty() {
         ctx.set_fill_style_str(theme.text_muted);
@@ -312,10 +339,16 @@ fn render_host_card(
     ch: f64,
 ) {
     let is_selected = state.selected_host_id.as_deref() == Some(&host.id.0);
-    let is_hovered = state.hover_pos.is_some_and(|(hx, hy)| hx >= cx && hx <= cx + cw && hy >= cy && hy <= cy + ch);
+    let is_hovered = state
+        .hover_pos
+        .is_some_and(|(hx, hy)| hx >= cx && hx <= cx + cw && hy >= cy && hy <= cy + ch);
 
     // Card Box
-    ctx.set_fill_style_str(if is_hovered { theme.bg_card_hover } else { theme.bg_card });
+    ctx.set_fill_style_str(if is_hovered {
+        theme.bg_card_hover
+    } else {
+        theme.bg_card
+    });
     ctx.fill_rect(cx, cy, cw, ch);
     ctx.set_stroke_style_str(if is_selected {
         theme.accent_cyan
@@ -356,12 +389,18 @@ fn render_host_card(
 
     // Delete Button [ ✕ ]
     let (del_x, del_y, del_w, del_h) = get_fleet_host_delete_btn_rect(cx, cy, cw);
-    let is_del_hovered = state.hover_pos.is_some_and(|(hx, hy)| hx >= del_x && hx <= del_x + del_w && hy >= del_y && hy <= del_y + del_h);
+    let is_del_hovered = state.hover_pos.is_some_and(|(hx, hy)| {
+        hx >= del_x && hx <= del_x + del_w && hy >= del_y && hy <= del_y + del_h
+    });
     if is_del_hovered {
         ctx.set_fill_style_str("rgba(248, 81, 73, 0.15)");
         ctx.fill_rect(del_x, del_y, del_w, del_h);
     }
-    ctx.set_fill_style_str(if is_del_hovered { theme.status_crit } else { theme.text_muted });
+    ctx.set_fill_style_str(if is_del_hovered {
+        theme.status_crit
+    } else {
+        theme.text_muted
+    });
     ctx.set_font("12px sans-serif");
     ctx.set_text_align("center");
     let _ = ctx.fill_text("✕", del_x + del_w / 2.0, del_y + 14.0);
@@ -416,7 +455,8 @@ fn render_host_card(
         let spark_w = 85.0;
         let spark_h = 36.0;
 
-        let points = redash_types::math::normalize_sparkline(history, spark_x, spark_y, spark_w, spark_h);
+        let points =
+            redash_types::math::normalize_sparkline(history, spark_x, spark_y, spark_w, spark_h);
         if points.len() >= 2 {
             ctx.set_stroke_style_str(theme.accent_cyan);
             ctx.set_line_width(1.5);
@@ -683,7 +723,9 @@ pub fn render_workbench_view(
     match state.active_workbench_tab {
         WorkbenchTab::Terminal => render_terminal_panel(ctx, state, theme, x, panel_y, w, panel_h),
         WorkbenchTab::Docker => render_docker_panel(ctx, state, theme, x, panel_y, w, panel_h),
-        WorkbenchTab::Processes => render_processes_panel(ctx, state, theme, x, panel_y, w, panel_h),
+        WorkbenchTab::Processes => {
+            render_processes_panel(ctx, state, theme, x, panel_y, w, panel_h)
+        }
         WorkbenchTab::Network => render_network_panel(ctx, state, theme, x, panel_y, w, panel_h),
         WorkbenchTab::Tunnels => render_tunnels_panel(ctx, state, theme, x, panel_y, w, panel_h),
         WorkbenchTab::Snippets => render_snippets_panel(ctx, state, theme, x, panel_y, w, panel_h),
@@ -764,11 +806,19 @@ fn render_terminal_panel(
         ctx.set_fill_style_str(theme.accent_cyan);
         ctx.set_font("bold 12px 'JetBrains Mono', monospace");
         ctx.set_text_align("left");
-        let _ = ctx.fill_text(&format!("🤖 Agent Active: {}", agent.name), x + 16.0, term_y + 22.0);
+        let _ = ctx.fill_text(
+            &format!("🤖 Agent Active: {}", agent.name),
+            x + 16.0,
+            term_y + 22.0,
+        );
 
         // Status Badge
         ctx.set_fill_style_str(agent.status.color_hex());
-        let _ = ctx.fill_text(&format!("Status: {}", agent.status.label()), x + 240.0, term_y + 22.0);
+        let _ = ctx.fill_text(
+            &format!("Status: {}", agent.status.label()),
+            x + 240.0,
+            term_y + 22.0,
+        );
 
         // Cost / Tokens
         if let Some(cost) = agent.cost_usd {
@@ -870,7 +920,11 @@ fn render_terminal_panel(
         } else {
             ctx.set_fill_style_str(theme.accent_cyan);
             ctx.set_font("12px 'JetBrains Mono', monospace");
-            let _ = ctx.fill_text(&format!("🔍 {}", state.terminal_search_query), sb_x + 12.0, sb_y + 20.0);
+            let _ = ctx.fill_text(
+                &format!("🔍 {}", state.terminal_search_query),
+                sb_x + 12.0,
+                sb_y + 20.0,
+            );
         }
 
         // Match count badge
@@ -885,7 +939,11 @@ fn render_terminal_panel(
         ctx.set_line_width(1.0);
         ctx.stroke_rect(badge_x, badge_y, badge_w, badge_h);
 
-        ctx.set_fill_style_str(if state.terminal_search_match_count > 0 { theme.accent_cyan } else { theme.text_muted });
+        ctx.set_fill_style_str(if state.terminal_search_match_count > 0 {
+            theme.accent_cyan
+        } else {
+            theme.text_muted
+        });
         ctx.set_font("11px sans-serif");
         ctx.set_text_align("center");
         let _ = ctx.fill_text(&count_str, badge_x + badge_w / 2.0, badge_y + 14.0);
@@ -957,13 +1015,13 @@ fn render_docker_panel(
     ctx.stroke_rect(x + 16.0, th_y, w - 32.0, th_h);
 
     let col_x = [
-        x + 24.0,        // State
-        x + 110.0,       // Name
-        x + 270.0,       // Image
-        x + 450.0,       // Ports
-        x + 610.0,       // CPU%
-        x + 690.0,       // Mem
-        x + 800.0,       // Actions
+        x + 24.0,  // State
+        x + 110.0, // Name
+        x + 270.0, // Image
+        x + 450.0, // Ports
+        x + 610.0, // CPU%
+        x + 690.0, // Mem
+        x + 800.0, // Actions
     ];
 
     ctx.set_fill_style_str(theme.text_secondary);
@@ -978,7 +1036,9 @@ fn render_docker_panel(
     let _ = ctx.fill_text("快捷操作", col_x[6], th_y + 19.0);
 
     // Table Rows
-    let Some(list) = containers else { return; };
+    let Some(list) = containers else {
+        return;
+    };
     let row_h = 36.0;
     let mut row_y = th_y + th_h + 4.0;
 
@@ -988,7 +1048,11 @@ fn render_docker_panel(
         }
 
         // Row background
-        ctx.set_fill_style_str(if idx % 2 == 0 { theme.bg_card } else { theme.bg_input });
+        ctx.set_fill_style_str(if idx % 2 == 0 {
+            theme.bg_card
+        } else {
+            theme.bg_input
+        });
         ctx.fill_rect(x + 16.0, row_y, w - 32.0, row_h);
         ctx.set_stroke_style_str(theme.border_default);
         ctx.stroke_rect(x + 16.0, row_y, w - 32.0, row_h);
@@ -1005,7 +1069,13 @@ fn render_docker_panel(
 
         ctx.set_fill_style_str(led_color);
         ctx.begin_path();
-        let _ = ctx.arc(col_x[0] + 4.0, row_y + 18.0, 4.0, 0.0, std::f64::consts::PI * 2.0);
+        let _ = ctx.arc(
+            col_x[0] + 4.0,
+            row_y + 18.0,
+            4.0,
+            0.0,
+            std::f64::consts::PI * 2.0,
+        );
         ctx.fill();
 
         ctx.set_font("11px 'JetBrains Mono', monospace");
@@ -1022,11 +1092,19 @@ fn render_docker_panel(
         let _ = ctx.fill_text(&truncate_text(&c.image, 22), col_x[2], row_y + 22.0);
 
         // Ports
-        let ports_str = if c.ports.is_empty() { "-".to_string() } else { c.ports.join(", ") };
+        let ports_str = if c.ports.is_empty() {
+            "-".to_string()
+        } else {
+            c.ports.join(", ")
+        };
         let _ = ctx.fill_text(&truncate_text(&ports_str, 20), col_x[3], row_y + 22.0);
 
         // CPU%
-        ctx.set_fill_style_str(if c.cpu_percent > 50.0 { theme.status_warn } else { theme.accent_cyan });
+        ctx.set_fill_style_str(if c.cpu_percent > 50.0 {
+            theme.status_warn
+        } else {
+            theme.accent_cyan
+        });
         let _ = ctx.fill_text(&format!("{:.1}%", c.cpu_percent), col_x[4], row_y + 22.0);
 
         // Mem
@@ -1115,10 +1193,15 @@ pub fn render_docker_log_modal(
     ctx.stroke_rect(console_x, console_y, console_w, console_h);
 
     let log_lines = [
-        format!("[2026-09-27T00:50:12.102Z] Starting container entrypoint for {}...", name),
-        "[2026-09-27T00:50:12.148Z] Environment initialized (ENV=production, LOG_LEVEL=info)".to_string(),
+        format!(
+            "[2026-09-27T00:50:12.102Z] Starting container entrypoint for {}...",
+            name
+        ),
+        "[2026-09-27T00:50:12.148Z] Environment initialized (ENV=production, LOG_LEVEL=info)"
+            .to_string(),
         "[2026-09-27T00:50:12.215Z] Worker pool initialized with 4 execution threads.".to_string(),
-        "[2026-09-27T00:50:13.001Z] Server listening on tcp://0.0.0.0:8080 (IPv4 + IPv6).".to_string(),
+        "[2026-09-27T00:50:13.001Z] Server listening on tcp://0.0.0.0:8080 (IPv4 + IPv6)."
+            .to_string(),
         "[2026-09-27T00:52:45.332Z] [info] GET /healthz 200 OK (0.8ms)".to_string(),
         "[2026-09-27T00:55:01.442Z] [info] GET /api/v1/status 200 OK (1.2ms)".to_string(),
         "[2026-09-27T00:58:22.091Z] [info] Probe collection cycle finished cleanly.".to_string(),
@@ -1163,28 +1246,60 @@ fn render_processes_panel(
 
     // Sort buttons
     let sort_items = [
-        (0, "CPU% ▼", state.process_sort_by == ProcessSortField::CpuDesc),
-        (1, "内存% ▼", state.process_sort_by == ProcessSortField::MemDesc),
-        (2, "PID ▲", state.process_sort_by == ProcessSortField::PidAsc),
+        (
+            0,
+            "CPU% ▼",
+            state.process_sort_by == ProcessSortField::CpuDesc,
+        ),
+        (
+            1,
+            "内存% ▼",
+            state.process_sort_by == ProcessSortField::MemDesc,
+        ),
+        (
+            2,
+            "PID ▲",
+            state.process_sort_by == ProcessSortField::PidAsc,
+        ),
     ];
 
     for (b_idx, label, is_active) in sort_items {
         let (bx, by, bw, bh) = get_process_sort_btn_rect(b_idx, x, y);
-        ctx.set_fill_style_str(if is_active { theme.bg_card_hover } else { theme.bg_card });
+        ctx.set_fill_style_str(if is_active {
+            theme.bg_card_hover
+        } else {
+            theme.bg_card
+        });
         ctx.fill_rect(bx, by, bw, bh);
-        ctx.set_stroke_style_str(if is_active { theme.accent_cyan } else { theme.border_default });
+        ctx.set_stroke_style_str(if is_active {
+            theme.accent_cyan
+        } else {
+            theme.border_default
+        });
         ctx.stroke_rect(bx, by, bw, bh);
 
-        ctx.set_fill_style_str(if is_active { theme.accent_cyan } else { theme.text_secondary });
-        ctx.set_font(if is_active { "bold 12px sans-serif" } else { "12px sans-serif" });
+        ctx.set_fill_style_str(if is_active {
+            theme.accent_cyan
+        } else {
+            theme.text_secondary
+        });
+        ctx.set_font(if is_active {
+            "bold 12px sans-serif"
+        } else {
+            "12px sans-serif"
+        });
         ctx.set_text_align("center");
         let _ = ctx.fill_text(label, bx + bw / 2.0, by + 17.0);
     }
 
     // Process list resolution & sorting
-    let mut procs: Vec<ProcessItem> = if let Some(m) = metrics && !m.processes_detail.is_empty() {
+    let mut procs: Vec<ProcessItem> = if let Some(m) = metrics
+        && !m.processes_detail.is_empty()
+    {
         m.processes_detail.clone()
-    } else if let Some(m) = metrics && !m.top_processes.is_empty() {
+    } else if let Some(m) = metrics
+        && !m.top_processes.is_empty()
+    {
         m.top_processes
             .iter()
             .map(|p| ProcessItem {
@@ -1202,15 +1317,27 @@ fn render_processes_panel(
     };
 
     match state.process_sort_by {
-        ProcessSortField::CpuDesc => procs.sort_by(|a, b| b.cpu_percent.partial_cmp(&a.cpu_percent).unwrap_or(std::cmp::Ordering::Equal)),
-        ProcessSortField::MemDesc => procs.sort_by(|a, b| b.mem_percent.partial_cmp(&a.mem_percent).unwrap_or(std::cmp::Ordering::Equal)),
+        ProcessSortField::CpuDesc => procs.sort_by(|a, b| {
+            b.cpu_percent
+                .partial_cmp(&a.cpu_percent)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        }),
+        ProcessSortField::MemDesc => procs.sort_by(|a, b| {
+            b.mem_percent
+                .partial_cmp(&a.mem_percent)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        }),
         ProcessSortField::PidAsc => procs.sort_by_key(|p| p.pid),
     }
 
     ctx.set_fill_style_str(theme.text_secondary);
     ctx.set_font("12px sans-serif");
     ctx.set_text_align("right");
-    let _ = ctx.fill_text(&format!("共 {} 个进程", procs.len()), x + w - 24.0, top_y + 17.0);
+    let _ = ctx.fill_text(
+        &format!("共 {} 个进程", procs.len()),
+        x + w - 24.0,
+        top_y + 17.0,
+    );
 
     // Table Header
     let th_y = y + 46.0;
@@ -1221,12 +1348,12 @@ fn render_processes_panel(
     ctx.stroke_rect(x + 16.0, th_y, w - 32.0, th_h);
 
     let col_x = [
-        x + 24.0,   // PID
-        x + 105.0,  // User
-        x + 205.0,  // CPU%
-        x + 295.0,  // MEM%
-        x + 385.0,  // STAT
-        x + 465.0,  // COMMAND
+        x + 24.0,  // PID
+        x + 105.0, // User
+        x + 205.0, // CPU%
+        x + 295.0, // MEM%
+        x + 385.0, // STAT
+        x + 465.0, // COMMAND
     ];
 
     ctx.set_fill_style_str(theme.text_secondary);
@@ -1256,7 +1383,11 @@ fn render_processes_panel(
             break;
         }
 
-        ctx.set_fill_style_str(if idx % 2 == 0 { theme.bg_card } else { theme.bg_input });
+        ctx.set_fill_style_str(if idx % 2 == 0 {
+            theme.bg_card
+        } else {
+            theme.bg_input
+        });
         ctx.fill_rect(x + 16.0, row_y, w - 32.0, row_h);
         ctx.set_stroke_style_str(theme.border_default);
         ctx.stroke_rect(x + 16.0, row_y, w - 32.0, row_h);
@@ -1272,7 +1403,11 @@ fn render_processes_panel(
         let _ = ctx.fill_text(&truncate_text(&p.user, 10), col_x[1], row_y + 18.0);
 
         // CPU%
-        ctx.set_fill_style_str(if p.cpu_percent > 50.0 { theme.status_crit } else { theme.accent_cyan });
+        ctx.set_fill_style_str(if p.cpu_percent > 50.0 {
+            theme.status_crit
+        } else {
+            theme.accent_cyan
+        });
         ctx.set_font("12px 'JetBrains Mono', monospace");
         let _ = ctx.fill_text(&format!("{:.1}%", p.cpu_percent), col_x[2], row_y + 18.0);
 
@@ -1365,10 +1500,18 @@ fn render_network_panel(
 
     ctx.set_fill_style_str(theme.accent_cyan);
     ctx.set_font("bold 14px 'JetBrains Mono', monospace");
-    let _ = ctx.fill_text(&format!("↓ RX: {}", format_bytes_rate(rx_rate)), c2_x + 14.0, card_y + 52.0);
+    let _ = ctx.fill_text(
+        &format!("↓ RX: {}", format_bytes_rate(rx_rate)),
+        c2_x + 14.0,
+        card_y + 52.0,
+    );
 
     ctx.set_fill_style_str(theme.accent_purple);
-    let _ = ctx.fill_text(&format!("↑ TX: {}", format_bytes_rate(tx_rate)), c2_x + 14.0, card_y + 74.0);
+    let _ = ctx.fill_text(
+        &format!("↑ TX: {}", format_bytes_rate(tx_rate)),
+        c2_x + 14.0,
+        card_y + 74.0,
+    );
 
     // Card 3: Total Bandwidth bar (using redash_types::format_bytes)
     let c3_x = c2_x + card_w + card_gap;
@@ -1379,10 +1522,18 @@ fn render_network_panel(
 
     ctx.set_fill_style_str(theme.text_secondary);
     ctx.set_font("bold 12px sans-serif");
-    let _ = ctx.fill_text("📊 累计传输流量 (Total Bandwidth)", c3_x + 14.0, card_y + 24.0);
+    let _ = ctx.fill_text(
+        "📊 累计传输流量 (Total Bandwidth)",
+        c3_x + 14.0,
+        card_y + 24.0,
+    );
 
-    let tot_rx = metrics.map(|m| m.net.total_rx_bytes).unwrap_or(10_737_418_240);
-    let tot_tx = metrics.map(|m| m.net.total_tx_bytes).unwrap_or(2_147_483_648);
+    let tot_rx = metrics
+        .map(|m| m.net.total_rx_bytes)
+        .unwrap_or(10_737_418_240);
+    let tot_tx = metrics
+        .map(|m| m.net.total_tx_bytes)
+        .unwrap_or(2_147_483_648);
     let tot_sum = tot_rx + tot_tx;
 
     ctx.set_fill_style_str(theme.text_primary);
@@ -1391,13 +1542,25 @@ fn render_network_panel(
 
     ctx.set_fill_style_str(theme.text_secondary);
     ctx.set_font("11px sans-serif");
-    let _ = ctx.fill_text(&format!("RX: {}  |  TX: {}", format_bytes(tot_rx), format_bytes(tot_tx)), c3_x + 14.0, card_y + 68.0);
+    let _ = ctx.fill_text(
+        &format!(
+            "RX: {}  |  TX: {}",
+            format_bytes(tot_rx),
+            format_bytes(tot_tx)
+        ),
+        c3_x + 14.0,
+        card_y + 68.0,
+    );
 
     // Bandwidth proportion bar
     ctx.set_fill_style_str(theme.bg_input);
     ctx.fill_rect(c3_x + 14.0, card_y + 76.0, bar_w, 6.0);
 
-    let rx_ratio = if tot_sum > 0 { tot_rx as f64 / tot_sum as f64 } else { 0.5 };
+    let rx_ratio = if tot_sum > 0 {
+        tot_rx as f64 / tot_sum as f64
+    } else {
+        0.5
+    };
     let rx_w = bar_w * rx_ratio;
     ctx.set_fill_style_str(theme.accent_cyan);
     ctx.fill_rect(c3_x + 14.0, card_y + 76.0, rx_w, 6.0);
@@ -1408,7 +1571,11 @@ fn render_network_panel(
     let table_y = card_y + card_h + 16.0;
     ctx.set_fill_style_str(theme.text_primary);
     ctx.set_font("bold 14px sans-serif");
-    let _ = ctx.fill_text("本地监听端口列表 (Listening Ports)", x + 16.0, table_y + 14.0);
+    let _ = ctx.fill_text(
+        "本地监听端口列表 (Listening Ports)",
+        x + 16.0,
+        table_y + 14.0,
+    );
 
     let th_y = table_y + 26.0;
     let th_h = 26.0;
@@ -1418,11 +1585,11 @@ fn render_network_panel(
     ctx.stroke_rect(x + 16.0, th_y, w - 32.0, th_h);
 
     let port_cols = [
-        x + 24.0,   // Proto
-        x + 120.0,  // Bind IP
-        x + 280.0,  // Port
-        x + 390.0,  // Process Name
-        x + 580.0,  // PID
+        x + 24.0,  // Proto
+        x + 120.0, // Bind IP
+        x + 280.0, // Port
+        x + 390.0, // Process Name
+        x + 580.0, // PID
     ];
 
     ctx.set_fill_style_str(theme.text_secondary);
@@ -1434,11 +1601,41 @@ fn render_network_panel(
     let _ = ctx.fill_text("PID", port_cols[4], th_y + 17.0);
 
     let default_ports = [
-        ListeningPort { proto: "TCP".to_string(), bind_ip: "0.0.0.0".to_string(), port: 22, pid: Some(1024), process_name: Some("sshd".to_string()) },
-        ListeningPort { proto: "TCP".to_string(), bind_ip: "127.0.0.1".to_string(), port: 5432, pid: Some(2140), process_name: Some("postgres".to_string()) },
-        ListeningPort { proto: "TCP".to_string(), bind_ip: "0.0.0.0".to_string(), port: 80, pid: Some(3112), process_name: Some("nginx".to_string()) },
-        ListeningPort { proto: "TCP".to_string(), bind_ip: "0.0.0.0".to_string(), port: 443, pid: Some(3112), process_name: Some("nginx".to_string()) },
-        ListeningPort { proto: "TCP".to_string(), bind_ip: ":::".to_string(), port: 9000, pid: Some(4051), process_name: Some("redash-server".to_string()) },
+        ListeningPort {
+            proto: "TCP".to_string(),
+            bind_ip: "0.0.0.0".to_string(),
+            port: 22,
+            pid: Some(1024),
+            process_name: Some("sshd".to_string()),
+        },
+        ListeningPort {
+            proto: "TCP".to_string(),
+            bind_ip: "127.0.0.1".to_string(),
+            port: 5432,
+            pid: Some(2140),
+            process_name: Some("postgres".to_string()),
+        },
+        ListeningPort {
+            proto: "TCP".to_string(),
+            bind_ip: "0.0.0.0".to_string(),
+            port: 80,
+            pid: Some(3112),
+            process_name: Some("nginx".to_string()),
+        },
+        ListeningPort {
+            proto: "TCP".to_string(),
+            bind_ip: "0.0.0.0".to_string(),
+            port: 443,
+            pid: Some(3112),
+            process_name: Some("nginx".to_string()),
+        },
+        ListeningPort {
+            proto: "TCP".to_string(),
+            bind_ip: ":::".to_string(),
+            port: 9000,
+            pid: Some(4051),
+            process_name: Some("redash-server".to_string()),
+        },
     ];
 
     let ports = metrics
@@ -1455,14 +1652,22 @@ fn render_network_panel(
             break;
         }
 
-        ctx.set_fill_style_str(if idx % 2 == 0 { theme.bg_card } else { theme.bg_input });
+        ctx.set_fill_style_str(if idx % 2 == 0 {
+            theme.bg_card
+        } else {
+            theme.bg_input
+        });
         ctx.fill_rect(x + 16.0, row_y, w - 32.0, row_h);
         ctx.set_stroke_style_str(theme.border_default);
         ctx.stroke_rect(x + 16.0, row_y, w - 32.0, row_h);
 
         // Proto badge
         let is_tcp = p.proto.to_uppercase().contains("TCP");
-        ctx.set_fill_style_str(if is_tcp { theme.accent_cyan } else { theme.accent_purple });
+        ctx.set_fill_style_str(if is_tcp {
+            theme.accent_cyan
+        } else {
+            theme.accent_purple
+        });
         ctx.set_font("bold 11px 'JetBrains Mono', monospace");
         let _ = ctx.fill_text(&p.proto.to_uppercase(), port_cols[0], row_y + 19.0);
 
@@ -1479,12 +1684,22 @@ fn render_network_panel(
         // Process Name
         ctx.set_fill_style_str(theme.text_primary);
         ctx.set_font("12px sans-serif");
-        let _ = ctx.fill_text(p.process_name.as_deref().unwrap_or("-"), port_cols[3], row_y + 19.0);
+        let _ = ctx.fill_text(
+            p.process_name.as_deref().unwrap_or("-"),
+            port_cols[3],
+            row_y + 19.0,
+        );
 
         // PID
         ctx.set_fill_style_str(theme.text_secondary);
         ctx.set_font("12px 'JetBrains Mono', monospace");
-        let _ = ctx.fill_text(&p.pid.map(|pid| pid.to_string()).unwrap_or_else(|| "-".to_string()), port_cols[4], row_y + 19.0);
+        let _ = ctx.fill_text(
+            &p.pid
+                .map(|pid| pid.to_string())
+                .unwrap_or_else(|| "-".to_string()),
+            port_cols[4],
+            row_y + 19.0,
+        );
 
         row_y += row_h + 3.0;
     }
@@ -1507,7 +1722,11 @@ fn render_tunnels_panel(
 
     ctx.set_fill_style_str(theme.text_secondary);
     ctx.set_font("12px sans-serif");
-    let _ = ctx.fill_text("通过加密 SSH 通道将本地端口安全映射至远端服务", x + 310.0, y + 26.0);
+    let _ = ctx.fill_text(
+        "通过加密 SSH 通道将本地端口安全映射至远端服务",
+        x + 310.0,
+        y + 26.0,
+    );
 
     // "+ 新建隧道" Button
     let btn_w = 95.0;
@@ -1543,7 +1762,11 @@ fn render_tunnels_panel(
         // Type badge (Local TCP / SOCKS5)
         let is_local = tun.tunnel_type == "Local TCP";
         let badge_bg = theme.bg_input;
-        let badge_color = if is_local { theme.accent_cyan } else { theme.accent_purple };
+        let badge_color = if is_local {
+            theme.accent_cyan
+        } else {
+            theme.accent_purple
+        };
         let badge_text = if is_local { "Local TCP" } else { "SOCKS5" };
 
         let bx = x + 28.0;
@@ -1572,18 +1795,37 @@ fn render_tunnels_panel(
 
         // Status LED
         let led_x = x + w - 240.0;
-        ctx.set_fill_style_str(if tun.is_active { theme.status_online } else { theme.status_warn });
+        ctx.set_fill_style_str(if tun.is_active {
+            theme.status_online
+        } else {
+            theme.status_warn
+        });
         ctx.begin_path();
         let _ = ctx.arc(led_x, by + 10.0, 4.0, 0.0, std::f64::consts::PI * 2.0);
         ctx.fill();
 
         ctx.set_fill_style_str(theme.text_secondary);
         ctx.set_font("11px sans-serif");
-        let _ = ctx.fill_text(if tun.is_active { "运行中 (Active)" } else { "已暂停 (Idle)" }, led_x + 10.0, by + 14.0);
+        let _ = ctx.fill_text(
+            if tun.is_active {
+                "运行中 (Active)"
+            } else {
+                "已暂停 (Idle)"
+            },
+            led_x + 10.0,
+            by + 14.0,
+        );
 
         // Traffic Stats
         ctx.set_font("11px sans-serif");
-        let _ = ctx.fill_text(&format!("流量: {} | 连接: {}", tun.bytes_transferred, tun.active_conns), led_x, card_y + 54.0);
+        let _ = ctx.fill_text(
+            &format!(
+                "流量: {} | 连接: {}",
+                tun.bytes_transferred, tun.active_conns
+            ),
+            led_x,
+            card_y + 54.0,
+        );
 
         // Action Buttons: [ ⏹ 停止 ] or [ ▶ 启动 ], [ 🗑️ 删除 ]
         let act_btn_x = x + w - 100.0;
@@ -1596,7 +1838,15 @@ fn render_tunnels_panel(
         ctx.set_fill_style_str(theme.text_secondary);
         ctx.set_font("11px sans-serif");
         ctx.set_text_align("center");
-        let _ = ctx.fill_text(if tun.is_active { "⏹ 停止" } else { "▶ 启动" }, act_btn_x + 37.5, act_btn_y + 16.0);
+        let _ = ctx.fill_text(
+            if tun.is_active {
+                "⏹ 停止"
+            } else {
+                "▶ 启动"
+            },
+            act_btn_x + 37.5,
+            act_btn_y + 16.0,
+        );
         ctx.set_text_align("left");
 
         card_y += card_h + 10.0;
@@ -1618,15 +1868,33 @@ fn render_snippets_panel(
     for (idx, &cat) in SNIPPET_CATEGORIES.iter().enumerate() {
         let (cx, cy, cw, ch) = get_snippet_category_rect(idx, x, y);
         let is_active = state.selected_snippet_category == cat
-            || ((state.selected_snippet_category == "All" || state.selected_snippet_category == "全部") && cat == "全部");
+            || ((state.selected_snippet_category == "All"
+                || state.selected_snippet_category == "全部")
+                && cat == "全部");
 
-        ctx.set_fill_style_str(if is_active { theme.bg_card_hover } else { theme.bg_card });
+        ctx.set_fill_style_str(if is_active {
+            theme.bg_card_hover
+        } else {
+            theme.bg_card
+        });
         ctx.fill_rect(cx, cy, cw, ch);
-        ctx.set_stroke_style_str(if is_active { theme.accent_cyan } else { theme.border_default });
+        ctx.set_stroke_style_str(if is_active {
+            theme.accent_cyan
+        } else {
+            theme.border_default
+        });
         ctx.stroke_rect(cx, cy, cw, ch);
 
-        ctx.set_fill_style_str(if is_active { theme.accent_cyan } else { theme.text_secondary });
-        ctx.set_font(if is_active { "bold 12px sans-serif" } else { "12px sans-serif" });
+        ctx.set_fill_style_str(if is_active {
+            theme.accent_cyan
+        } else {
+            theme.text_secondary
+        });
+        ctx.set_font(if is_active {
+            "bold 12px sans-serif"
+        } else {
+            "12px sans-serif"
+        });
         ctx.set_text_align("center");
         let _ = ctx.fill_text(cat, cx + cw / 2.0, cy + 17.0);
     }
@@ -1654,7 +1922,11 @@ fn render_snippets_panel(
         let cy = grid_y + (row as f64) * (card_h + card_gap);
 
         // Check visible boundary (leave room for output drawer if open)
-        let bottom_limit = if state.snippet_output.is_some() { y + h - 230.0 } else { y + h - 10.0 };
+        let bottom_limit = if state.snippet_output.is_some() {
+            y + h - 230.0
+        } else {
+            y + h - 10.0
+        };
         if cy + card_h > bottom_limit {
             break;
         }
@@ -1703,7 +1975,11 @@ fn render_snippets_panel(
 
         ctx.set_fill_style_str(theme.text_muted);
         ctx.set_font("11px 'JetBrains Mono', monospace");
-        let _ = ctx.fill_text(&format!("$ {}", truncate_text(s.command, 42)), cx + 18.0, cy + 66.0);
+        let _ = ctx.fill_text(
+            &format!("$ {}", truncate_text(s.command, 42)),
+            cx + 18.0,
+            cy + 66.0,
+        );
 
         // Action Buttons: [ 💻 注入终端 ] and [ ⚡ 执行 ]
         let btn_y = cy + 77.0;
@@ -1754,7 +2030,11 @@ fn render_snippets_panel(
         ctx.set_fill_style_str(theme.accent_cyan);
         ctx.set_font("bold 13px sans-serif");
         ctx.set_text_align("left");
-        let _ = ctx.fill_text(&format!("⚡ 脚本静默执行输出: {}", title), x + 16.0, drawer_y + 22.0);
+        let _ = ctx.fill_text(
+            &format!("⚡ 脚本静默执行输出: {}", title),
+            x + 16.0,
+            drawer_y + 22.0,
+        );
 
         // Close button
         let btn_w = 70.0;
@@ -1824,7 +2104,11 @@ pub fn get_parent_dir(path: &str) -> String {
     }
 }
 
-pub fn get_sftp_refresh_btn_rect(content_x: f64, content_y: f64, content_w: f64) -> (f64, f64, f64, f64) {
+pub fn get_sftp_refresh_btn_rect(
+    content_x: f64,
+    content_y: f64,
+    content_w: f64,
+) -> (f64, f64, f64, f64) {
     let btn_w = 88.0;
     let btn_h = 28.0;
     let btn_x = content_x + content_w - 24.0 - btn_w;
@@ -1836,7 +2120,11 @@ pub fn get_sftp_parent_dir_btn_rect(content_x: f64, content_y: f64) -> (f64, f64
     (content_x + 24.0, content_y + 54.0, 94.0, 26.0)
 }
 
-pub fn get_sftp_breadcrumb_rects(content_x: f64, content_y: f64, path: &str) -> Vec<(String, f64, f64, f64, f64)> {
+pub fn get_sftp_breadcrumb_rects(
+    content_x: f64,
+    content_y: f64,
+    path: &str,
+) -> Vec<(String, f64, f64, f64, f64)> {
     let breadcrumbs = parse_breadcrumbs(path);
     let mut rects = Vec::new();
     let is_root = path.trim() == "/" || path.trim().is_empty();
@@ -1857,7 +2145,12 @@ pub fn get_sftp_breadcrumb_rects(content_x: f64, content_y: f64, path: &str) -> 
     rects
 }
 
-pub fn get_sftp_file_row_rect(idx: usize, content_x: f64, content_y: f64, content_w: f64) -> (f64, f64, f64, f64) {
+pub fn get_sftp_file_row_rect(
+    idx: usize,
+    content_x: f64,
+    content_y: f64,
+    content_w: f64,
+) -> (f64, f64, f64, f64) {
     let row_y = content_y + 130.0 + (idx as f64) * 36.0;
     let row_x = content_x + 24.0;
     let row_w = content_w - 48.0;
@@ -1911,7 +2204,18 @@ pub fn format_modified_time(ts: Option<u64>) -> String {
         }
         let leap = (y % 4 == 0 && y % 100 != 0) || (y % 400 == 0);
         let days_in_months = [
-            31, if leap { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31,
+            31,
+            if leap { 29 } else { 28 },
+            31,
+            30,
+            31,
+            30,
+            31,
+            31,
+            30,
+            31,
+            30,
+            31,
         ];
         let mut m = 12;
         for (idx, &dim) in days_in_months.iter().enumerate() {
@@ -1970,7 +2274,8 @@ fn render_sftp_view(
     let _ = ctx.fill_text("🔄 刷新", btn_rx + btn_rw / 2.0, btn_ry + 18.0);
 
     // 2. Breadcrumb & Navigation Bar
-    let is_root = state.sftp_current_path.trim() == "/" || state.sftp_current_path.trim().is_empty();
+    let is_root =
+        state.sftp_current_path.trim() == "/" || state.sftp_current_path.trim().is_empty();
     if !is_root {
         let (p_x, p_y, p_w, p_h) = get_sftp_parent_dir_btn_rect(x, y);
         ctx.set_fill_style_str(theme.bg_card);
@@ -2055,7 +2360,11 @@ fn render_sftp_view(
         ctx.set_fill_style_str(theme.accent_cyan);
         ctx.set_font("14px sans-serif");
         ctx.set_text_align("left");
-        let _ = ctx.fill_text("⏳ 正在加载远程目录 (Loading remote directory...)", table_x + 12.0, msg_y);
+        let _ = ctx.fill_text(
+            "⏳ 正在加载远程目录 (Loading remote directory...)",
+            table_x + 12.0,
+            msg_y,
+        );
     } else if let Some(ref err) = state.sftp_error {
         let msg_y = header_y + 50.0;
         ctx.set_fill_style_str(theme.status_crit);
@@ -2069,7 +2378,9 @@ fn render_sftp_view(
         ctx.set_text_align("left");
         let _ = ctx.fill_text("📂 空目录 (Empty directory)", table_x + 12.0, msg_y);
     } else {
-        let max_visible_rows = ((h - (header_y - y + header_h + 20.0)) / 36.0).floor().max(1.0) as usize;
+        let max_visible_rows = ((h - (header_y - y + header_h + 20.0)) / 36.0)
+            .floor()
+            .max(1.0) as usize;
         for (idx, file) in state.sftp_files.iter().enumerate().take(max_visible_rows) {
             let (rx, ry, rw, rh) = get_sftp_file_row_rect(idx, x, y, w);
 
@@ -2259,7 +2570,10 @@ pub fn render_sftp_editor_modal(
     ctx.set_text_align("left");
     let line_count = content.lines().count();
     let byte_count = content.len();
-    let status_text = format!("UTF-8 | 行数: {} | 字符: {} 字节 | (Ctrl+S / ⌘+S 保存, Esc 关闭)", line_count, byte_count);
+    let status_text = format!(
+        "UTF-8 | 行数: {} | 字符: {} 字节 | (Ctrl+S / ⌘+S 保存, Esc 关闭)",
+        line_count, byte_count
+    );
     let _ = ctx.fill_text(&status_text, mx + 16.0, status_y);
 
     if state.sftp_loading {
@@ -2279,7 +2593,11 @@ pub const SETTINGS_CATEGORIES: [(SettingsCategory, &str, &str, &str); 5] = [
     (SettingsCategory::Backup, "💾", "备份与重置", "Backup"),
 ];
 
-pub fn get_settings_category_rect(cat_idx: usize, base_x: f64, base_y: f64) -> (f64, f64, f64, f64) {
+pub fn get_settings_category_rect(
+    cat_idx: usize,
+    base_x: f64,
+    base_y: f64,
+) -> (f64, f64, f64, f64) {
     let item_x = base_x + 8.0;
     let item_y = base_y + 24.0 + (cat_idx as f64) * 48.0;
     let item_w = 154.0;
@@ -2341,7 +2659,11 @@ pub const THEME_PRESETS: [ThemePresetDef; 4] = [
     },
 ];
 
-pub fn get_settings_theme_card_rect(card_idx: usize, right_x: f64, sec_y: f64) -> (f64, f64, f64, f64) {
+pub fn get_settings_theme_card_rect(
+    card_idx: usize,
+    right_x: f64,
+    sec_y: f64,
+) -> (f64, f64, f64, f64) {
     let card_w = 210.0;
     let card_h = 96.0;
     let card_gap = 14.0;
@@ -2374,7 +2696,11 @@ pub fn get_settings_glow_toggle_rect(right_x: f64, sec_y: f64) -> (f64, f64, f64
 
 pub const FONT_SIZES: [f32; 4] = [12.0, 13.0, 14.0, 16.0];
 
-pub fn get_settings_font_size_pill_rect(idx: usize, right_x: f64, sec_y: f64) -> (f64, f64, f64, f64) {
+pub fn get_settings_font_size_pill_rect(
+    idx: usize,
+    right_x: f64,
+    sec_y: f64,
+) -> (f64, f64, f64, f64) {
     let pill_w = 80.0;
     let pill_h = 32.0;
     let pill_gap = 10.0;
@@ -2389,7 +2715,11 @@ pub const CURSOR_STYLES: [(&str, &str); 3] = [
     ("Underline", "Underline _"),
 ];
 
-pub fn get_settings_cursor_style_pill_rect(idx: usize, right_x: f64, sec_y: f64) -> (f64, f64, f64, f64) {
+pub fn get_settings_cursor_style_pill_rect(
+    idx: usize,
+    right_x: f64,
+    sec_y: f64,
+) -> (f64, f64, f64, f64) {
     let pill_w = 110.0;
     let pill_h = 32.0;
     let pill_gap = 10.0;
@@ -2400,7 +2730,11 @@ pub fn get_settings_cursor_style_pill_rect(idx: usize, right_x: f64, sec_y: f64)
 
 pub const PROBE_INTERVALS: [u64; 4] = [1, 2, 5, 10];
 
-pub fn get_settings_probe_interval_pill_rect(idx: usize, right_x: f64, sec_y: f64) -> (f64, f64, f64, f64) {
+pub fn get_settings_probe_interval_pill_rect(
+    idx: usize,
+    right_x: f64,
+    sec_y: f64,
+) -> (f64, f64, f64, f64) {
     let pill_w = 80.0;
     let pill_h = 32.0;
     let pill_gap = 10.0;
@@ -2411,7 +2745,11 @@ pub fn get_settings_probe_interval_pill_rect(idx: usize, right_x: f64, sec_y: f6
 
 pub const ALERT_THRESHOLDS: [Option<f32>; 4] = [Some(70.0), Some(80.0), Some(90.0), None];
 
-pub fn get_settings_cpu_threshold_pill_rect(idx: usize, right_x: f64, sec_y: f64) -> (f64, f64, f64, f64) {
+pub fn get_settings_cpu_threshold_pill_rect(
+    idx: usize,
+    right_x: f64,
+    sec_y: f64,
+) -> (f64, f64, f64, f64) {
     let pill_w = 80.0;
     let pill_h = 32.0;
     let pill_gap = 10.0;
@@ -2420,7 +2758,11 @@ pub fn get_settings_cpu_threshold_pill_rect(idx: usize, right_x: f64, sec_y: f64
     (px, py, pill_w, pill_h)
 }
 
-pub fn get_settings_mem_threshold_pill_rect(idx: usize, right_x: f64, sec_y: f64) -> (f64, f64, f64, f64) {
+pub fn get_settings_mem_threshold_pill_rect(
+    idx: usize,
+    right_x: f64,
+    sec_y: f64,
+) -> (f64, f64, f64, f64) {
     let pill_w = 80.0;
     let pill_h = 32.0;
     let pill_gap = 10.0;
@@ -2429,7 +2771,11 @@ pub fn get_settings_mem_threshold_pill_rect(idx: usize, right_x: f64, sec_y: f64
     (px, py, pill_w, pill_h)
 }
 
-pub fn get_settings_disk_threshold_pill_rect(idx: usize, right_x: f64, sec_y: f64) -> (f64, f64, f64, f64) {
+pub fn get_settings_disk_threshold_pill_rect(
+    idx: usize,
+    right_x: f64,
+    sec_y: f64,
+) -> (f64, f64, f64, f64) {
     let pill_w = 80.0;
     let pill_h = 32.0;
     let pill_gap = 10.0;
@@ -2445,7 +2791,11 @@ pub const PING_PRESETS: [(&str, &str); 4] = [
     ("223.5.5.5", "223.5.5.5 (AliDNS)"),
 ];
 
-pub fn get_settings_ping_preset_pill_rect(idx: usize, right_x: f64, sec_y: f64) -> (f64, f64, f64, f64) {
+pub fn get_settings_ping_preset_pill_rect(
+    idx: usize,
+    right_x: f64,
+    sec_y: f64,
+) -> (f64, f64, f64, f64) {
     let pill_w = 115.0;
     let pill_h = 32.0;
     let pill_gap = 10.0;
@@ -2476,14 +2826,13 @@ pub fn get_settings_notification_test_btn_rect(right_x: f64, sec_y: f64) -> (f64
     (right_x + 195.0, sec_y + 72.0, 160.0, 32.0)
 }
 
-pub const FONT_FAMILIES: [&str; 4] = [
-    "JetBrains Mono",
-    "Fira Code",
-    "SF Mono",
-    "monospace",
-];
+pub const FONT_FAMILIES: [&str; 4] = ["JetBrains Mono", "Fira Code", "SF Mono", "monospace"];
 
-pub fn get_settings_font_family_pill_rect(idx: usize, right_x: f64, sec_y: f64) -> (f64, f64, f64, f64) {
+pub fn get_settings_font_family_pill_rect(
+    idx: usize,
+    right_x: f64,
+    sec_y: f64,
+) -> (f64, f64, f64, f64) {
     let pill_w = 115.0;
     let pill_h = 32.0;
     let pill_gap = 10.0;
@@ -2494,7 +2843,11 @@ pub fn get_settings_font_family_pill_rect(idx: usize, right_x: f64, sec_y: f64) 
 
 pub const SCROLLBACK_OPTIONS: [usize; 4] = [1000, 5000, 10000, 50000];
 
-pub fn get_settings_scrollback_pill_rect(idx: usize, right_x: f64, sec_y: f64) -> (f64, f64, f64, f64) {
+pub fn get_settings_scrollback_pill_rect(
+    idx: usize,
+    right_x: f64,
+    sec_y: f64,
+) -> (f64, f64, f64, f64) {
     let pill_w = 95.0;
     let pill_h = 32.0;
     let pill_gap = 10.0;
@@ -2560,8 +2913,16 @@ fn render_settings_view(
             ctx.fill_rect(ix, iy + 4.0, 3.0, ih - 8.0);
         }
 
-        ctx.set_font(if is_active { "bold 13px sans-serif" } else { "13px sans-serif" });
-        ctx.set_fill_style_str(if is_active { theme.text_primary } else { theme.text_secondary });
+        ctx.set_font(if is_active {
+            "bold 13px sans-serif"
+        } else {
+            "13px sans-serif"
+        });
+        ctx.set_fill_style_str(if is_active {
+            theme.text_primary
+        } else {
+            theme.text_secondary
+        });
         ctx.set_text_align("left");
         let cat_label = match cat {
             SettingsCategory::Appearance => state.t("settings.cat_appearance"),
@@ -2584,22 +2945,38 @@ fn render_settings_view(
             // Header
             ctx.set_fill_style_str(theme.text_primary);
             ctx.set_font("bold 18px sans-serif");
-            let _ = ctx.fill_text(&format!("🎨 {} (Appearance)", state.t("settings.cat_appearance")), right_x, right_y + 14.0);
+            let _ = ctx.fill_text(
+                &format!("🎨 {} (Appearance)", state.t("settings.cat_appearance")),
+                right_x,
+                right_y + 14.0,
+            );
             ctx.set_fill_style_str(theme.text_secondary);
             ctx.set_font("12px sans-serif");
-            let _ = ctx.fill_text("实时无缝切换全站色彩主题、多语言国际化及暗夜霓虹微光动效。", right_x, right_y + 34.0);
+            let _ = ctx.fill_text(
+                "实时无缝切换全站色彩主题、多语言国际化及暗夜霓虹微光动效。",
+                right_x,
+                right_y + 34.0,
+            );
 
             // Section 1: 主题调色板 (Theme Palette)
             let sec1_y = right_y + 56.0;
             ctx.set_fill_style_str(theme.text_primary);
             ctx.set_font("bold 14px sans-serif");
-            let _ = ctx.fill_text(&format!("{} (Theme Palette)", state.t("settings.theme_title")), right_x, sec1_y + 14.0);
+            let _ = ctx.fill_text(
+                &format!("{} (Theme Palette)", state.t("settings.theme_title")),
+                right_x,
+                sec1_y + 14.0,
+            );
 
             for (idx, preset) in THEME_PRESETS.iter().enumerate() {
                 let (cx, cy, cw, ch) = get_settings_theme_card_rect(idx, right_x, sec1_y);
                 let is_active = is_theme_active(&state.settings.theme_name, preset.key);
 
-                ctx.set_fill_style_str(if is_active { theme.bg_card_hover } else { theme.bg_card });
+                ctx.set_fill_style_str(if is_active {
+                    theme.bg_card_hover
+                } else {
+                    theme.bg_card
+                });
                 ctx.fill_rect(cx, cy, cw, ch);
 
                 if is_active {
@@ -2629,7 +3006,13 @@ fn render_settings_view(
                 let _ = ctx.fill_text(preset.subtitle, cx + 12.0, cy + 40.0);
 
                 // Miniature color swatches
-                let swatches = [preset.bg, preset.card, preset.cyan, preset.purple, preset.border];
+                let swatches = [
+                    preset.bg,
+                    preset.card,
+                    preset.cyan,
+                    preset.purple,
+                    preset.border,
+                ];
                 let swatch_size = 18.0;
                 let swatch_gap = 6.0;
                 let mut sx = cx + 12.0;
@@ -2648,21 +3031,37 @@ fn render_settings_view(
             let sec2_y = sec1_y + 240.0;
             ctx.set_fill_style_str(theme.text_primary);
             ctx.set_font("bold 14px sans-serif");
-            let _ = ctx.fill_text(&format!("{} (Language & i18n)", state.t("settings.language_title")), right_x, sec2_y + 14.0);
+            let _ = ctx.fill_text(
+                &format!("{} (Language & i18n)", state.t("settings.language_title")),
+                right_x,
+                sec2_y + 14.0,
+            );
 
             for (idx, (code, name)) in LANG_PRESETS.iter().enumerate() {
                 let (px, py, pw, ph) = get_settings_lang_pill_rect(idx, right_x, sec2_y);
                 let is_active = state.settings.language.eq_ignore_ascii_case(code)
                     || (*code == "zh-CN" && state.settings.language.is_empty());
 
-                ctx.set_fill_style_str(if is_active { theme.bg_card_hover } else { theme.bg_card });
+                ctx.set_fill_style_str(if is_active {
+                    theme.bg_card_hover
+                } else {
+                    theme.bg_card
+                });
                 ctx.fill_rect(px, py, pw, ph);
 
-                ctx.set_stroke_style_str(if is_active { theme.accent_cyan } else { theme.border_default });
+                ctx.set_stroke_style_str(if is_active {
+                    theme.accent_cyan
+                } else {
+                    theme.border_default
+                });
                 ctx.set_line_width(if is_active { 1.5 } else { 1.0 });
                 ctx.stroke_rect(px, py, pw, ph);
 
-                ctx.set_fill_style_str(if is_active { theme.accent_cyan } else { theme.text_primary });
+                ctx.set_fill_style_str(if is_active {
+                    theme.accent_cyan
+                } else {
+                    theme.text_primary
+                });
                 ctx.set_font("12px sans-serif");
                 ctx.set_text_align("center");
                 let _ = ctx.fill_text(name, px + pw / 2.0, py + 20.0);
@@ -2673,23 +3072,47 @@ fn render_settings_view(
             let sec3_y = sec2_y + 76.0;
             ctx.set_fill_style_str(theme.text_primary);
             ctx.set_font("bold 14px sans-serif");
-            let _ = ctx.fill_text(&format!("{} (Glow Effect)", state.t("settings.glow_title")), right_x, sec3_y + 14.0);
+            let _ = ctx.fill_text(
+                &format!("{} (Glow Effect)", state.t("settings.glow_title")),
+                right_x,
+                sec3_y + 14.0,
+            );
             ctx.set_fill_style_str(theme.text_secondary);
             ctx.set_font("11px sans-serif");
-            let _ = ctx.fill_text("启用高精度 GPU 霓虹微光呼吸边缘与阴影光晕渲染", right_x, sec3_y + 32.0);
+            let _ = ctx.fill_text(
+                "启用高精度 GPU 霓虹微光呼吸边缘与阴影光晕渲染",
+                right_x,
+                sec3_y + 32.0,
+            );
 
             let (gx, gy, gw, gh) = get_settings_glow_toggle_rect(right_x, sec3_y + 16.0);
             let glow_on = state.settings.glow_effects_enabled;
-            ctx.set_fill_style_str(if glow_on { theme.bg_card_hover } else { theme.bg_card });
+            ctx.set_fill_style_str(if glow_on {
+                theme.bg_card_hover
+            } else {
+                theme.bg_card
+            });
             ctx.fill_rect(gx, gy, gw, gh);
-            ctx.set_stroke_style_str(if glow_on { theme.accent_cyan } else { theme.border_default });
+            ctx.set_stroke_style_str(if glow_on {
+                theme.accent_cyan
+            } else {
+                theme.border_default
+            });
             ctx.set_line_width(if glow_on { 1.5 } else { 1.0 });
             ctx.stroke_rect(gx, gy, gw, gh);
 
-            ctx.set_fill_style_str(if glow_on { theme.accent_cyan } else { theme.text_muted });
+            ctx.set_fill_style_str(if glow_on {
+                theme.accent_cyan
+            } else {
+                theme.text_muted
+            });
             ctx.set_font("bold 12px sans-serif");
             ctx.set_text_align("center");
-            let glow_label = if glow_on { "🟢 动效已开启 (ON)" } else { "⚪ 动效已停用 (OFF)" };
+            let glow_label = if glow_on {
+                "🟢 动效已开启 (ON)"
+            } else {
+                "⚪ 动效已停用 (OFF)"
+            };
             let _ = ctx.fill_text(glow_label, gx + gw / 2.0, gy + 20.0);
             ctx.set_text_align("left");
         }
@@ -2697,28 +3120,55 @@ fn render_settings_view(
             // Header
             ctx.set_fill_style_str(theme.text_primary);
             ctx.set_font("bold 18px sans-serif");
-            let _ = ctx.fill_text(&format!(">_ {} (Terminal Preferences)", state.t("settings.cat_terminal")), right_x, right_y + 14.0);
+            let _ = ctx.fill_text(
+                &format!(
+                    ">_ {} (Terminal Preferences)",
+                    state.t("settings.cat_terminal")
+                ),
+                right_x,
+                right_y + 14.0,
+            );
             ctx.set_fill_style_str(theme.text_secondary);
             ctx.set_font("12px sans-serif");
-            let _ = ctx.fill_text("自定义 Web 终端字体族、字号大小、光标形状与回滚历史缓冲区。", right_x, right_y + 34.0);
+            let _ = ctx.fill_text(
+                "自定义 Web 终端字体族、字号大小、光标形状与回滚历史缓冲区。",
+                right_x,
+                right_y + 34.0,
+            );
 
             // Section 1: Font Size
             let sec1_y = right_y + 56.0;
             ctx.set_fill_style_str(theme.text_primary);
             ctx.set_font("bold 14px sans-serif");
-            let _ = ctx.fill_text(&format!("{} (Font Size)", state.t("settings.font_size")), right_x, sec1_y + 14.0);
+            let _ = ctx.fill_text(
+                &format!("{} (Font Size)", state.t("settings.font_size")),
+                right_x,
+                sec1_y + 14.0,
+            );
 
             for (idx, size) in FONT_SIZES.iter().enumerate() {
                 let (px, py, pw, ph) = get_settings_font_size_pill_rect(idx, right_x, sec1_y);
                 let is_active = (state.settings.terminal_font_size - size).abs() < 0.1;
 
-                ctx.set_fill_style_str(if is_active { theme.bg_card_hover } else { theme.bg_card });
+                ctx.set_fill_style_str(if is_active {
+                    theme.bg_card_hover
+                } else {
+                    theme.bg_card
+                });
                 ctx.fill_rect(px, py, pw, ph);
-                ctx.set_stroke_style_str(if is_active { theme.accent_cyan } else { theme.border_default });
+                ctx.set_stroke_style_str(if is_active {
+                    theme.accent_cyan
+                } else {
+                    theme.border_default
+                });
                 ctx.set_line_width(if is_active { 1.5 } else { 1.0 });
                 ctx.stroke_rect(px, py, pw, ph);
 
-                ctx.set_fill_style_str(if is_active { theme.accent_cyan } else { theme.text_primary });
+                ctx.set_fill_style_str(if is_active {
+                    theme.accent_cyan
+                } else {
+                    theme.text_primary
+                });
                 ctx.set_font("12px sans-serif");
                 ctx.set_text_align("center");
                 let _ = ctx.fill_text(&format!("{}px", *size as u32), px + pw / 2.0, py + 20.0);
@@ -2733,16 +3183,35 @@ fn render_settings_view(
 
             for (idx, (style_val, style_label)) in CURSOR_STYLES.iter().enumerate() {
                 let (px, py, pw, ph) = get_settings_cursor_style_pill_rect(idx, right_x, sec2_y);
-                let is_active = state.settings.terminal_cursor_style.eq_ignore_ascii_case(style_val)
-                    || (*style_val == "Bar" && state.settings.terminal_cursor_style.eq_ignore_ascii_case("Line"));
+                let is_active = state
+                    .settings
+                    .terminal_cursor_style
+                    .eq_ignore_ascii_case(style_val)
+                    || (*style_val == "Bar"
+                        && state
+                            .settings
+                            .terminal_cursor_style
+                            .eq_ignore_ascii_case("Line"));
 
-                ctx.set_fill_style_str(if is_active { theme.bg_card_hover } else { theme.bg_card });
+                ctx.set_fill_style_str(if is_active {
+                    theme.bg_card_hover
+                } else {
+                    theme.bg_card
+                });
                 ctx.fill_rect(px, py, pw, ph);
-                ctx.set_stroke_style_str(if is_active { theme.accent_cyan } else { theme.border_default });
+                ctx.set_stroke_style_str(if is_active {
+                    theme.accent_cyan
+                } else {
+                    theme.border_default
+                });
                 ctx.set_line_width(if is_active { 1.5 } else { 1.0 });
                 ctx.stroke_rect(px, py, pw, ph);
 
-                ctx.set_fill_style_str(if is_active { theme.accent_cyan } else { theme.text_primary });
+                ctx.set_fill_style_str(if is_active {
+                    theme.accent_cyan
+                } else {
+                    theme.text_primary
+                });
                 ctx.set_font("12px sans-serif");
                 ctx.set_text_align("center");
                 let _ = ctx.fill_text(style_label, px + pw / 2.0, py + 20.0);
@@ -2753,19 +3222,38 @@ fn render_settings_view(
             let sec3_y = sec2_y + 76.0;
             ctx.set_fill_style_str(theme.text_primary);
             ctx.set_font("bold 14px sans-serif");
-            let _ = ctx.fill_text(&format!("{} (Font Family)", state.t("settings.font_family")), right_x, sec3_y + 14.0);
+            let _ = ctx.fill_text(
+                &format!("{} (Font Family)", state.t("settings.font_family")),
+                right_x,
+                sec3_y + 14.0,
+            );
 
             for (idx, font) in FONT_FAMILIES.iter().enumerate() {
                 let (px, py, pw, ph) = get_settings_font_family_pill_rect(idx, right_x, sec3_y);
-                let is_active = state.settings.terminal_font_family.eq_ignore_ascii_case(font);
+                let is_active = state
+                    .settings
+                    .terminal_font_family
+                    .eq_ignore_ascii_case(font);
 
-                ctx.set_fill_style_str(if is_active { theme.bg_card_hover } else { theme.bg_card });
+                ctx.set_fill_style_str(if is_active {
+                    theme.bg_card_hover
+                } else {
+                    theme.bg_card
+                });
                 ctx.fill_rect(px, py, pw, ph);
-                ctx.set_stroke_style_str(if is_active { theme.accent_cyan } else { theme.border_default });
+                ctx.set_stroke_style_str(if is_active {
+                    theme.accent_cyan
+                } else {
+                    theme.border_default
+                });
                 ctx.set_line_width(if is_active { 1.5 } else { 1.0 });
                 ctx.stroke_rect(px, py, pw, ph);
 
-                ctx.set_fill_style_str(if is_active { theme.accent_cyan } else { theme.text_primary });
+                ctx.set_fill_style_str(if is_active {
+                    theme.accent_cyan
+                } else {
+                    theme.text_primary
+                });
                 ctx.set_font("12px 'JetBrains Mono', monospace");
                 ctx.set_text_align("center");
                 let _ = ctx.fill_text(font, px + pw / 2.0, py + 20.0);
@@ -2776,19 +3264,35 @@ fn render_settings_view(
             let sec4_y = sec3_y + 76.0;
             ctx.set_fill_style_str(theme.text_primary);
             ctx.set_font("bold 14px sans-serif");
-            let _ = ctx.fill_text(&format!("{} (Scrollback Buffer)", state.t("settings.scrollback")), right_x, sec4_y + 14.0);
+            let _ = ctx.fill_text(
+                &format!("{} (Scrollback Buffer)", state.t("settings.scrollback")),
+                right_x,
+                sec4_y + 14.0,
+            );
 
             for (idx, &lines) in SCROLLBACK_OPTIONS.iter().enumerate() {
                 let (px, py, pw, ph) = get_settings_scrollback_pill_rect(idx, right_x, sec4_y);
                 let is_active = state.settings.terminal_scrollback_lines == lines;
 
-                ctx.set_fill_style_str(if is_active { theme.bg_card_hover } else { theme.bg_card });
+                ctx.set_fill_style_str(if is_active {
+                    theme.bg_card_hover
+                } else {
+                    theme.bg_card
+                });
                 ctx.fill_rect(px, py, pw, ph);
-                ctx.set_stroke_style_str(if is_active { theme.accent_cyan } else { theme.border_default });
+                ctx.set_stroke_style_str(if is_active {
+                    theme.accent_cyan
+                } else {
+                    theme.border_default
+                });
                 ctx.set_line_width(if is_active { 1.5 } else { 1.0 });
                 ctx.stroke_rect(px, py, pw, ph);
 
-                ctx.set_fill_style_str(if is_active { theme.accent_cyan } else { theme.text_primary });
+                ctx.set_fill_style_str(if is_active {
+                    theme.accent_cyan
+                } else {
+                    theme.text_primary
+                });
                 ctx.set_font("12px sans-serif");
                 ctx.set_text_align("center");
                 let _ = ctx.fill_text(&format!("{} 行", lines), px + pw / 2.0, py + 20.0);
@@ -2799,28 +3303,55 @@ fn render_settings_view(
             // Header
             ctx.set_fill_style_str(theme.text_primary);
             ctx.set_font("bold 18px sans-serif");
-            let _ = ctx.fill_text(&format!("⚡ {} (Probe)", state.t("settings.cat_probe")), right_x, right_y + 14.0);
+            let _ = ctx.fill_text(
+                &format!("⚡ {} (Probe)", state.t("settings.cat_probe")),
+                right_x,
+                right_y + 14.0,
+            );
             ctx.set_fill_style_str(theme.text_secondary);
             ctx.set_font("12px sans-serif");
-            let _ = ctx.fill_text("配置主机后台资源轮询频率与网络延迟探测节点。", right_x, right_y + 34.0);
+            let _ = ctx.fill_text(
+                "配置主机后台资源轮询频率与网络延迟探测节点。",
+                right_x,
+                right_y + 34.0,
+            );
 
             // Section 1: Telemetry Interval
             let sec1_y = right_y + 56.0;
             ctx.set_fill_style_str(theme.text_primary);
             ctx.set_font("bold 14px sans-serif");
-            let _ = ctx.fill_text(&format!("{} (Telemetry Interval)", state.t("settings.interval_label")), right_x, sec1_y + 14.0);
+            let _ = ctx.fill_text(
+                &format!(
+                    "{} (Telemetry Interval)",
+                    state.t("settings.interval_label")
+                ),
+                right_x,
+                sec1_y + 14.0,
+            );
 
             for (idx, interval) in PROBE_INTERVALS.iter().enumerate() {
                 let (px, py, pw, ph) = get_settings_probe_interval_pill_rect(idx, right_x, sec1_y);
                 let is_active = state.settings.probe_interval_secs == *interval;
 
-                ctx.set_fill_style_str(if is_active { theme.bg_card_hover } else { theme.bg_card });
+                ctx.set_fill_style_str(if is_active {
+                    theme.bg_card_hover
+                } else {
+                    theme.bg_card
+                });
                 ctx.fill_rect(px, py, pw, ph);
-                ctx.set_stroke_style_str(if is_active { theme.accent_cyan } else { theme.border_default });
+                ctx.set_stroke_style_str(if is_active {
+                    theme.accent_cyan
+                } else {
+                    theme.border_default
+                });
                 ctx.set_line_width(if is_active { 1.5 } else { 1.0 });
                 ctx.stroke_rect(px, py, pw, ph);
 
-                ctx.set_fill_style_str(if is_active { theme.accent_cyan } else { theme.text_primary });
+                ctx.set_fill_style_str(if is_active {
+                    theme.accent_cyan
+                } else {
+                    theme.text_primary
+                });
                 ctx.set_font("12px sans-serif");
                 ctx.set_text_align("center");
                 let _ = ctx.fill_text(&format!("{}s", interval), px + pw / 2.0, py + 20.0);
@@ -2831,19 +3362,35 @@ fn render_settings_view(
             let sec2_y = sec1_y + 76.0;
             ctx.set_fill_style_str(theme.text_primary);
             ctx.set_font("bold 14px sans-serif");
-            let _ = ctx.fill_text(&format!("目标网络 Ping 探测节点 (当前: {})", state.ping_target), right_x, sec2_y + 14.0);
+            let _ = ctx.fill_text(
+                &format!("目标网络 Ping 探测节点 (当前: {})", state.ping_target),
+                right_x,
+                sec2_y + 14.0,
+            );
 
             for (idx, (ip, label)) in PING_PRESETS.iter().enumerate() {
                 let (px, py, pw, ph) = get_settings_ping_preset_pill_rect(idx, right_x, sec2_y);
                 let is_active = state.ping_target == *ip;
 
-                ctx.set_fill_style_str(if is_active { theme.bg_card_hover } else { theme.bg_card });
+                ctx.set_fill_style_str(if is_active {
+                    theme.bg_card_hover
+                } else {
+                    theme.bg_card
+                });
                 ctx.fill_rect(px, py, pw, ph);
-                ctx.set_stroke_style_str(if is_active { theme.accent_cyan } else { theme.border_default });
+                ctx.set_stroke_style_str(if is_active {
+                    theme.accent_cyan
+                } else {
+                    theme.border_default
+                });
                 ctx.set_line_width(if is_active { 1.5 } else { 1.0 });
                 ctx.stroke_rect(px, py, pw, ph);
 
-                ctx.set_fill_style_str(if is_active { theme.accent_cyan } else { theme.text_primary });
+                ctx.set_fill_style_str(if is_active {
+                    theme.accent_cyan
+                } else {
+                    theme.text_primary
+                });
                 ctx.set_font("12px 'JetBrains Mono', monospace");
                 ctx.set_text_align("center");
                 let _ = ctx.fill_text(label, px + pw / 2.0, py + 20.0);
@@ -2866,34 +3413,63 @@ fn render_settings_view(
             // Header
             ctx.set_fill_style_str(theme.text_primary);
             ctx.set_font("bold 18px sans-serif");
-            let _ = ctx.fill_text(&format!("🔔 {} (Alerts)", state.t("settings.cat_alerts")), right_x, right_y + 14.0);
+            let _ = ctx.fill_text(
+                &format!("🔔 {} (Alerts)", state.t("settings.cat_alerts")),
+                right_x,
+                right_y + 14.0,
+            );
             ctx.set_fill_style_str(theme.text_secondary);
             ctx.set_font("12px sans-serif");
-            let _ = ctx.fill_text("当服务器 CPU、内存或磁盘负载超过预警值时触发告警提示或 Webhook 推送。", right_x, right_y + 34.0);
+            let _ = ctx.fill_text(
+                "当服务器 CPU、内存或磁盘负载超过预警值时触发告警提示或 Webhook 推送。",
+                right_x,
+                right_y + 34.0,
+            );
 
             // Section 1: CPU Threshold
             let sec1_y = right_y + 56.0;
             ctx.set_fill_style_str(theme.text_primary);
             ctx.set_font("bold 14px sans-serif");
-            let _ = ctx.fill_text(&format!("{} (CPU Threshold)", state.t("settings.cpu_threshold")), right_x, sec1_y + 14.0);
+            let _ = ctx.fill_text(
+                &format!("{} (CPU Threshold)", state.t("settings.cpu_threshold")),
+                right_x,
+                sec1_y + 14.0,
+            );
 
             for (idx, opt) in ALERT_THRESHOLDS.iter().enumerate() {
                 let (px, py, pw, ph) = get_settings_cpu_threshold_pill_rect(idx, right_x, sec1_y);
                 let is_active = match opt {
                     Some(val) => (state.settings.alert_cpu_threshold - val).abs() < 0.1,
-                    None => state.settings.alert_cpu_threshold <= 0.0 || state.settings.alert_cpu_threshold > 100.0,
+                    None => {
+                        state.settings.alert_cpu_threshold <= 0.0
+                            || state.settings.alert_cpu_threshold > 100.0
+                    }
                 };
 
-                ctx.set_fill_style_str(if is_active { theme.bg_card_hover } else { theme.bg_card });
+                ctx.set_fill_style_str(if is_active {
+                    theme.bg_card_hover
+                } else {
+                    theme.bg_card
+                });
                 ctx.fill_rect(px, py, pw, ph);
-                ctx.set_stroke_style_str(if is_active { theme.accent_cyan } else { theme.border_default });
+                ctx.set_stroke_style_str(if is_active {
+                    theme.accent_cyan
+                } else {
+                    theme.border_default
+                });
                 ctx.set_line_width(if is_active { 1.5 } else { 1.0 });
                 ctx.stroke_rect(px, py, pw, ph);
 
-                ctx.set_fill_style_str(if is_active { theme.accent_cyan } else { theme.text_primary });
+                ctx.set_fill_style_str(if is_active {
+                    theme.accent_cyan
+                } else {
+                    theme.text_primary
+                });
                 ctx.set_font("12px sans-serif");
                 ctx.set_text_align("center");
-                let label = opt.map(|v| format!("{}%", v as u32)).unwrap_or_else(|| "禁用".to_string());
+                let label = opt
+                    .map(|v| format!("{}%", v as u32))
+                    .unwrap_or_else(|| "禁用".to_string());
                 let _ = ctx.fill_text(&label, px + pw / 2.0, py + 20.0);
                 ctx.set_text_align("left");
             }
@@ -2902,25 +3478,46 @@ fn render_settings_view(
             let sec2_y = sec1_y + 76.0;
             ctx.set_fill_style_str(theme.text_primary);
             ctx.set_font("bold 14px sans-serif");
-            let _ = ctx.fill_text(&format!("{} (Memory Threshold)", state.t("settings.mem_threshold")), right_x, sec2_y + 14.0);
+            let _ = ctx.fill_text(
+                &format!("{} (Memory Threshold)", state.t("settings.mem_threshold")),
+                right_x,
+                sec2_y + 14.0,
+            );
 
             for (idx, opt) in ALERT_THRESHOLDS.iter().enumerate() {
                 let (px, py, pw, ph) = get_settings_mem_threshold_pill_rect(idx, right_x, sec2_y);
                 let is_active = match opt {
                     Some(val) => (state.settings.alert_mem_threshold - val).abs() < 0.1,
-                    None => state.settings.alert_mem_threshold <= 0.0 || state.settings.alert_mem_threshold > 100.0,
+                    None => {
+                        state.settings.alert_mem_threshold <= 0.0
+                            || state.settings.alert_mem_threshold > 100.0
+                    }
                 };
 
-                ctx.set_fill_style_str(if is_active { theme.bg_card_hover } else { theme.bg_card });
+                ctx.set_fill_style_str(if is_active {
+                    theme.bg_card_hover
+                } else {
+                    theme.bg_card
+                });
                 ctx.fill_rect(px, py, pw, ph);
-                ctx.set_stroke_style_str(if is_active { theme.accent_cyan } else { theme.border_default });
+                ctx.set_stroke_style_str(if is_active {
+                    theme.accent_cyan
+                } else {
+                    theme.border_default
+                });
                 ctx.set_line_width(if is_active { 1.5 } else { 1.0 });
                 ctx.stroke_rect(px, py, pw, ph);
 
-                ctx.set_fill_style_str(if is_active { theme.accent_cyan } else { theme.text_primary });
+                ctx.set_fill_style_str(if is_active {
+                    theme.accent_cyan
+                } else {
+                    theme.text_primary
+                });
                 ctx.set_font("12px sans-serif");
                 ctx.set_text_align("center");
-                let label = opt.map(|v| format!("{}%", v as u32)).unwrap_or_else(|| "禁用".to_string());
+                let label = opt
+                    .map(|v| format!("{}%", v as u32))
+                    .unwrap_or_else(|| "禁用".to_string());
                 let _ = ctx.fill_text(&label, px + pw / 2.0, py + 20.0);
                 ctx.set_text_align("left");
             }
@@ -2929,25 +3526,46 @@ fn render_settings_view(
             let sec3_y = sec2_y + 76.0;
             ctx.set_fill_style_str(theme.text_primary);
             ctx.set_font("bold 14px sans-serif");
-            let _ = ctx.fill_text(&format!("{} (Disk Threshold)", state.t("settings.disk_threshold")), right_x, sec3_y + 14.0);
+            let _ = ctx.fill_text(
+                &format!("{} (Disk Threshold)", state.t("settings.disk_threshold")),
+                right_x,
+                sec3_y + 14.0,
+            );
 
             for (idx, opt) in ALERT_THRESHOLDS.iter().enumerate() {
                 let (px, py, pw, ph) = get_settings_disk_threshold_pill_rect(idx, right_x, sec3_y);
                 let is_active = match opt {
                     Some(val) => (state.settings.alert_disk_threshold - val).abs() < 0.1,
-                    None => state.settings.alert_disk_threshold <= 0.0 || state.settings.alert_disk_threshold > 100.0,
+                    None => {
+                        state.settings.alert_disk_threshold <= 0.0
+                            || state.settings.alert_disk_threshold > 100.0
+                    }
                 };
 
-                ctx.set_fill_style_str(if is_active { theme.bg_card_hover } else { theme.bg_card });
+                ctx.set_fill_style_str(if is_active {
+                    theme.bg_card_hover
+                } else {
+                    theme.bg_card
+                });
                 ctx.fill_rect(px, py, pw, ph);
-                ctx.set_stroke_style_str(if is_active { theme.accent_cyan } else { theme.border_default });
+                ctx.set_stroke_style_str(if is_active {
+                    theme.accent_cyan
+                } else {
+                    theme.border_default
+                });
                 ctx.set_line_width(if is_active { 1.5 } else { 1.0 });
                 ctx.stroke_rect(px, py, pw, ph);
 
-                ctx.set_fill_style_str(if is_active { theme.accent_cyan } else { theme.text_primary });
+                ctx.set_fill_style_str(if is_active {
+                    theme.accent_cyan
+                } else {
+                    theme.text_primary
+                });
                 ctx.set_font("12px sans-serif");
                 ctx.set_text_align("center");
-                let label = opt.map(|v| format!("{}%", v as u32)).unwrap_or_else(|| "禁用".to_string());
+                let label = opt
+                    .map(|v| format!("{}%", v as u32))
+                    .unwrap_or_else(|| "禁用".to_string());
                 let _ = ctx.fill_text(&label, px + pw / 2.0, py + 20.0);
                 ctx.set_text_align("left");
             }
@@ -2956,7 +3574,11 @@ fn render_settings_view(
             let sec4_y = sec3_y + 76.0;
             ctx.set_fill_style_str(theme.text_primary);
             ctx.set_font("bold 14px sans-serif");
-            let _ = ctx.fill_text(&format!("{} (Webhook URL)", state.t("settings.notify_webhook")), right_x, sec4_y + 14.0);
+            let _ = ctx.fill_text(
+                &format!("{} (Webhook URL)", state.t("settings.notify_webhook")),
+                right_x,
+                sec4_y + 14.0,
+            );
 
             let box_w = 450.0;
             let box_h = 36.0;
@@ -2965,9 +3587,17 @@ fn render_settings_view(
             ctx.set_stroke_style_str(theme.border_default);
             ctx.stroke_rect(right_x, sec4_y + 26.0, box_w, box_h);
 
-            ctx.set_fill_style_str(if state.settings.alert_webhook_url.is_some() { theme.accent_cyan } else { theme.text_muted });
+            ctx.set_fill_style_str(if state.settings.alert_webhook_url.is_some() {
+                theme.accent_cyan
+            } else {
+                theme.text_muted
+            });
             ctx.set_font("12px 'JetBrains Mono', monospace");
-            let webhook_txt = state.settings.alert_webhook_url.as_deref().unwrap_or("未配置 (默认仅桌面通知)");
+            let webhook_txt = state
+                .settings
+                .alert_webhook_url
+                .as_deref()
+                .unwrap_or("未配置 (默认仅桌面通知)");
             let _ = ctx.fill_text(webhook_txt, right_x + 12.0, sec4_y + 49.0);
 
             let (wx, wy, ww, wh) = get_settings_webhook_set_btn_rect(right_x, sec4_y);
@@ -3020,10 +3650,18 @@ fn render_settings_view(
             // Header
             ctx.set_fill_style_str(theme.text_primary);
             ctx.set_font("bold 18px sans-serif");
-            let _ = ctx.fill_text(&format!("💾 {} (Backup & Storage)", state.t("settings.cat_storage")), right_x, right_y + 14.0);
+            let _ = ctx.fill_text(
+                &format!("💾 {} (Backup & Storage)", state.t("settings.cat_storage")),
+                right_x,
+                right_y + 14.0,
+            );
             ctx.set_fill_style_str(theme.text_secondary);
             ctx.set_font("12px sans-serif");
-            let _ = ctx.fill_text("导出全部系统设置配置文件、导入备份配置或恢复出厂默认值。", right_x, right_y + 34.0);
+            let _ = ctx.fill_text(
+                "导出全部系统设置配置文件、导入备份配置或恢复出厂默认值。",
+                right_x,
+                right_y + 34.0,
+            );
 
             // Section 1: Export & Import JSON
             let sec1_y = right_y + 56.0;
@@ -3032,7 +3670,11 @@ fn render_settings_view(
             let _ = ctx.fill_text("配置备份与迁移", right_x, sec1_y + 14.0);
             ctx.set_fill_style_str(theme.text_secondary);
             ctx.set_font("11px sans-serif");
-            let _ = ctx.fill_text("将当前全站配置打包下载为 JSON 文件，或从本地上传恢复配置", right_x, sec1_y + 32.0);
+            let _ = ctx.fill_text(
+                "将当前全站配置打包下载为 JSON 文件，或从本地上传恢复配置",
+                right_x,
+                sec1_y + 32.0,
+            );
 
             let (ex, ey, ew, eh) = get_settings_export_json_btn_rect(right_x, sec1_y + 16.0);
             ctx.set_fill_style_str(theme.bg_card);
@@ -3066,7 +3708,11 @@ fn render_settings_view(
             let _ = ctx.fill_text("恢复出厂默认设置", right_x, sec2_y + 14.0);
             ctx.set_fill_style_str(theme.text_secondary);
             ctx.set_font("11px sans-serif");
-            let _ = ctx.fill_text("重置主题、语言、终端、探针和告警规则为系统初始出厂状态", right_x, sec2_y + 32.0);
+            let _ = ctx.fill_text(
+                "重置主题、语言、终端、探针和告警规则为系统初始出厂状态",
+                right_x,
+                sec2_y + 32.0,
+            );
 
             let (rx, ry, rw, rh) = get_settings_reset_btn_rect(right_x, sec2_y + 16.0);
             ctx.set_fill_style_str(theme.bg_card);
@@ -3090,8 +3736,16 @@ fn render_settings_view(
         let banner_w = right_w;
         let banner_h = 36.0;
 
-        let bg_color = if is_success { "rgba(63, 185, 80, 0.15)" } else { "rgba(248, 81, 73, 0.15)" };
-        let border_color = if is_success { theme.status_online } else { theme.status_crit };
+        let bg_color = if is_success {
+            "rgba(63, 185, 80, 0.15)"
+        } else {
+            "rgba(248, 81, 73, 0.15)"
+        };
+        let border_color = if is_success {
+            theme.status_online
+        } else {
+            theme.status_crit
+        };
 
         ctx.set_fill_style_str(bg_color);
         ctx.fill_rect(banner_x, banner_y, banner_w, banner_h);
@@ -3101,7 +3755,11 @@ fn render_settings_view(
 
         ctx.set_fill_style_str(border_color);
         ctx.set_font("bold 12px sans-serif");
-        let icon_msg = if is_success { format!("✓ {}", msg) } else { format!("✗ {}", msg) };
+        let icon_msg = if is_success {
+            format!("✓ {}", msg)
+        } else {
+            format!("✗ {}", msg)
+        };
         let _ = ctx.fill_text(&icon_msg, banner_x + 14.0, banner_y + 23.0);
     }
 }
@@ -3242,7 +3900,11 @@ pub fn render_batch_view(
     ctx.set_fill_style_str(theme.accent_cyan);
     ctx.set_font("12px 'JetBrains Mono', monospace");
     let _ = ctx.fill_text(
-        &format!("🎯 目标主机: {} / {}", state.batch_selected_host_ids.len(), state.hosts.len()),
+        &format!(
+            "🎯 目标主机: {} / {}",
+            state.batch_selected_host_ids.len(),
+            state.hosts.len()
+        ),
         badge_x + 10.0,
         badge_y + 16.0,
     );
@@ -3309,33 +3971,59 @@ pub fn render_batch_view(
             }
 
             let is_selected = state.batch_selected_host_ids.contains(&host.id.0);
-            ctx.set_fill_style_str(if is_selected { theme.bg_card_hover } else { theme.bg_input });
+            ctx.set_fill_style_str(if is_selected {
+                theme.bg_card_hover
+            } else {
+                theme.bg_input
+            });
             ctx.fill_rect(row_x, row_y, row_w, row_h);
-            ctx.set_stroke_style_str(if is_selected { theme.accent_cyan } else { theme.border_default });
+            ctx.set_stroke_style_str(if is_selected {
+                theme.accent_cyan
+            } else {
+                theme.border_default
+            });
             ctx.set_line_width(1.0);
             ctx.stroke_rect(row_x, row_y, row_w, row_h);
 
             // Checkbox icon
             let chk_icon = if is_selected { "☑" } else { "☐" };
-            ctx.set_fill_style_str(if is_selected { theme.accent_cyan } else { theme.text_secondary });
+            ctx.set_fill_style_str(if is_selected {
+                theme.accent_cyan
+            } else {
+                theme.text_secondary
+            });
             ctx.set_font("bold 15px sans-serif");
             let _ = ctx.fill_text(chk_icon, row_x + 8.0, row_y + 26.0);
 
             // Host name
             ctx.set_fill_style_str(theme.text_primary);
             ctx.set_font("bold 12px sans-serif");
-            let name_preview = if host.name.len() > 14 { format!("{}...", &host.name[..14]) } else { host.name.clone() };
+            let name_preview = if host.name.len() > 14 {
+                format!("{}...", &host.name[..14])
+            } else {
+                host.name.clone()
+            };
             let _ = ctx.fill_text(&name_preview, row_x + 28.0, row_y + 18.0);
 
             // Host endpoint
             ctx.set_fill_style_str(theme.text_secondary);
             ctx.set_font("10px 'JetBrains Mono', monospace");
-            let _ = ctx.fill_text(&format!("{}:{}", host.hostname, host.port), row_x + 28.0, row_y + 34.0);
+            let _ = ctx.fill_text(
+                &format!("{}:{}", host.hostname, host.port),
+                row_x + 28.0,
+                row_y + 34.0,
+            );
 
             // Status dot
             ctx.set_fill_style_str(theme.status_online);
             ctx.begin_path();
-            let _ = ctx.arc(row_x + row_w - 12.0, row_y + 22.0, 3.5, 0.0, std::f64::consts::PI * 2.0);
+            let _ = ctx.arc(
+                row_x + row_w - 12.0,
+                row_y + 22.0,
+                3.5,
+                0.0,
+                std::f64::consts::PI * 2.0,
+            );
             ctx.fill();
         }
     }
@@ -3358,15 +4046,30 @@ pub fn render_batch_view(
     let _ = ctx.fill_text("执行命令 (Command Script)", right_x + 16.0, right_y + 24.0);
 
     // Quick command pills: uptime, df -h, docker ps, free -m
-    for (pidx, &cmd) in ["uptime", "df -h", "docker ps", "free -m"].iter().enumerate() {
+    for (pidx, &cmd) in ["uptime", "df -h", "docker ps", "free -m"]
+        .iter()
+        .enumerate()
+    {
         let (px, py, pw, ph) = get_batch_pill_rect(pidx, x, y);
         let is_current = state.batch_command == cmd;
-        ctx.set_fill_style_str(if is_current { theme.bg_card_hover } else { theme.bg_input });
+        ctx.set_fill_style_str(if is_current {
+            theme.bg_card_hover
+        } else {
+            theme.bg_input
+        });
         ctx.fill_rect(px, py, pw, ph);
-        ctx.set_stroke_style_str(if is_current { theme.accent_cyan } else { theme.border_default });
+        ctx.set_stroke_style_str(if is_current {
+            theme.accent_cyan
+        } else {
+            theme.border_default
+        });
         ctx.stroke_rect(px, py, pw, ph);
 
-        ctx.set_fill_style_str(if is_current { theme.accent_cyan } else { theme.text_secondary });
+        ctx.set_fill_style_str(if is_current {
+            theme.accent_cyan
+        } else {
+            theme.text_secondary
+        });
         ctx.set_font("11px 'JetBrains Mono', monospace");
         ctx.set_text_align("center");
         let _ = ctx.fill_text(cmd, px + pw / 2.0, py + 15.0);
@@ -3389,7 +4092,11 @@ pub fn render_batch_view(
 
     ctx.set_fill_style_str(theme.text_primary);
     ctx.set_font("13px 'JetBrains Mono', monospace");
-    let _ = ctx.fill_text(&format!("{} |", state.batch_command), box_x + 28.0, box_y + 30.0);
+    let _ = ctx.fill_text(
+        &format!("{} |", state.batch_command),
+        box_x + 28.0,
+        box_y + 30.0,
+    );
 
     // [ 🚀 并发执行 (Run Batch) ] button with cyan glow / pulse
     let (btn_x, btn_y, btn_w, btn_h) = get_batch_run_btn_rect(x, y, w);
@@ -3419,7 +4126,10 @@ pub fn render_batch_view(
     ctx.set_fill_style_str(theme.text_secondary);
     ctx.set_font("11px sans-serif");
     let _ = ctx.fill_text(
-        &format!("将向 {} 台选中主机下发命令 (Ctrl+Enter 快捷下发)", state.batch_selected_host_ids.len()),
+        &format!(
+            "将向 {} 台选中主机下发命令 (Ctrl+Enter 快捷下发)",
+            state.batch_selected_host_ids.len()
+        ),
         right_x + 16.0,
         right_y + 122.0,
     );
@@ -3434,14 +4144,22 @@ pub fn render_batch_view(
 
     ctx.set_fill_style_str(theme.text_primary);
     ctx.set_font("bold 13px sans-serif");
-    let _ = ctx.fill_text("执行瀑布流与输出聚合 (Execution Waterfall)", right_x + 16.0, waterfall_y + 24.0);
+    let _ = ctx.fill_text(
+        "执行瀑布流与输出聚合 (Execution Waterfall)",
+        right_x + 16.0,
+        waterfall_y + 24.0,
+    );
 
     if let Some(ref job) = state.batch_results {
         ctx.set_fill_style_str(theme.accent_cyan);
         ctx.set_font("11px 'JetBrains Mono', monospace");
         ctx.set_text_align("right");
         let _ = ctx.fill_text(
-            &format!("总耗时: {}ms | 聚合节点: {}", job.total_duration_ms, job.hosts_results.len()),
+            &format!(
+                "总耗时: {}ms | 聚合节点: {}",
+                job.total_duration_ms,
+                job.hosts_results.len()
+            ),
             right_x + right_w - 16.0,
             waterfall_y + 24.0,
         );
@@ -3474,7 +4192,10 @@ pub fn render_batch_view(
                 break;
             }
 
-            let exec_opt = state.batch_results.as_ref().and_then(|r| r.hosts_results.get(&host.id.0));
+            let exec_opt = state
+                .batch_results
+                .as_ref()
+                .and_then(|r| r.hosts_results.get(&host.id.0));
 
             ctx.set_fill_style_str("#090d13");
             ctx.fill_rect(right_x + 12.0, row_y, right_w - 24.0, 46.0);
@@ -3484,7 +4205,11 @@ pub fn render_batch_view(
             // Host Name & IP
             ctx.set_fill_style_str(theme.text_primary);
             ctx.set_font("bold 12px sans-serif");
-            let _ = ctx.fill_text(&format!("{} ({})", host.name, host.hostname), right_x + 24.0, row_y + 19.0);
+            let _ = ctx.fill_text(
+                &format!("{} ({})", host.name, host.hostname),
+                right_x + 24.0,
+                row_y + 19.0,
+            );
 
             // State Badge: 🟢 成功 (Exit 0) / 🔴 失败 (Exit N) / 🔵 执行中 / ⚪ 待执行
             let (badge_text, badge_color, badge_bg) = match exec_opt {
@@ -3495,7 +4220,12 @@ pub fn render_batch_view(
                         "rgba(63, 185, 80, 0.15)",
                     ),
                     redash_types::batch::TaskState::Failed => (
-                        format!("🔴 失败 (Exit {})", e.exit_code.map(|c| c.to_string()).unwrap_or_else(|| "ERR".to_string())),
+                        format!(
+                            "🔴 失败 (Exit {})",
+                            e.exit_code
+                                .map(|c| c.to_string())
+                                .unwrap_or_else(|| "ERR".to_string())
+                        ),
                         theme.status_crit,
                         "rgba(248, 81, 73, 0.15)",
                     ),
@@ -3512,9 +4242,17 @@ pub fn render_batch_view(
                 },
                 None => {
                     if state.batch_is_running {
-                        ("🔵 执行中".to_string(), theme.accent_cyan, "rgba(88, 166, 255, 0.15)")
+                        (
+                            "🔵 执行中".to_string(),
+                            theme.accent_cyan,
+                            "rgba(88, 166, 255, 0.15)",
+                        )
                     } else {
-                        ("⚪ 待执行".to_string(), theme.text_secondary, "rgba(148, 163, 184, 0.15)")
+                        (
+                            "⚪ 待执行".to_string(),
+                            theme.text_secondary,
+                            "rgba(148, 163, 184, 0.15)",
+                        )
                     }
                 }
             };
@@ -3539,7 +4277,11 @@ pub fn render_batch_view(
             if let Some(e) = exec_opt {
                 ctx.set_fill_style_str(theme.text_secondary);
                 ctx.set_font("11px 'JetBrains Mono', monospace");
-                let _ = ctx.fill_text(&format!("{}ms", e.duration_ms), right_x + 312.0, row_y + 27.0);
+                let _ = ctx.fill_text(
+                    &format!("{}ms", e.duration_ms),
+                    right_x + 312.0,
+                    row_y + 27.0,
+                );
 
                 // Stdout preview line
                 let preview = if !e.stdout.is_empty() {
@@ -3551,9 +4293,17 @@ pub fn render_batch_view(
                 } else {
                     "(无输出)"
                 };
-                let preview_short = if preview.len() > 36 { format!("{}...", &preview[..36]) } else { preview.to_string() };
+                let preview_short = if preview.len() > 36 {
+                    format!("{}...", &preview[..36])
+                } else {
+                    preview.to_string()
+                };
                 ctx.set_fill_style_str(theme.text_muted);
-                let _ = ctx.fill_text(&format!("> {}", preview_short), right_x + 380.0, row_y + 27.0);
+                let _ = ctx.fill_text(
+                    &format!("> {}", preview_short),
+                    right_x + 380.0,
+                    row_y + 27.0,
+                );
             }
 
             // [ 📋 详细日志 ] button
@@ -3612,11 +4362,17 @@ pub fn render_batch_log_modal(
     ctx.set_font("bold 14px sans-serif");
     ctx.set_text_align("left");
     let status_str = match exec {
-        Some(e) => format!("State: {:?}, Exit: {:?}, {}ms", e.state, e.exit_code, e.duration_ms),
+        Some(e) => format!(
+            "State: {:?}, Exit: {:?}, {}ms",
+            e.state, e.exit_code, e.duration_ms
+        ),
         None => "No execution record".to_string(),
     };
     let _ = ctx.fill_text(
-        &format!("📋 批量任务执行日志: {} ({}) - {}", host_name, host_id, status_str),
+        &format!(
+            "📋 批量任务执行日志: {} ({}) - {}",
+            host_name, host_id, status_str
+        ),
         mx + 20.0,
         my + 28.0,
     );
@@ -3653,7 +4409,11 @@ pub fn render_batch_log_modal(
     if let Some(e) = exec {
         if let Some(ref err) = e.error {
             ctx.set_fill_style_str(theme.status_crit);
-            let _ = ctx.fill_text(&format!("[EXECUTION ERROR]: {}", err), console_x + 12.0, log_y);
+            let _ = ctx.fill_text(
+                &format!("[EXECUTION ERROR]: {}", err),
+                console_x + 12.0,
+                log_y,
+            );
             log_y += line_height;
         }
 
@@ -3665,7 +4425,9 @@ pub fn render_batch_log_modal(
             for line in e.stdout.lines().take(22) {
                 let _ = ctx.fill_text(line, console_x + 12.0, log_y);
                 log_y += line_height;
-                if log_y > console_y + console_h - 10.0 { break; }
+                if log_y > console_y + console_h - 10.0 {
+                    break;
+                }
             }
         }
 
@@ -3677,13 +4439,19 @@ pub fn render_batch_log_modal(
             for line in e.stderr.lines().take(10) {
                 let _ = ctx.fill_text(line, console_x + 12.0, log_y);
                 log_y += line_height;
-                if log_y > console_y + console_h - 10.0 { break; }
+                if log_y > console_y + console_h - 10.0 {
+                    break;
+                }
             }
         }
 
         if e.stdout.is_empty() && e.stderr.is_empty() && e.error.is_none() {
             ctx.set_fill_style_str(theme.text_muted);
-            let _ = ctx.fill_text("(无标准输出 / No STDOUT or STDERR)", console_x + 12.0, log_y);
+            let _ = ctx.fill_text(
+                "(无标准输出 / No STDOUT or STDERR)",
+                console_x + 12.0,
+                log_y,
+            );
         }
     } else {
         ctx.set_fill_style_str(theme.text_muted);
@@ -3691,8 +4459,13 @@ pub fn render_batch_log_modal(
     }
 }
 
-
-fn render_add_modal(ctx: &CanvasRenderingContext2d, state: &AppState, theme: &ThemeColors, w: f64, h: f64) {
+fn render_add_modal(
+    ctx: &CanvasRenderingContext2d,
+    state: &AppState,
+    theme: &ThemeColors,
+    w: f64,
+    h: f64,
+) {
     // Backdrop overlay
     ctx.set_fill_style_str("rgba(0, 0, 0, 0.7)");
     ctx.fill_rect(0.0, 0.0, w, h);
@@ -3742,7 +4515,11 @@ fn render_add_modal(ctx: &CanvasRenderingContext2d, state: &AppState, theme: &Th
 
         ctx.set_fill_style_str(theme.text_primary);
         ctx.set_font("13px 'JetBrains Mono', monospace");
-        let display_val = if val.is_empty() && is_focused { "|" } else { val };
+        let display_val = if val.is_empty() && is_focused {
+            "|"
+        } else {
+            val
+        };
         let _ = ctx.fill_text(display_val, mx + 28.0, iy + 39.0);
 
         iy += 56.0;
@@ -3769,7 +4546,13 @@ fn render_add_modal(ctx: &CanvasRenderingContext2d, state: &AppState, theme: &Th
     let _ = ctx.fill_text(state.t("host.btn_submit"), mx + mw - 60.0, btn_y + 18.0);
 }
 
-pub fn is_interactive_element(x: f64, y: f64, width: f64, height: f64, state: &AppState) -> (bool, &'static str) {
+pub fn is_interactive_element(
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    state: &AppState,
+) -> (bool, &'static str) {
     // 1. Modals have top priority
     if state.show_add_modal {
         let mw = 420.0;
@@ -3796,7 +4579,8 @@ pub fn is_interactive_element(x: f64, y: f64, width: f64, height: f64, state: &A
             return (true, "pointer");
         }
         let (close_x, close_y, close_w, close_h) = get_sftp_editor_close_btn_rect(width, height);
-        if (close_x..=close_x + close_w).contains(&x) && (close_y..=close_y + close_h).contains(&y) {
+        if (close_x..=close_x + close_w).contains(&x) && (close_y..=close_y + close_h).contains(&y)
+        {
             return (true, "pointer");
         }
         let (mx, my, mw, mh) = get_sftp_editor_modal_rect(width, height);
@@ -3830,7 +4614,8 @@ pub fn is_interactive_element(x: f64, y: f64, width: f64, height: f64, state: &A
     // 4. View-specific hit testing
     match state.active_view {
         ActiveView::Fleet => {
-            let (sb_x, sb_y, sb_w, sb_h) = get_fleet_search_bar_rect(content_x, content_y, content_w);
+            let (sb_x, sb_y, sb_w, sb_h) =
+                get_fleet_search_bar_rect(content_x, content_y, content_w);
             if (sb_x..=sb_x + sb_w).contains(&x) && (sb_y..=sb_y + sb_h).contains(&y) {
                 return (true, "text");
             }
@@ -3854,7 +4639,9 @@ pub fn is_interactive_element(x: f64, y: f64, width: f64, height: f64, state: &A
             }
             if state.active_workbench_tab == WorkbenchTab::Processes {
                 let panel_y = content_y + WORKBENCH_TAB_BAR_HEIGHT;
-                if (content_x + 16.0..=content_x + 186.0).contains(&x) && (panel_y + 10.0..=panel_y + 36.0).contains(&y) {
+                if (content_x + 16.0..=content_x + 186.0).contains(&x)
+                    && (panel_y + 10.0..=panel_y + 36.0).contains(&y)
+                {
                     return (true, "text");
                 }
                 for b_idx in 0..3 {
@@ -3873,11 +4660,13 @@ pub fn is_interactive_element(x: f64, y: f64, width: f64, height: f64, state: &A
             if state.active_workbench_tab == WorkbenchTab::Terminal {
                 if state.agent.is_some() {
                     let panel_y = content_y + WORKBENCH_TAB_BAR_HEIGHT;
-                    let (ax, ay, aw, ah) = get_agent_hud_apply_btn_rect(content_x, panel_y, content_w);
+                    let (ax, ay, aw, ah) =
+                        get_agent_hud_apply_btn_rect(content_x, panel_y, content_w);
                     if (ax..=ax + aw).contains(&x) && (ay..=ay + ah).contains(&y) {
                         return (true, "pointer");
                     }
-                    let (ox, oy, ow, oh) = get_agent_hud_abort_btn_rect(content_x, panel_y, content_w);
+                    let (ox, oy, ow, oh) =
+                        get_agent_hud_abort_btn_rect(content_x, panel_y, content_w);
                     if (ox..=ox + ow).contains(&x) && (oy..=oy + oh).contains(&y) {
                         return (true, "pointer");
                     }
@@ -3885,7 +4674,8 @@ pub fn is_interactive_element(x: f64, y: f64, width: f64, height: f64, state: &A
                 if state.terminal_search_active {
                     let panel_y = content_y + WORKBENCH_TAB_BAR_HEIGHT;
                     let term_y = panel_y + if state.agent.is_some() { 32.0 } else { 0.0 };
-                    let (sb_x, sb_y, sb_w, sb_h) = get_terminal_search_bar_rect(content_x, term_y, content_w);
+                    let (sb_x, sb_y, sb_w, sb_h) =
+                        get_terminal_search_bar_rect(content_x, term_y, content_w);
                     let (cx, cy, cw, ch) = get_terminal_search_close_btn_rect(sb_x, sb_y, sb_w);
                     if (cx..=cx + cw).contains(&x) && (cy..=cy + ch).contains(&y) {
                         return (true, "pointer");
@@ -3923,7 +4713,8 @@ pub fn is_interactive_element(x: f64, y: f64, width: f64, height: f64, state: &A
             }
         }
         ActiveView::Sftp => {
-            let (ref_x, ref_y, ref_w, ref_h) = get_sftp_refresh_btn_rect(content_x, content_y, content_w);
+            let (ref_x, ref_y, ref_w, ref_h) =
+                get_sftp_refresh_btn_rect(content_x, content_y, content_w);
             if (ref_x..=ref_x + ref_w).contains(&x) && (ref_y..=ref_y + ref_h).contains(&y) {
                 return (true, "pointer");
             }
@@ -3931,7 +4722,8 @@ pub fn is_interactive_element(x: f64, y: f64, width: f64, height: f64, state: &A
             if (p_x..=p_x + p_w).contains(&x) && (p_y..=p_y + p_h).contains(&y) {
                 return (true, "pointer");
             }
-            let breadcrumbs = get_sftp_breadcrumb_rects(content_x, content_y, &state.sftp_current_path);
+            let breadcrumbs =
+                get_sftp_breadcrumb_rects(content_x, content_y, &state.sftp_current_path);
             for (_, sx, sy, sw, sh) in breadcrumbs {
                 if (sx..=sx + sw).contains(&x) && (sy..=sy + sh).contains(&y) {
                     return (true, "pointer");
@@ -3984,28 +4776,32 @@ pub fn is_interactive_element(x: f64, y: f64, width: f64, height: f64, state: &A
                 }
                 SettingsCategory::Terminal => {
                     for idx in 0..FONT_SIZES.len() {
-                        let (px, py, pw, ph) = get_settings_font_size_pill_rect(idx, right_x, sec1_y);
+                        let (px, py, pw, ph) =
+                            get_settings_font_size_pill_rect(idx, right_x, sec1_y);
                         if (px..=px + pw).contains(&x) && (py..=py + ph).contains(&y) {
                             return (true, "pointer");
                         }
                     }
                     let sec2_y = sec1_y + 76.0;
                     for idx in 0..CURSOR_STYLES.len() {
-                        let (px, py, pw, ph) = get_settings_cursor_style_pill_rect(idx, right_x, sec2_y);
+                        let (px, py, pw, ph) =
+                            get_settings_cursor_style_pill_rect(idx, right_x, sec2_y);
                         if (px..=px + pw).contains(&x) && (py..=py + ph).contains(&y) {
                             return (true, "pointer");
                         }
                     }
                     let sec3_y = sec2_y + 76.0;
                     for idx in 0..FONT_FAMILIES.len() {
-                        let (px, py, pw, ph) = get_settings_font_family_pill_rect(idx, right_x, sec3_y);
+                        let (px, py, pw, ph) =
+                            get_settings_font_family_pill_rect(idx, right_x, sec3_y);
                         if (px..=px + pw).contains(&x) && (py..=py + ph).contains(&y) {
                             return (true, "pointer");
                         }
                     }
                     let sec4_y = sec3_y + 76.0;
                     for idx in 0..SCROLLBACK_OPTIONS.len() {
-                        let (px, py, pw, ph) = get_settings_scrollback_pill_rect(idx, right_x, sec4_y);
+                        let (px, py, pw, ph) =
+                            get_settings_scrollback_pill_rect(idx, right_x, sec4_y);
                         if (px..=px + pw).contains(&x) && (py..=py + ph).contains(&y) {
                             return (true, "pointer");
                         }
@@ -4013,14 +4809,16 @@ pub fn is_interactive_element(x: f64, y: f64, width: f64, height: f64, state: &A
                 }
                 SettingsCategory::Probe => {
                     for idx in 0..PROBE_INTERVALS.len() {
-                        let (px, py, pw, ph) = get_settings_probe_interval_pill_rect(idx, right_x, sec1_y);
+                        let (px, py, pw, ph) =
+                            get_settings_probe_interval_pill_rect(idx, right_x, sec1_y);
                         if (px..=px + pw).contains(&x) && (py..=py + ph).contains(&y) {
                             return (true, "pointer");
                         }
                     }
                     let sec2_y = sec1_y + 76.0;
                     for idx in 0..PING_PRESETS.len() {
-                        let (px, py, pw, ph) = get_settings_ping_preset_pill_rect(idx, right_x, sec2_y);
+                        let (px, py, pw, ph) =
+                            get_settings_ping_preset_pill_rect(idx, right_x, sec2_y);
                         if (px..=px + pw).contains(&x) && (py..=py + ph).contains(&y) {
                             return (true, "pointer");
                         }
@@ -4032,21 +4830,24 @@ pub fn is_interactive_element(x: f64, y: f64, width: f64, height: f64, state: &A
                 }
                 SettingsCategory::Alerts => {
                     for idx in 0..ALERT_THRESHOLDS.len() {
-                        let (px, py, pw, ph) = get_settings_cpu_threshold_pill_rect(idx, right_x, sec1_y);
+                        let (px, py, pw, ph) =
+                            get_settings_cpu_threshold_pill_rect(idx, right_x, sec1_y);
                         if (px..=px + pw).contains(&x) && (py..=py + ph).contains(&y) {
                             return (true, "pointer");
                         }
                     }
                     let sec2_y = sec1_y + 76.0;
                     for idx in 0..ALERT_THRESHOLDS.len() {
-                        let (px, py, pw, ph) = get_settings_mem_threshold_pill_rect(idx, right_x, sec2_y);
+                        let (px, py, pw, ph) =
+                            get_settings_mem_threshold_pill_rect(idx, right_x, sec2_y);
                         if (px..=px + pw).contains(&x) && (py..=py + ph).contains(&y) {
                             return (true, "pointer");
                         }
                     }
                     let sec3_y = sec2_y + 76.0;
                     for idx in 0..ALERT_THRESHOLDS.len() {
-                        let (px, py, pw, ph) = get_settings_disk_threshold_pill_rect(idx, right_x, sec3_y);
+                        let (px, py, pw, ph) =
+                            get_settings_disk_threshold_pill_rect(idx, right_x, sec3_y);
                         if (px..=px + pw).contains(&x) && (py..=py + ph).contains(&y) {
                             return (true, "pointer");
                         }
@@ -4070,11 +4871,13 @@ pub fn is_interactive_element(x: f64, y: f64, width: f64, height: f64, state: &A
                     }
                 }
                 SettingsCategory::Backup => {
-                    let (ex, ey, ew, eh) = get_settings_export_json_btn_rect(right_x, sec1_y + 16.0);
+                    let (ex, ey, ew, eh) =
+                        get_settings_export_json_btn_rect(right_x, sec1_y + 16.0);
                     if (ex..=ex + ew).contains(&x) && (ey..=ey + eh).contains(&y) {
                         return (true, "pointer");
                     }
-                    let (ix, iy, iw, ih) = get_settings_import_json_btn_rect(right_x, sec1_y + 16.0);
+                    let (ix, iy, iw, ih) =
+                        get_settings_import_json_btn_rect(right_x, sec1_y + 16.0);
                     if (ix..=ix + iw).contains(&x) && (iy..=iy + ih).contains(&y) {
                         return (true, "pointer");
                     }
@@ -4123,7 +4926,8 @@ mod tests {
 
         // 3. Fleet search bar returns text
         let (sb_x, sb_y, _sb_w, sb_h) = get_fleet_search_bar_rect(content_x, content_y, content_w);
-        let (inter, cursor) = is_interactive_element(sb_x + 10.0, sb_y + sb_h / 2.0, width, height, &state);
+        let (inter, cursor) =
+            is_interactive_element(sb_x + 10.0, sb_y + sb_h / 2.0, width, height, &state);
         assert!(inter);
         assert_eq!(cursor, "text");
 
@@ -4132,14 +4936,15 @@ mod tests {
         let _card_w = ((content_w - padding * 3.0) / 2.0).max(340.0);
         let card_x = content_x + padding;
         let card_y = content_y + 54.0;
-        let (inter, cursor) = is_interactive_element(card_x + 20.0, card_y + 20.0, width, height, &state);
+        let (inter, cursor) =
+            is_interactive_element(card_x + 20.0, card_y + 20.0, width, height, &state);
         assert!(inter);
         assert_eq!(cursor, "pointer");
 
         // 5. Blank background returns default
-        let (inter, cursor) = is_interactive_element(width - 50.0, height - 50.0, width, height, &state);
+        let (inter, cursor) =
+            is_interactive_element(width - 50.0, height - 50.0, width, height, &state);
         assert!(!inter);
         assert_eq!(cursor, "default");
     }
 }
-

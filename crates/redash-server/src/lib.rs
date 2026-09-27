@@ -4,8 +4,8 @@ pub mod state;
 pub mod web_assets;
 pub mod ws;
 
-use axum::routing::get;
 use axum::Router;
+use axum::routing::get;
 use tower_http::cors::CorsLayer;
 
 use crate::state::AppState;

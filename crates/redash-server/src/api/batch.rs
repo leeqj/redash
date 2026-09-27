@@ -1,6 +1,6 @@
+use axum::Json;
 use axum::extract::State;
 use axum::response::IntoResponse;
-use axum::Json;
 use redash_core::batch::BatchRunner;
 use redash_core::config::HostConfig;
 use redash_types::batch::BatchRunRequest;

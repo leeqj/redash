@@ -50,25 +50,37 @@ pub enum UserAction {
     FilterChanged(String),
     OpenAddModal,
     CloseAddModal,
-    ModalInput { field: usize, text: String },
+    ModalInput {
+        field: usize,
+        text: String,
+    },
     ModalNextField,
     ModalSubmit,
     DeleteHost(String),
     AppendTerminal(String),
-    UpdateMetrics { host_id: String, metrics: NodeMetrics },
+    UpdateMetrics {
+        host_id: String,
+        metrics: NodeMetrics,
+    },
     SetLocale(String),
     SetTheme(String),
     SwitchWorkbenchTab(WorkbenchTab),
     SetProcessSort(ProcessSortField),
     SetSnippetCategory(String),
-    OpenDockerLogs { id: String, name: String },
+    OpenDockerLogs {
+        id: String,
+        name: String,
+    },
     CloseDockerLogs,
     SetSnippetOutput(Option<(String, String)>),
     SetSftpPath(String),
     SetSftpFiles(Vec<RemoteFileItem>),
     SetSftpLoading(bool),
     SetSftpError(Option<String>),
-    OpenSftpEditor { path: String, content: String },
+    OpenSftpEditor {
+        path: String,
+        content: String,
+    },
     UpdateSftpEditorContent(String),
     CloseSftpEditor,
     RequestReadSftpFile(String),
@@ -111,10 +123,23 @@ pub enum UiEffect {
     DeleteHost(String),
     SendTerminalInput(String),
     SaveSettings,
-    FetchSftpList { host_id: String, path: String },
-    ReadSftpFile { host_id: String, path: String },
-    SaveSftpFile { host_id: String, path: String, content: String },
-    RunBatch { host_ids: Vec<String>, command: String },
+    FetchSftpList {
+        host_id: String,
+        path: String,
+    },
+    ReadSftpFile {
+        host_id: String,
+        path: String,
+    },
+    SaveSftpFile {
+        host_id: String,
+        path: String,
+        content: String,
+    },
+    RunBatch {
+        host_ids: Vec<String>,
+        command: String,
+    },
 }
 
 pub struct AppStateMachine {
@@ -225,7 +250,9 @@ impl AppStateMachine {
         match action {
             UserAction::SwitchView(view) => {
                 self.active_view = view;
-                if (view == ActiveView::Terminal || view == ActiveView::Sftp) && self.selected_host_id.is_none() {
+                if (view == ActiveView::Terminal || view == ActiveView::Sftp)
+                    && self.selected_host_id.is_none()
+                {
                     self.selected_host_id = self.hosts.first().map(|h| h.id.0.clone());
                 }
                 if view == ActiveView::Sftp
@@ -270,11 +297,8 @@ impl AppStateMachine {
             UserAction::ModalSubmit => {
                 if !self.modal_name.is_empty() && !self.modal_hostname.is_empty() {
                     let port = self.modal_port.parse::<u16>().unwrap_or(22);
-                    let mut host = HostConfig::new(
-                        &self.modal_name,
-                        &self.modal_hostname,
-                        &self.modal_user,
-                    );
+                    let mut host =
+                        HostConfig::new(&self.modal_name, &self.modal_hostname, &self.modal_user);
                     host.port = port;
                     effects.push(UiEffect::SaveHost(host));
                     self.show_add_modal = false;
@@ -303,10 +327,7 @@ impl AppStateMachine {
                 }
             }
             UserAction::UpdateMetrics { host_id, metrics } => {
-                let history = self
-                    .metrics_history
-                    .entry(host_id.clone())
-                    .or_default();
+                let history = self.metrics_history.entry(host_id.clone()).or_default();
                 history.push(metrics.cpu_percent());
                 if history.len() > 30 {
                     history.remove(0);
@@ -387,7 +408,9 @@ impl AppStateMachine {
                 }
             }
             UserAction::RequestSaveSftpFile => {
-                if let (Some(host_id), Some((path, content))) = (&self.selected_host_id, &self.sftp_editor) {
+                if let (Some(host_id), Some((path, content))) =
+                    (&self.selected_host_id, &self.sftp_editor)
+                {
                     self.sftp_loading = true;
                     effects.push(UiEffect::SaveSftpFile {
                         host_id: host_id.clone(),
@@ -511,7 +534,8 @@ impl AppStateMachine {
                 self.terminal_search_match_count = 0;
             }
             UserAction::TriggerRunBatch => {
-                if !self.batch_selected_host_ids.is_empty() && !self.batch_command.trim().is_empty() {
+                if !self.batch_selected_host_ids.is_empty() && !self.batch_command.trim().is_empty()
+                {
                     self.batch_is_running = true;
                     effects.push(UiEffect::RunBatch {
                         host_ids: self.batch_selected_host_ids.iter().cloned().collect(),
@@ -747,7 +771,8 @@ impl AppStateMachine {
     }
 
     pub fn t<'a>(&self, key: &'a str) -> &'a str {
-        let loc = crate::i18n::Locale::from_code(&self.settings.language).unwrap_or(crate::i18n::Locale::ZhCn);
+        let loc = crate::i18n::Locale::from_code(&self.settings.language)
+            .unwrap_or(crate::i18n::Locale::ZhCn);
         crate::i18n::lookup_in_locale(loc, key).unwrap_or(key)
     }
 
@@ -847,7 +872,10 @@ mod tests {
         assert_eq!(sm.docker_log_modal, None);
 
         // Snippet output
-        sm.set_snippet_output(Some(("Test Title".to_string(), "Success output".to_string())));
+        sm.set_snippet_output(Some((
+            "Test Title".to_string(),
+            "Success output".to_string(),
+        )));
         assert_eq!(
             sm.snippet_output,
             Some(("Test Title".to_string(), "Success output".to_string()))
@@ -879,10 +907,13 @@ mod tests {
         sm.selected_host_id = Some("srv-prod".to_string());
         let effects = sm.set_sftp_path("/etc/nginx".to_string());
         assert_eq!(sm.sftp_current_path, "/etc/nginx");
-        assert_eq!(effects, vec![UiEffect::FetchSftpList {
-            host_id: "srv-prod".to_string(),
-            path: "/etc/nginx".to_string(),
-        }]);
+        assert_eq!(
+            effects,
+            vec![UiEffect::FetchSftpList {
+                host_id: "srv-prod".to_string(),
+                path: "/etc/nginx".to_string(),
+            }]
+        );
 
         // 4. Set files -> clears loading and error
         let file_item = RemoteFileItem {
@@ -907,10 +938,13 @@ mod tests {
 
         // 6. Request Read File
         let effects = sm.request_read_sftp_file("/etc/nginx/nginx.conf".to_string());
-        assert_eq!(effects, vec![UiEffect::ReadSftpFile {
-            host_id: "srv-prod".to_string(),
-            path: "/etc/nginx/nginx.conf".to_string(),
-        }]);
+        assert_eq!(
+            effects,
+            vec![UiEffect::ReadSftpFile {
+                host_id: "srv-prod".to_string(),
+                path: "/etc/nginx/nginx.conf".to_string(),
+            }]
+        );
 
         // 7. Open Editor
         sm.open_sftp_editor(
@@ -936,11 +970,14 @@ mod tests {
 
         // 9. Request Save File -> emits SaveSftpFile
         let effects = sm.request_save_sftp_file();
-        assert_eq!(effects, vec![UiEffect::SaveSftpFile {
-            host_id: "srv-prod".to_string(),
-            path: "/etc/nginx/nginx.conf".to_string(),
-            content: "server { listen 443 ssl; }".to_string(),
-        }]);
+        assert_eq!(
+            effects,
+            vec![UiEffect::SaveSftpFile {
+                host_id: "srv-prod".to_string(),
+                path: "/etc/nginx/nginx.conf".to_string(),
+                content: "server { listen 443 ssl; }".to_string(),
+            }]
+        );
         sm.set_sftp_loading(false);
 
         // 10. Close Editor
@@ -952,10 +989,13 @@ mod tests {
         sm.sftp_files.clear();
         let effects = sm.handle_action(UserAction::SwitchView(ActiveView::Sftp));
         assert_eq!(sm.active_view, ActiveView::Sftp);
-        assert_eq!(effects, vec![UiEffect::FetchSftpList {
-            host_id: "srv-prod".to_string(),
-            path: "/etc/nginx".to_string(),
-        }]);
+        assert_eq!(
+            effects,
+            vec![UiEffect::FetchSftpList {
+                host_id: "srv-prod".to_string(),
+                path: "/etc/nginx".to_string(),
+            }]
+        );
     }
 
     #[test]
@@ -1161,7 +1201,9 @@ mod tests {
         assert_eq!(sm.terminal_search_match_count, 3);
 
         // Append more content while search is active
-        sm.handle_action(UserAction::AppendTerminal("Line 4: Another Error here".to_string()));
+        sm.handle_action(UserAction::AppendTerminal(
+            "Line 4: Another Error here".to_string(),
+        ));
         assert_eq!(sm.terminal_search_match_count, 4);
 
         // Change query

@@ -33,9 +33,18 @@ async fn main() -> anyhow::Result<()> {
     println!("  ┌─────────────────────────────────────────────────────────────┐");
     println!("  │                   ⚡ ReDash Web Gateway ⚡                   │");
     println!("  │                                                             │");
-    println!("  │  Web Interface:    http://{:<33} │", format!("{}:{}", host, port));
-    println!("  │  WebSocket Stream: ws://{:<35} │", format!("{}:{}/ws", host, port));
-    println!("  │  REST API:         http://{:<33} │", format!("{}:{}/api", host, port));
+    println!(
+        "  │  Web Interface:    http://{:<33} │",
+        format!("{}:{}", host, port)
+    );
+    println!(
+        "  │  WebSocket Stream: ws://{:<35} │",
+        format!("{}:{}/ws", host, port)
+    );
+    println!(
+        "  │  REST API:         http://{:<33} │",
+        format!("{}:{}/api", host, port)
+    );
     println!("  │  Status:           Online (120 FPS High-Performance Web)   │");
     println!("  └─────────────────────────────────────────────────────────────┘");
     println!();

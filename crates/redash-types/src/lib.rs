@@ -60,7 +60,10 @@ mod tests {
 
     #[test]
     fn test_protocol_serde() {
-        let msg = ClientTerminalMessage::Resize { cols: 120, rows: 40 };
+        let msg = ClientTerminalMessage::Resize {
+            cols: 120,
+            rows: 40,
+        };
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains("\"cols\":120"));
 

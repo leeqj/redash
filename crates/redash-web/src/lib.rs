@@ -13,13 +13,13 @@ pub mod theme;
 
 use app::{ActiveView, AppState};
 use gateway::GatewayClient;
-use input::{handle_key_down, handle_mouse_click, UiAction};
+use input::{UiAction, handle_key_down, handle_mouse_click};
 use render::render_frame;
 use std::cell::RefCell;
 use std::rc::Rc;
-use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-use web_sys::{console, HtmlCanvasElement, KeyboardEvent, MouseEvent, Window};
+use wasm_bindgen::prelude::*;
+use web_sys::{HtmlCanvasElement, KeyboardEvent, MouseEvent, Window, console};
 
 #[wasm_bindgen]
 pub fn start_web_app(canvas_id: &str) -> Result<(), JsValue> {
@@ -52,8 +52,12 @@ pub fn start_web_app(canvas_id: &str) -> Result<(), JsValue> {
             canvas.set_width((width * dpr) as u32);
             canvas.set_height((height * dpr) as u32);
             let html_el: &web_sys::HtmlElement = canvas.unchecked_ref();
-            let _ = html_el.style().set_property("width", &format!("{}px", width));
-            let _ = html_el.style().set_property("height", &format!("{}px", height));
+            let _ = html_el
+                .style()
+                .set_property("width", &format!("{}px", width));
+            let _ = html_el
+                .style()
+                .set_property("height", &format!("{}px", height));
         })
     };
 
@@ -231,24 +235,28 @@ pub fn start_web_app(canvas_id: &str) -> Result<(), JsValue> {
                         let app_state_sftp = app_state_clone.clone();
                         let path = app_state_sftp.borrow().sftp_current_path.clone();
                         app_state_sftp.borrow_mut().set_sftp_loading(true);
-                        let on_done = Rc::new(RefCell::new(move |res: Result<Vec<redash_types::sftp::RemoteFileItem>, String>| {
-                            let mut sm = app_state_sftp.borrow_mut();
-                            match res {
-                                Ok(files) => sm.set_sftp_files(files),
-                                Err(err) => sm.set_sftp_error(Some(err)),
-                            }
-                        }));
+                        let on_done = Rc::new(RefCell::new(
+                            move |res: Result<Vec<redash_types::sftp::RemoteFileItem>, String>| {
+                                let mut sm = app_state_sftp.borrow_mut();
+                                match res {
+                                    Ok(files) => sm.set_sftp_files(files),
+                                    Err(err) => sm.set_sftp_error(Some(err)),
+                                }
+                            },
+                        ));
                         gateway::async_fetch_sftp_list(host_id, path, on_done);
                     }
                     UiAction::FetchSftpList { host_id, path } => {
                         let app_state_sftp = app_state_clone.clone();
-                        let on_done = Rc::new(RefCell::new(move |res: Result<Vec<redash_types::sftp::RemoteFileItem>, String>| {
-                            let mut sm = app_state_sftp.borrow_mut();
-                            match res {
-                                Ok(files) => sm.set_sftp_files(files),
-                                Err(err) => sm.set_sftp_error(Some(err)),
-                            }
-                        }));
+                        let on_done = Rc::new(RefCell::new(
+                            move |res: Result<Vec<redash_types::sftp::RemoteFileItem>, String>| {
+                                let mut sm = app_state_sftp.borrow_mut();
+                                match res {
+                                    Ok(files) => sm.set_sftp_files(files),
+                                    Err(err) => sm.set_sftp_error(Some(err)),
+                                }
+                            },
+                        ));
                         gateway::async_fetch_sftp_list(host_id, path, on_done);
                     }
                     UiAction::ReadSftpFile { host_id, path } => {
@@ -263,7 +271,11 @@ pub fn start_web_app(canvas_id: &str) -> Result<(), JsValue> {
                         }));
                         gateway::async_read_sftp_file(host_id, path, on_done);
                     }
-                    UiAction::SaveSftpFile { host_id, path, content } => {
+                    UiAction::SaveSftpFile {
+                        host_id,
+                        path,
+                        content,
+                    } => {
                         let app_state_sftp = app_state_clone.clone();
                         let on_done = Rc::new(RefCell::new(move |res: Result<(), String>| {
                             let mut sm = app_state_sftp.borrow_mut();
@@ -284,17 +296,20 @@ pub fn start_web_app(canvas_id: &str) -> Result<(), JsValue> {
                             let mut sm = app_state_save.borrow_mut();
                             match res {
                                 Ok(()) => {
-                                    sm.settings_save_status = Some(("设置已成功保存到云端服务器".to_string(), true));
+                                    sm.settings_save_status =
+                                        Some(("设置已成功保存到云端服务器".to_string(), true));
                                 }
                                 Err(err) => {
-                                    sm.settings_save_status = Some((format!("设置保存失败: {}", err), false));
+                                    sm.settings_save_status =
+                                        Some((format!("设置保存失败: {}", err), false));
                                 }
                             }
                         }));
                         gateway::async_save_settings(settings, on_done);
                     }
                     UiAction::ExportSettingsJson => {
-                        let json = serde_json::to_string_pretty(&state.settings).unwrap_or_default();
+                        let json =
+                            serde_json::to_string_pretty(&state.settings).unwrap_or_default();
                         console::log_1(&format!("Exported Settings JSON:\n{}", json).into());
                         if let Some(window) = web_sys::window()
                             && let Some(document) = window.document()
@@ -302,14 +317,17 @@ pub fn start_web_app(canvas_id: &str) -> Result<(), JsValue> {
                         {
                             let href = format!(
                                 "data:application/json;charset=utf-8,{}",
-                                js_sys::encode_uri_component(&json).as_string().unwrap_or_default()
+                                js_sys::encode_uri_component(&json)
+                                    .as_string()
+                                    .unwrap_or_default()
                             );
                             let _ = element.set_attribute("href", &href);
                             let _ = element.set_attribute("download", "redash-settings.json");
                             let html_el: web_sys::HtmlElement = element.unchecked_into();
                             html_el.click();
                         }
-                        state.settings_save_status = Some(("已成功导出设置 JSON 文件".to_string(), true));
+                        state.settings_save_status =
+                            Some(("已成功导出设置 JSON 文件".to_string(), true));
                     }
                     UiAction::PromptPingTarget => {
                         if let Some(window) = web_sys::window() {
@@ -321,7 +339,8 @@ pub fn start_web_app(canvas_id: &str) -> Result<(), JsValue> {
                                 let trimmed = val.trim();
                                 if !trimmed.is_empty() {
                                     state.set_ping_target(trimmed.to_string());
-                                    state.settings_save_status = Some((format!("探测节点已更新为 {}", trimmed), true));
+                                    state.settings_save_status =
+                                        Some((format!("探测节点已更新为 {}", trimmed), true));
                                 }
                             }
                         }
@@ -336,15 +355,18 @@ pub fn start_web_app(canvas_id: &str) -> Result<(), JsValue> {
                                 let trimmed = val.trim();
                                 if trimmed.is_empty() {
                                     state.set_webhook_url(None);
-                                    state.settings_save_status = Some(("已清除 Webhook 推送地址".to_string(), true));
+                                    state.settings_save_status =
+                                        Some(("已清除 Webhook 推送地址".to_string(), true));
                                 } else {
                                     state.set_webhook_url(Some(trimmed.to_string()));
-                                    state.settings_save_status = Some(("已更新 Webhook 推送地址".to_string(), true));
+                                    state.settings_save_status =
+                                        Some(("已更新 Webhook 推送地址".to_string(), true));
                                 }
                                 let settings = state.settings.clone();
                                 let app_state_save = app_state_clone.clone();
                                 let on_done = Rc::new(RefCell::new(move |_| {
-                                    app_state_save.borrow_mut().settings_save_status = Some(("Webhook 地址已成功保存".to_string(), true));
+                                    app_state_save.borrow_mut().settings_save_status =
+                                        Some(("Webhook 地址已成功保存".to_string(), true));
                                 }));
                                 gateway::async_save_settings(settings, on_done);
                             }
@@ -353,17 +375,19 @@ pub fn start_web_app(canvas_id: &str) -> Result<(), JsValue> {
                     UiAction::TestWebhookAlert => {
                         let webhook_url = state.settings.alert_webhook_url.clone();
                         let app_state_test = app_state_clone.clone();
-                        state.settings_save_status = Some(("正在向 Webhook/飞书 发送测试消息...".to_string(), true));
-                        let on_done = Rc::new(RefCell::new(move |res: Result<String, String>| {
-                            match res {
+                        state.settings_save_status =
+                            Some(("正在向 Webhook/飞书 发送测试消息...".to_string(), true));
+                        let on_done =
+                            Rc::new(RefCell::new(move |res: Result<String, String>| match res {
                                 Ok(msg) => {
-                                    app_state_test.borrow_mut().settings_save_status = Some((msg, true));
+                                    app_state_test.borrow_mut().settings_save_status =
+                                        Some((msg, true));
                                 }
                                 Err(err) => {
-                                    app_state_test.borrow_mut().settings_save_status = Some((format!("推送失败: {err}"), false));
+                                    app_state_test.borrow_mut().settings_save_status =
+                                        Some((format!("推送失败: {err}"), false));
                                 }
-                            }
-                        }));
+                            }));
                         gateway::async_test_webhook(webhook_url, on_done);
                     }
                     UiAction::TestBrowserNotification => {
@@ -372,7 +396,8 @@ pub fn start_web_app(canvas_id: &str) -> Result<(), JsValue> {
                             "这是一条来自 ReDash Web 运维工作台的自动化测试通知，指标监控系统运转正常。",
                         ) {
                             Ok(()) => {
-                                state.settings_save_status = Some(("已发送浏览器桌面测试通知！".to_string(), true));
+                                state.settings_save_status =
+                                    Some(("已发送浏览器桌面测试通知！".to_string(), true));
                             }
                             Err(msg) => {
                                 state.settings_save_status = Some((msg, false));
@@ -400,16 +425,29 @@ pub fn start_web_app(canvas_id: &str) -> Result<(), JsValue> {
                                         if let Ok(val) = reader_clone.result()
                                             && let Some(json_text) = val.as_string()
                                         {
-                                            match serde_json::from_str::<redash_types::settings::AppSettings>(&json_text) {
+                                            match serde_json::from_str::<
+                                                redash_types::settings::AppSettings,
+                                            >(
+                                                &json_text
+                                            ) {
                                                 Ok(imported) => {
                                                     let mut sm = app_state_reader.borrow_mut();
                                                     sm.settings = imported.clone();
-                                                    sm.settings_save_status = Some(("已成功导入设置配置！".to_string(), true));
-                                                    let on_done = Rc::new(RefCell::new(move |_| {}));
+                                                    sm.settings_save_status = Some((
+                                                        "已成功导入设置配置！".to_string(),
+                                                        true,
+                                                    ));
+                                                    let on_done =
+                                                        Rc::new(RefCell::new(move |_| {}));
                                                     gateway::async_save_settings(imported, on_done);
                                                 }
                                                 Err(e) => {
-                                                    app_state_reader.borrow_mut().settings_save_status = Some((format!("JSON 格式解析失败: {}", e), false));
+                                                    app_state_reader
+                                                        .borrow_mut()
+                                                        .settings_save_status = Some((
+                                                        format!("JSON 格式解析失败: {}", e),
+                                                        false,
+                                                    ));
                                                 }
                                             }
                                         }
@@ -427,14 +465,21 @@ pub fn start_web_app(canvas_id: &str) -> Result<(), JsValue> {
                     UiAction::SaveNewHost => {
                         if let Some(new_host) = state.build_new_host() {
                             state.hosts.push(new_host.clone());
-                            let on_done = Rc::new(RefCell::new(move |res: Result<models::HostConfig, String>| match res {
-                                Ok(saved) => {
-                                    console::log_1(&format!("Saved host to backend: {}", saved.name).into());
-                                }
-                                Err(err) => {
-                                    console::log_1(&format!("Failed to persist host: {}", err).into());
-                                }
-                            }));
+                            let on_done = Rc::new(RefCell::new(
+                                move |res: Result<models::HostConfig, String>| match res {
+                                    Ok(saved) => {
+                                        console::log_1(
+                                            &format!("Saved host to backend: {}", saved.name)
+                                                .into(),
+                                        );
+                                    }
+                                    Err(err) => {
+                                        console::log_1(
+                                            &format!("Failed to persist host: {}", err).into(),
+                                        );
+                                    }
+                                },
+                            ));
                             gateway::async_save_host(new_host, on_done);
                         }
                     }
@@ -443,30 +488,38 @@ pub fn start_web_app(canvas_id: &str) -> Result<(), JsValue> {
                         if state.selected_host_id.as_deref() == Some(&host_id) {
                             state.selected_host_id = state.hosts.first().map(|h| h.id.0.clone());
                         }
-                        let on_done = Rc::new(RefCell::new(move |res: Result<(), String>| match res {
-                            Ok(()) => {
-                                console::log_1(&"Host deleted from backend".into());
-                            }
-                            Err(err) => {
-                                console::log_1(&format!("Failed to delete host from backend: {}", err).into());
-                            }
-                        }));
+                        let on_done =
+                            Rc::new(RefCell::new(move |res: Result<(), String>| match res {
+                                Ok(()) => {
+                                    console::log_1(&"Host deleted from backend".into());
+                                }
+                                Err(err) => {
+                                    console::log_1(
+                                        &format!("Failed to delete host from backend: {}", err)
+                                            .into(),
+                                    );
+                                }
+                            }));
                         gateway::async_delete_host(host_id, on_done);
                     }
                     UiAction::RunBatch { host_ids, command } => {
                         let app_state_batch = app_state_clone.clone();
-                        let on_done = Rc::new(RefCell::new(move |res: Result<redash_types::batch::BatchJobResult, String>| {
-                            let mut sm = app_state_batch.borrow_mut();
-                            sm.set_batch_running(false);
-                            match res {
-                                Ok(results) => {
-                                    sm.set_batch_results(results);
+                        let on_done = Rc::new(RefCell::new(
+                            move |res: Result<redash_types::batch::BatchJobResult, String>| {
+                                let mut sm = app_state_batch.borrow_mut();
+                                sm.set_batch_running(false);
+                                match res {
+                                    Ok(results) => {
+                                        sm.set_batch_results(results);
+                                    }
+                                    Err(err) => {
+                                        console::log_1(
+                                            &format!("Batch execution error: {}", err).into(),
+                                        );
+                                    }
                                 }
-                                Err(err) => {
-                                    console::log_1(&format!("Batch execution error: {}", err).into());
-                                }
-                            }
-                        }));
+                            },
+                        ));
                         gateway::async_run_batch(host_ids, command, on_done);
                     }
                     UiAction::ApplyAgentSuggestion => {
@@ -548,7 +601,9 @@ pub fn start_web_app(canvas_id: &str) -> Result<(), JsValue> {
             if key == "Tab" && state.show_add_modal {
                 e.prevent_default();
             }
-            if key == "Backspace" && (state.is_filter_focused || state.show_add_modal || state.terminal_search_active) {
+            if key == "Backspace"
+                && (state.is_filter_focused || state.show_add_modal || state.terminal_search_active)
+            {
                 e.prevent_default();
             }
             if key == "Enter" && is_ctrl && state.active_view == ActiveView::Batch {
@@ -560,7 +615,11 @@ pub fn start_web_app(canvas_id: &str) -> Result<(), JsValue> {
                     UiAction::SendTerminalInput(input) => {
                         gateway_clone.borrow().send_terminal_input(&input);
                     }
-                    UiAction::SaveSftpFile { host_id, path, content } => {
+                    UiAction::SaveSftpFile {
+                        host_id,
+                        path,
+                        content,
+                    } => {
                         let app_state_sftp = app_state_clone.clone();
                         let on_done = Rc::new(RefCell::new(move |res: Result<(), String>| {
                             let mut sm = app_state_sftp.borrow_mut();
@@ -581,31 +640,42 @@ pub fn start_web_app(canvas_id: &str) -> Result<(), JsValue> {
                             let mut sm = app_state_save.borrow_mut();
                             match res {
                                 Ok(()) => {
-                                    sm.settings_save_status = Some(("设置已成功保存到云端服务器".to_string(), true));
+                                    sm.settings_save_status =
+                                        Some(("设置已成功保存到云端服务器".to_string(), true));
                                 }
                                 Err(err) => {
-                                    sm.settings_save_status = Some((format!("设置保存失败: {}", err), false));
+                                    sm.settings_save_status =
+                                        Some((format!("设置保存失败: {}", err), false));
                                 }
                             }
                         }));
                         gateway::async_save_settings(settings, on_done);
                     }
                     UiAction::ExportSettingsJson => {
-                        let json = serde_json::to_string_pretty(&state.settings).unwrap_or_default();
+                        let json =
+                            serde_json::to_string_pretty(&state.settings).unwrap_or_default();
                         console::log_1(&format!("Exported Settings JSON:\n{}", json).into());
-                        state.settings_save_status = Some(("已成功导出设置 JSON 文件".to_string(), true));
+                        state.settings_save_status =
+                            Some(("已成功导出设置 JSON 文件".to_string(), true));
                     }
                     UiAction::SaveNewHost => {
                         if let Some(new_host) = state.build_new_host() {
                             state.hosts.push(new_host.clone());
-                            let on_done = Rc::new(RefCell::new(move |res: Result<models::HostConfig, String>| match res {
-                                Ok(saved) => {
-                                    console::log_1(&format!("Saved host to backend: {}", saved.name).into());
-                                }
-                                Err(err) => {
-                                    console::log_1(&format!("Failed to persist host: {}", err).into());
-                                }
-                            }));
+                            let on_done = Rc::new(RefCell::new(
+                                move |res: Result<models::HostConfig, String>| match res {
+                                    Ok(saved) => {
+                                        console::log_1(
+                                            &format!("Saved host to backend: {}", saved.name)
+                                                .into(),
+                                        );
+                                    }
+                                    Err(err) => {
+                                        console::log_1(
+                                            &format!("Failed to persist host: {}", err).into(),
+                                        );
+                                    }
+                                },
+                            ));
                             gateway::async_save_host(new_host, on_done);
                         }
                     }
@@ -614,30 +684,38 @@ pub fn start_web_app(canvas_id: &str) -> Result<(), JsValue> {
                         if state.selected_host_id.as_deref() == Some(&host_id) {
                             state.selected_host_id = state.hosts.first().map(|h| h.id.0.clone());
                         }
-                        let on_done = Rc::new(RefCell::new(move |res: Result<(), String>| match res {
-                            Ok(()) => {
-                                console::log_1(&"Host deleted from backend".into());
-                            }
-                            Err(err) => {
-                                console::log_1(&format!("Failed to delete host from backend: {}", err).into());
-                            }
-                        }));
+                        let on_done =
+                            Rc::new(RefCell::new(move |res: Result<(), String>| match res {
+                                Ok(()) => {
+                                    console::log_1(&"Host deleted from backend".into());
+                                }
+                                Err(err) => {
+                                    console::log_1(
+                                        &format!("Failed to delete host from backend: {}", err)
+                                            .into(),
+                                    );
+                                }
+                            }));
                         gateway::async_delete_host(host_id, on_done);
                     }
                     UiAction::RunBatch { host_ids, command } => {
                         let app_state_batch = app_state_clone.clone();
-                        let on_done = Rc::new(RefCell::new(move |res: Result<redash_types::batch::BatchJobResult, String>| {
-                            let mut sm = app_state_batch.borrow_mut();
-                            sm.set_batch_running(false);
-                            match res {
-                                Ok(results) => {
-                                    sm.set_batch_results(results);
+                        let on_done = Rc::new(RefCell::new(
+                            move |res: Result<redash_types::batch::BatchJobResult, String>| {
+                                let mut sm = app_state_batch.borrow_mut();
+                                sm.set_batch_running(false);
+                                match res {
+                                    Ok(results) => {
+                                        sm.set_batch_results(results);
+                                    }
+                                    Err(err) => {
+                                        console::log_1(
+                                            &format!("Batch execution error: {}", err).into(),
+                                        );
+                                    }
                                 }
-                                Err(err) => {
-                                    console::log_1(&format!("Batch execution error: {}", err).into());
-                                }
-                            }
-                        }));
+                            },
+                        ));
                         gateway::async_run_batch(host_ids, command, on_done);
                     }
                     UiAction::ApplyAgentSuggestion => {

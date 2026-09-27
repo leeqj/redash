@@ -1,4 +1,3 @@
-
 pub use redash_types::metrics::ProcessItem;
 
 pub struct ProcessManager;

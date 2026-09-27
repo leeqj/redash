@@ -1,7 +1,7 @@
+use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use axum::Json;
 use redash_core::sftp::{PagedFileResult, SftpManager};
 use serde::Deserialize;
 
@@ -44,16 +44,18 @@ pub async fn list_directory(
     })?;
 
     let target_path = query.path.unwrap_or_else(|| ".".to_string());
-    let items = SftpManager::list_dir(&sftp, &target_path).await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ApiResponse {
-                success: false,
-                data: None,
-                message: Some(format!("Failed to list directory: {}", e)),
-            }),
-        )
-    })?;
+    let items = SftpManager::list_dir(&sftp, &target_path)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ApiResponse {
+                    success: false,
+                    data: None,
+                    message: Some(format!("Failed to list directory: {}", e)),
+                }),
+            )
+        })?;
 
     let page = query.page.unwrap_or(1);
     let page_size = query.page_size.unwrap_or(100);

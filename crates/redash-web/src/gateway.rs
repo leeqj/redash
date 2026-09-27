@@ -5,9 +5,9 @@ use crate::models::{HostConfig, MetricsMessage, ServerTerminalMessage};
 use redash_types::sftp::RemoteFileItem;
 use std::cell::RefCell;
 use std::rc::Rc;
-use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-use web_sys::{console, MessageEvent, WebSocket};
+use wasm_bindgen::prelude::*;
+use web_sys::{MessageEvent, WebSocket, console};
 
 pub struct GatewayClient {
     pub active_terminal_ws: Option<WebSocket>,
@@ -28,14 +28,18 @@ impl GatewayClient {
         on_metrics: Rc<dyn Fn(crate::models::NodeMetrics)>,
     ) -> Result<(), JsValue> {
         let location = web_sys::window().unwrap().location();
-        let host = location.host().unwrap_or_else(|_| "127.0.0.1:8080".to_string());
+        let host = location
+            .host()
+            .unwrap_or_else(|_| "127.0.0.1:8080".to_string());
         let ws_url = format!("ws://{}/ws/metrics/{}", host, host_id);
 
         console::log_1(&format!("Connecting to metrics stream: {}", ws_url).into());
         let ws = WebSocket::new(&ws_url)?;
 
         let onmessage_callback = Closure::<dyn FnMut(_)>::new(move |e: MessageEvent| {
-            let Some(text) = e.data().as_string() else { return };
+            let Some(text) = e.data().as_string() else {
+                return;
+            };
             if let Ok(MetricsMessage::Metrics { data, .. }) =
                 serde_json::from_str::<MetricsMessage>(&text)
             {
@@ -56,14 +60,18 @@ impl GatewayClient {
         on_agent: Rc<dyn Fn(crate::models::DetectedAgent)>,
     ) -> Result<(), JsValue> {
         let location = web_sys::window().unwrap().location();
-        let host = location.host().unwrap_or_else(|_| "127.0.0.1:8080".to_string());
+        let host = location
+            .host()
+            .unwrap_or_else(|_| "127.0.0.1:8080".to_string());
         let ws_url = format!("ws://{}/ws/terminal/{}?cols=120&rows=40", host, host_id);
 
         console::log_1(&format!("Connecting to terminal stream: {}", ws_url).into());
         let ws = WebSocket::new(&ws_url)?;
 
         let onmessage_callback = Closure::<dyn FnMut(_)>::new(move |e: MessageEvent| {
-            let Some(text) = e.data().as_string() else { return };
+            let Some(text) = e.data().as_string() else {
+                return;
+            };
             if let Ok(msg) = serde_json::from_str::<ServerTerminalMessage>(&text) {
                 match msg {
                     ServerTerminalMessage::Output { data } => {
@@ -134,7 +142,9 @@ pub fn async_load_hosts(on_loaded: Rc<RefCell<dyn FnMut(Vec<HostConfig>)>>) {
         };
         let resp: web_sys::Response = resp_val.unchecked_into();
         let Ok(json_prom) = resp.json() else { return };
-        let Ok(json_val) = wasm_bindgen_futures::JsFuture::from(json_prom).await else { return };
+        let Ok(json_val) = wasm_bindgen_futures::JsFuture::from(json_prom).await else {
+            return;
+        };
         if let Ok(api_resp) = serde_wasm_bindgen_compat(&json_val) {
             (on_loaded.borrow_mut())(api_resp);
         }
@@ -142,7 +152,10 @@ pub fn async_load_hosts(on_loaded: Rc<RefCell<dyn FnMut(Vec<HostConfig>)>>) {
 }
 
 fn serde_wasm_bindgen_compat(val: &JsValue) -> Result<Vec<HostConfig>, ()> {
-    if let Some(json_str) = js_sys::JSON::stringify(val).ok().and_then(|s| s.as_string()) {
+    if let Some(json_str) = js_sys::JSON::stringify(val)
+        .ok()
+        .and_then(|s| s.as_string())
+    {
         #[derive(serde::Deserialize)]
         struct Resp {
             data: Option<Vec<HostConfig>>,
@@ -213,7 +226,10 @@ pub fn async_save_host(
                 return;
             }
         };
-        if let Some(json_str) = js_sys::JSON::stringify(&json_val).ok().and_then(|s| s.as_string()) {
+        if let Some(json_str) = js_sys::JSON::stringify(&json_val)
+            .ok()
+            .and_then(|s| s.as_string())
+        {
             #[derive(serde::Deserialize)]
             struct ApiResp {
                 success: bool,
@@ -226,7 +242,9 @@ pub fn async_save_host(
                     (on_done.borrow_mut())(Ok(saved));
                 }
                 Ok(res) => {
-                    let msg = res.message.unwrap_or_else(|| "Failed to save host".to_string());
+                    let msg = res
+                        .message
+                        .unwrap_or_else(|| "Failed to save host".to_string());
                     (on_done.borrow_mut())(Err(msg));
                 }
                 Err(e) => {
@@ -240,10 +258,7 @@ pub fn async_save_host(
 }
 
 #[allow(clippy::type_complexity)]
-pub fn async_delete_host(
-    host_id: String,
-    on_done: Rc<RefCell<dyn FnMut(Result<(), String>)>>,
-) {
+pub fn async_delete_host(host_id: String, on_done: Rc<RefCell<dyn FnMut(Result<(), String>)>>) {
     wasm_bindgen_futures::spawn_local(async move {
         let Some(window) = web_sys::window() else {
             (on_done.borrow_mut())(Err("Window not found".to_string()));
@@ -254,17 +269,16 @@ pub fn async_delete_host(
         opts.set_method("DELETE");
 
         let url = format!("/api/hosts/{}", host_id);
-        let resp_val = match wasm_bindgen_futures::JsFuture::from(
-            window.fetch_with_str_and_init(&url, &opts),
-        )
-        .await
-        {
-            Ok(v) => v,
-            Err(e) => {
-                (on_done.borrow_mut())(Err(format!("Network request failed: {:?}", e)));
-                return;
-            }
-        };
+        let resp_val =
+            match wasm_bindgen_futures::JsFuture::from(window.fetch_with_str_and_init(&url, &opts))
+                .await
+            {
+                Ok(v) => v,
+                Err(e) => {
+                    (on_done.borrow_mut())(Err(format!("Network request failed: {:?}", e)));
+                    return;
+                }
+            };
         let resp: web_sys::Response = resp_val.unchecked_into();
         if resp.ok() {
             (on_done.borrow_mut())(Ok(()));
@@ -294,7 +308,8 @@ pub fn async_fetch_sftp_list(
             .unwrap_or_else(|| path.clone());
         let url = format!("/api/sftp/{}/list?path={}", host_id, encoded_path);
 
-        let resp_val = match wasm_bindgen_futures::JsFuture::from(window.fetch_with_str(&url)).await {
+        let resp_val = match wasm_bindgen_futures::JsFuture::from(window.fetch_with_str(&url)).await
+        {
             Ok(v) => v,
             Err(e) => {
                 (on_done.borrow_mut())(Err(format!("Network request failed: {:?}", e)));
@@ -316,7 +331,10 @@ pub fn async_fetch_sftp_list(
                 return;
             }
         };
-        if let Some(json_str) = js_sys::JSON::stringify(&json_val).ok().and_then(|s| s.as_string()) {
+        if let Some(json_str) = js_sys::JSON::stringify(&json_val)
+            .ok()
+            .and_then(|s| s.as_string())
+        {
             #[derive(serde::Deserialize)]
             struct ApiResp {
                 success: bool,
@@ -329,7 +347,9 @@ pub fn async_fetch_sftp_list(
                     (on_done.borrow_mut())(Ok(items));
                 }
                 Ok(res) => {
-                    let msg = res.message.unwrap_or_else(|| "Failed to fetch files".to_string());
+                    let msg = res
+                        .message
+                        .unwrap_or_else(|| "Failed to fetch files".to_string());
                     (on_done.borrow_mut())(Err(msg));
                 }
                 Err(e) => {
@@ -358,7 +378,8 @@ pub fn async_read_sftp_file(
             .unwrap_or_else(|| path.clone());
         let url = format!("/api/sftp/{}/read?path={}", host_id, encoded_path);
 
-        let resp_val = match wasm_bindgen_futures::JsFuture::from(window.fetch_with_str(&url)).await {
+        let resp_val = match wasm_bindgen_futures::JsFuture::from(window.fetch_with_str(&url)).await
+        {
             Ok(v) => v,
             Err(e) => {
                 (on_done.borrow_mut())(Err(format!("Network request failed: {:?}", e)));
@@ -380,7 +401,10 @@ pub fn async_read_sftp_file(
                 return;
             }
         };
-        if let Some(json_str) = js_sys::JSON::stringify(&json_val).ok().and_then(|s| s.as_string()) {
+        if let Some(json_str) = js_sys::JSON::stringify(&json_val)
+            .ok()
+            .and_then(|s| s.as_string())
+        {
             #[derive(serde::Deserialize)]
             struct ApiResp {
                 success: bool,
@@ -393,7 +417,9 @@ pub fn async_read_sftp_file(
                     (on_done.borrow_mut())(Ok(content));
                 }
                 Ok(res) => {
-                    let msg = res.message.unwrap_or_else(|| "Failed to read file".to_string());
+                    let msg = res
+                        .message
+                        .unwrap_or_else(|| "Failed to read file".to_string());
                     (on_done.borrow_mut())(Err(msg));
                 }
                 Err(e) => {
@@ -446,8 +472,71 @@ pub fn async_write_sftp_file(
         let _ = headers.set("Content-Type", "application/json");
         opts.set_headers(&headers);
 
+        let resp_val =
+            match wasm_bindgen_futures::JsFuture::from(window.fetch_with_str_and_init(&url, &opts))
+                .await
+            {
+                Ok(v) => v,
+                Err(e) => {
+                    (on_done.borrow_mut())(Err(format!("Network request failed: {:?}", e)));
+                    return;
+                }
+            };
+        let resp: web_sys::Response = resp_val.unchecked_into();
+        let json_prom = match resp.json() {
+            Ok(p) => p,
+            Err(e) => {
+                (on_done.borrow_mut())(Err(format!("Failed to parse response: {:?}", e)));
+                return;
+            }
+        };
+        let json_val = match wasm_bindgen_futures::JsFuture::from(json_prom).await {
+            Ok(v) => v,
+            Err(e) => {
+                (on_done.borrow_mut())(Err(format!("Failed to await JSON: {:?}", e)));
+                return;
+            }
+        };
+        if let Some(json_str) = js_sys::JSON::stringify(&json_val)
+            .ok()
+            .and_then(|s| s.as_string())
+        {
+            #[derive(serde::Deserialize)]
+            struct ApiResp {
+                success: bool,
+                message: Option<String>,
+            }
+            match serde_json::from_str::<ApiResp>(&json_str) {
+                Ok(res) if res.success => {
+                    (on_done.borrow_mut())(Ok(()));
+                }
+                Ok(res) => {
+                    let msg = res
+                        .message
+                        .unwrap_or_else(|| "Failed to save file".to_string());
+                    (on_done.borrow_mut())(Err(msg));
+                }
+                Err(e) => {
+                    (on_done.borrow_mut())(Err(format!("Failed to deserialize response: {}", e)));
+                }
+            }
+        } else {
+            (on_done.borrow_mut())(Err("Failed to stringify JSON response".to_string()));
+        }
+    });
+}
+
+#[allow(clippy::type_complexity)]
+pub fn async_load_settings(
+    on_done: Rc<RefCell<dyn FnMut(Result<redash_types::settings::AppSettings, String>)>>,
+) {
+    wasm_bindgen_futures::spawn_local(async move {
+        let Some(window) = web_sys::window() else {
+            (on_done.borrow_mut())(Err("Window not found".to_string()));
+            return;
+        };
         let resp_val = match wasm_bindgen_futures::JsFuture::from(
-            window.fetch_with_str_and_init(&url, &opts),
+            window.fetch_with_str("/api/settings"),
         )
         .await
         {
@@ -472,62 +561,10 @@ pub fn async_write_sftp_file(
                 return;
             }
         };
-        if let Some(json_str) = js_sys::JSON::stringify(&json_val).ok().and_then(|s| s.as_string()) {
-            #[derive(serde::Deserialize)]
-            struct ApiResp {
-                success: bool,
-                message: Option<String>,
-            }
-            match serde_json::from_str::<ApiResp>(&json_str) {
-                Ok(res) if res.success => {
-                    (on_done.borrow_mut())(Ok(()));
-                }
-                Ok(res) => {
-                    let msg = res.message.unwrap_or_else(|| "Failed to save file".to_string());
-                    (on_done.borrow_mut())(Err(msg));
-                }
-                Err(e) => {
-                    (on_done.borrow_mut())(Err(format!("Failed to deserialize response: {}", e)));
-                }
-            }
-        } else {
-            (on_done.borrow_mut())(Err("Failed to stringify JSON response".to_string()));
-        }
-    });
-}
-
-#[allow(clippy::type_complexity)]
-pub fn async_load_settings(
-    on_done: Rc<RefCell<dyn FnMut(Result<redash_types::settings::AppSettings, String>)>>,
-) {
-    wasm_bindgen_futures::spawn_local(async move {
-        let Some(window) = web_sys::window() else {
-            (on_done.borrow_mut())(Err("Window not found".to_string()));
-            return;
-        };
-        let resp_val = match wasm_bindgen_futures::JsFuture::from(window.fetch_with_str("/api/settings")).await {
-            Ok(v) => v,
-            Err(e) => {
-                (on_done.borrow_mut())(Err(format!("Network request failed: {:?}", e)));
-                return;
-            }
-        };
-        let resp: web_sys::Response = resp_val.unchecked_into();
-        let json_prom = match resp.json() {
-            Ok(p) => p,
-            Err(e) => {
-                (on_done.borrow_mut())(Err(format!("Failed to parse response: {:?}", e)));
-                return;
-            }
-        };
-        let json_val = match wasm_bindgen_futures::JsFuture::from(json_prom).await {
-            Ok(v) => v,
-            Err(e) => {
-                (on_done.borrow_mut())(Err(format!("Failed to await JSON: {:?}", e)));
-                return;
-            }
-        };
-        if let Some(json_str) = js_sys::JSON::stringify(&json_val).ok().and_then(|s| s.as_string()) {
+        if let Some(json_str) = js_sys::JSON::stringify(&json_val)
+            .ok()
+            .and_then(|s| s.as_string())
+        {
             #[derive(serde::Deserialize)]
             struct ApiResp {
                 success: bool,
@@ -543,7 +580,9 @@ pub fn async_load_settings(
                     }
                 }
                 Ok(res) => {
-                    let msg = res.message.unwrap_or_else(|| "Failed to load settings".to_string());
+                    let msg = res
+                        .message
+                        .unwrap_or_else(|| "Failed to load settings".to_string());
                     (on_done.borrow_mut())(Err(msg));
                 }
                 Err(e) => {
@@ -614,7 +653,10 @@ pub fn async_save_settings(
                 return;
             }
         };
-        if let Some(json_str) = js_sys::JSON::stringify(&json_val).ok().and_then(|s| s.as_string()) {
+        if let Some(json_str) = js_sys::JSON::stringify(&json_val)
+            .ok()
+            .and_then(|s| s.as_string())
+        {
             #[derive(serde::Deserialize)]
             struct ApiResp {
                 success: bool,
@@ -625,7 +667,9 @@ pub fn async_save_settings(
                     (on_done.borrow_mut())(Ok(()));
                 }
                 Ok(res) => {
-                    let msg = res.message.unwrap_or_else(|| "Failed to save settings".to_string());
+                    let msg = res
+                        .message
+                        .unwrap_or_else(|| "Failed to save settings".to_string());
                     (on_done.borrow_mut())(Err(msg));
                 }
                 Err(e) => {
@@ -638,7 +682,8 @@ pub fn async_save_settings(
     });
 }
 
-pub type BatchRunCallback = Rc<RefCell<dyn FnMut(Result<redash_types::batch::BatchJobResult, String>)>>;
+pub type BatchRunCallback =
+    Rc<RefCell<dyn FnMut(Result<redash_types::batch::BatchJobResult, String>)>>;
 
 #[allow(clippy::type_complexity)]
 pub fn async_run_batch(
@@ -701,7 +746,10 @@ pub fn async_run_batch(
                 return;
             }
         };
-        if let Some(json_str) = js_sys::JSON::stringify(&json_val).ok().and_then(|s| s.as_string()) {
+        if let Some(json_str) = js_sys::JSON::stringify(&json_val)
+            .ok()
+            .and_then(|s| s.as_string())
+        {
             #[derive(serde::Deserialize)]
             struct ApiResp {
                 success: bool,
@@ -717,7 +765,9 @@ pub fn async_run_batch(
                     }
                 }
                 Ok(res) => {
-                    let msg = res.message.unwrap_or_else(|| "Failed to execute batch job".to_string());
+                    let msg = res
+                        .message
+                        .unwrap_or_else(|| "Failed to execute batch job".to_string());
                     (on_done.borrow_mut())(Err(msg));
                 }
                 Err(e) => {
@@ -732,10 +782,7 @@ pub fn async_run_batch(
 
 pub type WebhookTestCallback = Rc<RefCell<dyn FnMut(Result<String, String>)>>;
 
-pub fn async_test_webhook(
-    webhook_url: Option<String>,
-    on_done: WebhookTestCallback,
-) {
+pub fn async_test_webhook(webhook_url: Option<String>, on_done: WebhookTestCallback) {
     wasm_bindgen_futures::spawn_local(async move {
         let Some(window) = web_sys::window() else {
             (on_done.borrow_mut())(Err("Window not found".to_string()));
@@ -761,7 +808,8 @@ pub fn async_test_webhook(
         let _ = headers.set("Content-Type", "application/json");
         opts.set_headers(&headers);
 
-        let req = match web_sys::Request::new_with_str_and_init("/api/settings/test-webhook", &opts) {
+        let req = match web_sys::Request::new_with_str_and_init("/api/settings/test-webhook", &opts)
+        {
             Ok(r) => r,
             Err(e) => {
                 (on_done.borrow_mut())(Err(format!("Failed to build request: {:?}", e)));
@@ -769,13 +817,14 @@ pub fn async_test_webhook(
             }
         };
 
-        let resp_val = match wasm_bindgen_futures::JsFuture::from(window.fetch_with_request(&req)).await {
-            Ok(v) => v,
-            Err(e) => {
-                (on_done.borrow_mut())(Err(format!("Network request failed: {:?}", e)));
-                return;
-            }
-        };
+        let resp_val =
+            match wasm_bindgen_futures::JsFuture::from(window.fetch_with_request(&req)).await {
+                Ok(v) => v,
+                Err(e) => {
+                    (on_done.borrow_mut())(Err(format!("Network request failed: {:?}", e)));
+                    return;
+                }
+            };
         let resp: web_sys::Response = resp_val.unchecked_into();
         let json_prom = match resp.json() {
             Ok(p) => p,
@@ -791,7 +840,10 @@ pub fn async_test_webhook(
                 return;
             }
         };
-        if let Some(json_str) = js_sys::JSON::stringify(&json_val).ok().and_then(|s| s.as_string()) {
+        if let Some(json_str) = js_sys::JSON::stringify(&json_val)
+            .ok()
+            .and_then(|s| s.as_string())
+        {
             #[derive(serde::Deserialize)]
             struct ApiResp {
                 success: bool,
@@ -804,7 +856,9 @@ pub fn async_test_webhook(
                     (on_done.borrow_mut())(Ok(msg));
                 }
                 Ok(res) => {
-                    let msg = res.message.unwrap_or_else(|| "测试消息推送失败".to_string());
+                    let msg = res
+                        .message
+                        .unwrap_or_else(|| "测试消息推送失败".to_string());
                     (on_done.borrow_mut())(Err(msg));
                 }
                 Err(e) => {
@@ -816,5 +870,3 @@ pub fn async_test_webhook(
         }
     });
 }
-
-

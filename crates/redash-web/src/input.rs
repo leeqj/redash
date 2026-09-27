@@ -9,9 +9,19 @@ pub enum UiAction {
     DeleteHost(String),
     SaveNewHost,
     SendTerminalInput(String),
-    FetchSftpList { host_id: String, path: String },
-    ReadSftpFile { host_id: String, path: String },
-    SaveSftpFile { host_id: String, path: String, content: String },
+    FetchSftpList {
+        host_id: String,
+        path: String,
+    },
+    ReadSftpFile {
+        host_id: String,
+        path: String,
+    },
+    SaveSftpFile {
+        host_id: String,
+        path: String,
+        content: String,
+    },
     SaveSettings,
     ExportSettingsJson,
     ImportSettingsJson,
@@ -19,7 +29,10 @@ pub enum UiAction {
     PromptWebhookUrl,
     TestWebhookAlert,
     TestBrowserNotification,
-    RunBatch { host_ids: Vec<String>, command: String },
+    RunBatch {
+        host_ids: Vec<String>,
+        command: String,
+    },
     ApplyAgentSuggestion,
     AbortAgentTask,
 }
@@ -33,9 +46,12 @@ pub fn handle_mouse_click(
 ) -> Option<UiAction> {
     // 0. If SFTP Editor Modal is active, check editor modal clicks
     if state.sftp_editor.is_some() {
-        let (save_x, save_y, save_w, save_h) = crate::render::get_sftp_editor_save_btn_rect(width, height);
+        let (save_x, save_y, save_w, save_h) =
+            crate::render::get_sftp_editor_save_btn_rect(width, height);
         if (save_x..=save_x + save_w).contains(&x) && (save_y..=save_y + save_h).contains(&y) {
-            if let (Some(host_id), Some((path, content))) = (&state.selected_host_id, &state.sftp_editor) {
+            if let (Some(host_id), Some((path, content))) =
+                (&state.selected_host_id, &state.sftp_editor)
+            {
                 return Some(UiAction::SaveSftpFile {
                     host_id: host_id.clone(),
                     path: path.clone(),
@@ -45,8 +61,10 @@ pub fn handle_mouse_click(
             return None;
         }
 
-        let (close_x, close_y, close_w, close_h) = crate::render::get_sftp_editor_close_btn_rect(width, height);
-        if (close_x..=close_x + close_w).contains(&x) && (close_y..=close_y + close_h).contains(&y) {
+        let (close_x, close_y, close_w, close_h) =
+            crate::render::get_sftp_editor_close_btn_rect(width, height);
+        if (close_x..=close_x + close_w).contains(&x) && (close_y..=close_y + close_h).contains(&y)
+        {
             state.close_sftp_editor();
             return None;
         }
@@ -114,8 +132,10 @@ pub fn handle_mouse_click(
 
     // 2.5. If Batch Log Modal is active, check modal clicks
     if state.batch_selected_log_host.is_some() {
-        let (close_x, close_y, close_w, close_h) = crate::render::get_batch_log_modal_close_btn_rect(width, height);
-        if (close_x..=close_x + close_w).contains(&x) && (close_y..=close_y + close_h).contains(&y) {
+        let (close_x, close_y, close_w, close_h) =
+            crate::render::get_batch_log_modal_close_btn_rect(width, height);
+        if (close_x..=close_x + close_w).contains(&x) && (close_y..=close_y + close_h).contains(&y)
+        {
             state.select_batch_log_host(None);
             return None;
         }
@@ -167,7 +187,8 @@ pub fn handle_mouse_click(
         let start_y = LAYOUT.topbar_height + 54.0;
 
         // Check Fleet Search Bar
-        let (sb_x, sb_y, sb_w, sb_h) = crate::render::get_fleet_search_bar_rect(content_x, LAYOUT.topbar_height, content_w);
+        let (sb_x, sb_y, sb_w, sb_h) =
+            crate::render::get_fleet_search_bar_rect(content_x, LAYOUT.topbar_height, content_w);
         if (sb_x..=sb_x + sb_w).contains(&x) && (sb_y..=sb_y + sb_h).contains(&y) {
             state.set_filter_focused(true);
             return None;
@@ -176,18 +197,22 @@ pub fn handle_mouse_click(
         }
 
         let q = state.filter_query.trim().to_lowercase();
-        let filtered_ids: Vec<String> = state.hosts.iter().filter_map(|h| {
-            if q.is_empty()
-                || h.name.to_lowercase().contains(&q)
-                || h.hostname.to_lowercase().contains(&q)
-                || h.user.to_lowercase().contains(&q)
-                || h.tags.iter().any(|t| t.to_lowercase().contains(&q))
-            {
-                Some(h.id.0.clone())
-            } else {
-                None
-            }
-        }).collect();
+        let filtered_ids: Vec<String> = state
+            .hosts
+            .iter()
+            .filter_map(|h| {
+                if q.is_empty()
+                    || h.name.to_lowercase().contains(&q)
+                    || h.hostname.to_lowercase().contains(&q)
+                    || h.user.to_lowercase().contains(&q)
+                    || h.tags.iter().any(|t| t.to_lowercase().contains(&q))
+                {
+                    Some(h.id.0.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
 
         for (grid_idx, host_id) in filtered_ids.into_iter().enumerate() {
             let col = grid_idx % 2;
@@ -196,7 +221,8 @@ pub fn handle_mouse_click(
             let card_y = start_y + (row as f64) * (card_h + padding);
 
             // 1. Delete button [ ✕ ]
-            let (del_x, del_y, del_w, del_h) = crate::render::get_fleet_host_delete_btn_rect(card_x, card_y, card_w);
+            let (del_x, del_y, del_w, del_h) =
+                crate::render::get_fleet_host_delete_btn_rect(card_x, card_y, card_w);
             if (del_x..=del_x + del_w).contains(&x) && (del_y..=del_y + del_h).contains(&y) {
                 return Some(UiAction::DeleteHost(host_id));
             }
@@ -244,12 +270,14 @@ pub fn handle_mouse_click(
             let panel_w = width - base_x;
             // 1. Check AI Agent HUD action buttons if agent is active
             if state.agent.is_some() {
-                let (ax, ay, aw, ah) = crate::render::get_agent_hud_apply_btn_rect(base_x, panel_y, panel_w);
+                let (ax, ay, aw, ah) =
+                    crate::render::get_agent_hud_apply_btn_rect(base_x, panel_y, panel_w);
                 if (ax..=ax + aw).contains(&x) && (ay..=ay + ah).contains(&y) {
                     return Some(UiAction::ApplyAgentSuggestion);
                 }
 
-                let (ox, oy, ow, oh) = crate::render::get_agent_hud_abort_btn_rect(base_x, panel_y, panel_w);
+                let (ox, oy, ow, oh) =
+                    crate::render::get_agent_hud_abort_btn_rect(base_x, panel_y, panel_w);
                 if (ox..=ox + ow).contains(&x) && (oy..=oy + oh).contains(&y) {
                     return Some(UiAction::AbortAgentTask);
                 }
@@ -258,8 +286,10 @@ pub fn handle_mouse_click(
             // 2. Check Terminal Search Bar close button if active
             if state.terminal_search_active {
                 let term_y = panel_y + if state.agent.is_some() { 32.0 } else { 0.0 };
-                let (sb_x, sb_y, sb_w, _sb_h) = crate::render::get_terminal_search_bar_rect(base_x, term_y, panel_w);
-                let (cx, cy, cw, ch) = crate::render::get_terminal_search_close_btn_rect(sb_x, sb_y, sb_w);
+                let (sb_x, sb_y, sb_w, _sb_h) =
+                    crate::render::get_terminal_search_bar_rect(base_x, term_y, panel_w);
+                let (cx, cy, cw, ch) =
+                    crate::render::get_terminal_search_close_btn_rect(sb_x, sb_y, sb_w);
                 if (cx..=cx + cw).contains(&x) && (cy..=cy + ch).contains(&y) {
                     state.close_terminal_search();
                     return None;
@@ -273,7 +303,8 @@ pub fn handle_mouse_click(
         // Processes panel clicks: Sort buttons
         if state.active_workbench_tab == WorkbenchTab::Processes {
             for b_idx in 0..3 {
-                let (bx, by, bw, bh) = crate::render::get_process_sort_btn_rect(b_idx, base_x, panel_y);
+                let (bx, by, bw, bh) =
+                    crate::render::get_process_sort_btn_rect(b_idx, base_x, panel_y);
                 if (bx..=bx + bw).contains(&x) && (by..=by + bh).contains(&y) {
                     let sort = match b_idx {
                         0 => ProcessSortField::CpuDesc,
@@ -289,7 +320,9 @@ pub fn handle_mouse_click(
         // Docker panel clicks: container action logs button [ 📋 ]
         if state.active_workbench_tab == WorkbenchTab::Docker {
             let metrics = crate::render::get_active_host_metrics(state);
-            if let Some(m) = metrics && !m.containers_detail.is_empty() {
+            if let Some(m) = metrics
+                && !m.containers_detail.is_empty()
+            {
                 let th_y = panel_y + 42.0;
                 let th_h = 28.0;
                 let row_h = 36.0;
@@ -302,7 +335,8 @@ pub fn handle_mouse_click(
                     }
 
                     // Check logs button: index 3
-                    let (bx, by, bw, bh) = crate::render::get_docker_action_btn_rect(3, col_actions_x, row_y);
+                    let (bx, by, bw, bh) =
+                        crate::render::get_docker_action_btn_rect(3, col_actions_x, row_y);
                     if (bx..=bx + bw).contains(&x) && (by..=by + bh).contains(&y) {
                         state.open_docker_logs(c.id.clone(), c.name.clone());
                         return None;
@@ -331,7 +365,8 @@ pub fn handle_mouse_click(
 
             // Category filter chips
             for (idx, &cat) in crate::render::SNIPPET_CATEGORIES.iter().enumerate() {
-                let (cx, cy, cw, ch) = crate::render::get_snippet_category_rect(idx, base_x, panel_y);
+                let (cx, cy, cw, ch) =
+                    crate::render::get_snippet_category_rect(idx, base_x, panel_y);
                 if (cx..=cx + cw).contains(&x) && (cy..=cy + ch).contains(&y) {
                     state.set_snippet_category(cat);
                     return None;
@@ -343,7 +378,9 @@ pub fn handle_mouse_click(
             let filtered: Vec<&crate::render::SnippetItem> = crate::render::DEFAULT_SNIPPETS
                 .iter()
                 .filter(|s| {
-                    sel_cat == "All" || sel_cat == "全部" || s.category.eq_ignore_ascii_case(sel_cat)
+                    sel_cat == "All"
+                        || sel_cat == "全部"
+                        || s.category.eq_ignore_ascii_case(sel_cat)
                 })
                 .collect();
 
@@ -359,7 +396,11 @@ pub fn handle_mouse_click(
                 let cx = base_x + 16.0 + (col as f64) * (card_w + card_gap);
                 let cy = grid_y + (row as f64) * (card_h + card_gap);
 
-                let bottom_limit = if state.snippet_output.is_some() { height - 230.0 } else { height - 10.0 };
+                let bottom_limit = if state.snippet_output.is_some() {
+                    height - 230.0
+                } else {
+                    height - 10.0
+                };
                 if cy + card_h > bottom_limit {
                     break;
                 }
@@ -369,7 +410,9 @@ pub fn handle_mouse_click(
                 // [ 💻 注入终端 ]
                 let inject_w = 95.0;
                 let inject_x = cx + card_w - 180.0;
-                if (inject_x..=inject_x + inject_w).contains(&x) && (btn_y..=btn_y + 22.0).contains(&y) {
+                if (inject_x..=inject_x + inject_w).contains(&x)
+                    && (btn_y..=btn_y + 22.0).contains(&y)
+                {
                     state.switch_workbench_tab(WorkbenchTab::Terminal);
                     state.append_terminal_output(&format!("$ {}\r\n", s.command));
                     return Some(UiAction::SendTerminalInput(format!("{}\r", s.command)));
@@ -397,14 +440,16 @@ pub fn handle_mouse_click(
         let content_w = width - LAYOUT.sidebar_width;
 
         // "全选" button
-        let (all_x, all_y, all_w, all_h) = crate::render::get_batch_select_all_btn_rect(content_x, content_y);
+        let (all_x, all_y, all_w, all_h) =
+            crate::render::get_batch_select_all_btn_rect(content_x, content_y);
         if (all_x..=all_x + all_w).contains(&x) && (all_y..=all_y + all_h).contains(&y) {
             state.select_all_batch_hosts();
             return None;
         }
 
         // "清空" button
-        let (clr_x, clr_y, clr_w, clr_h) = crate::render::get_batch_clear_btn_rect(content_x, content_y);
+        let (clr_x, clr_y, clr_w, clr_h) =
+            crate::render::get_batch_clear_btn_rect(content_x, content_y);
         if (clr_x..=clr_x + clr_w).contains(&x) && (clr_y..=clr_y + clr_h).contains(&y) {
             state.clear_batch_hosts();
             return None;
@@ -412,7 +457,8 @@ pub fn handle_mouse_click(
 
         // Host checklist rows
         for (idx, host) in state.hosts.iter().enumerate() {
-            let (rx, ry, rw, rh) = crate::render::get_batch_host_row_rect(idx, content_x, content_y);
+            let (rx, ry, rw, rh) =
+                crate::render::get_batch_host_row_rect(idx, content_x, content_y);
             if (rx..=rx + rw).contains(&x) && (ry..=ry + rh).contains(&y) {
                 state.toggle_batch_host(host.id.0.clone());
                 return None;
@@ -420,7 +466,10 @@ pub fn handle_mouse_click(
         }
 
         // Quick command pills: uptime, df -h, docker ps, free -m
-        for (pidx, &cmd) in ["uptime", "df -h", "docker ps", "free -m"].iter().enumerate() {
+        for (pidx, &cmd) in ["uptime", "df -h", "docker ps", "free -m"]
+            .iter()
+            .enumerate()
+        {
             let (px, py, pw, ph) = crate::render::get_batch_pill_rect(pidx, content_x, content_y);
             if (px..=px + pw).contains(&x) && (py..=py + ph).contains(&y) {
                 state.set_batch_command(cmd.to_string());
@@ -429,9 +478,13 @@ pub fn handle_mouse_click(
         }
 
         // [ 🚀 并发执行 (Run Batch) ] button
-        let (btn_x, btn_y, btn_w, btn_h) = crate::render::get_batch_run_btn_rect(content_x, content_y, content_w);
+        let (btn_x, btn_y, btn_w, btn_h) =
+            crate::render::get_batch_run_btn_rect(content_x, content_y, content_w);
         if (btn_x..=btn_x + btn_w).contains(&x) && (btn_y..=btn_y + btn_h).contains(&y) {
-            if !state.batch_is_running && !state.batch_selected_host_ids.is_empty() && !state.batch_command.trim().is_empty() {
+            if !state.batch_is_running
+                && !state.batch_selected_host_ids.is_empty()
+                && !state.batch_command.trim().is_empty()
+            {
                 state.set_batch_running(true);
                 return Some(UiAction::RunBatch {
                     host_ids: state.batch_selected_host_ids.iter().cloned().collect(),
@@ -443,7 +496,8 @@ pub fn handle_mouse_click(
 
         // Detail Log buttons in Execution Waterfall
         for (idx, host) in state.hosts.iter().enumerate() {
-            let (lx, ly, lw, lh) = crate::render::get_batch_log_btn_rect(idx, content_x, content_y, content_w);
+            let (lx, ly, lw, lh) =
+                crate::render::get_batch_log_btn_rect(idx, content_x, content_y, content_w);
             if (lx..=lx + lw).contains(&x) && (ly..=ly + lh).contains(&y) {
                 state.select_batch_log_host(Some(host.id.0.clone()));
                 return None;
@@ -460,23 +514,23 @@ pub fn handle_mouse_click(
         let content_w = width - LAYOUT.sidebar_width;
 
         // Check Refresh Button
-        let (ref_x, ref_y, ref_w, ref_h) = crate::render::get_sftp_refresh_btn_rect(content_x, content_y, content_w);
+        let (ref_x, ref_y, ref_w, ref_h) =
+            crate::render::get_sftp_refresh_btn_rect(content_x, content_y, content_w);
         if (ref_x..=ref_x + ref_w).contains(&x) && (ref_y..=ref_y + ref_h).contains(&y) {
             if let Some(host_id) = state.selected_host_id.clone() {
                 let path = state.sftp_current_path.clone();
                 state.set_sftp_loading(true);
-                return Some(UiAction::FetchSftpList {
-                    host_id,
-                    path,
-                });
+                return Some(UiAction::FetchSftpList { host_id, path });
             }
             return None;
         }
 
         // Check Parent Directory Button (if not root)
-        let is_root = state.sftp_current_path.trim() == "/" || state.sftp_current_path.trim().is_empty();
+        let is_root =
+            state.sftp_current_path.trim() == "/" || state.sftp_current_path.trim().is_empty();
         if !is_root {
-            let (p_x, p_y, p_w, p_h) = crate::render::get_sftp_parent_dir_btn_rect(content_x, content_y);
+            let (p_x, p_y, p_w, p_h) =
+                crate::render::get_sftp_parent_dir_btn_rect(content_x, content_y);
             if (p_x..=p_x + p_w).contains(&x) && (p_y..=p_y + p_h).contains(&y) {
                 let parent = crate::render::get_parent_dir(&state.sftp_current_path);
                 state.sftp_current_path = parent.clone();
@@ -493,7 +547,11 @@ pub fn handle_mouse_click(
 
         // Check Breadcrumb Segment clicks
         let mut clicked_target = None;
-        let breadcrumbs = crate::render::get_sftp_breadcrumb_rects(content_x, content_y, &state.sftp_current_path);
+        let breadcrumbs = crate::render::get_sftp_breadcrumb_rects(
+            content_x,
+            content_y,
+            &state.sftp_current_path,
+        );
         for (target_path, seg_x, seg_y, seg_w, seg_h) in breadcrumbs {
             if (seg_x..=seg_x + seg_w).contains(&x) && (seg_y..=seg_y + seg_h).contains(&y) {
                 if target_path != state.sftp_current_path {
@@ -517,7 +575,8 @@ pub fn handle_mouse_click(
         // Check File Row clicks
         let mut clicked_file = None;
         for (idx, file) in state.sftp_files.iter().enumerate() {
-            let (rx, ry, rw, rh) = crate::render::get_sftp_file_row_rect(idx, content_x, content_y, content_w);
+            let (rx, ry, rw, rh) =
+                crate::render::get_sftp_file_row_rect(idx, content_x, content_y, content_w);
             if (rx..=rx + rw).contains(&x) && (ry..=ry + rh).contains(&y) {
                 clicked_file = Some((file.is_dir, file.path.clone()));
                 break;
@@ -552,7 +611,8 @@ pub fn handle_mouse_click(
         // Check Settings Category Sidebar clicks
         if x >= base_x && x <= base_x + crate::render::SETTINGS_SIDEBAR_WIDTH {
             for (idx, (cat, _, _, _)) in crate::render::SETTINGS_CATEGORIES.iter().enumerate() {
-                let (ix, iy, iw, ih) = crate::render::get_settings_category_rect(idx, base_x, base_y);
+                let (ix, iy, iw, ih) =
+                    crate::render::get_settings_category_rect(idx, base_x, base_y);
                 if (ix..=ix + iw).contains(&x) && (iy..=iy + ih).contains(&y) {
                     state.switch_settings_category(*cat);
                     return None;
@@ -569,10 +629,12 @@ pub fn handle_mouse_click(
 
                 // Theme preset cards
                 for (idx, preset) in crate::render::THEME_PRESETS.iter().enumerate() {
-                    let (cx, cy, cw, ch) = crate::render::get_settings_theme_card_rect(idx, right_x, sec1_y);
+                    let (cx, cy, cw, ch) =
+                        crate::render::get_settings_theme_card_rect(idx, right_x, sec1_y);
                     if (cx..=cx + cw).contains(&x) && (cy..=cy + ch).contains(&y) {
                         state.set_theme(preset.key.to_string());
-                        state.settings_save_status = Some((format!("已切换主题至 {}", preset.title), true));
+                        state.settings_save_status =
+                            Some((format!("已切换主题至 {}", preset.title), true));
                         return Some(UiAction::SaveSettings);
                     }
                 }
@@ -580,7 +642,8 @@ pub fn handle_mouse_click(
                 // Language pills
                 let sec2_y = sec1_y + 240.0;
                 for (idx, (code, name)) in crate::render::LANG_PRESETS.iter().enumerate() {
-                    let (px, py, pw, ph) = crate::render::get_settings_lang_pill_rect(idx, right_x, sec2_y);
+                    let (px, py, pw, ph) =
+                        crate::render::get_settings_lang_pill_rect(idx, right_x, sec2_y);
                     if (px..=px + pw).contains(&x) && (py..=py + ph).contains(&y) {
                         state.set_locale(code.to_string());
                         state.settings_save_status = Some((format!("已切换语言至 {}", name), true));
@@ -590,7 +653,8 @@ pub fn handle_mouse_click(
 
                 // Glow toggle
                 let sec3_y = sec2_y + 76.0;
-                let (gx, gy, gw, gh) = crate::render::get_settings_glow_toggle_rect(right_x, sec3_y + 16.0);
+                let (gx, gy, gw, gh) =
+                    crate::render::get_settings_glow_toggle_rect(right_x, sec3_y + 16.0);
                 if (gx..=gx + gw).contains(&x) && (gy..=gy + gh).contains(&y) {
                     state.toggle_glow();
                     let status_txt = if state.settings.glow_effects_enabled {
@@ -607,21 +671,27 @@ pub fn handle_mouse_click(
 
                 // Font size pills
                 for (idx, &size) in crate::render::FONT_SIZES.iter().enumerate() {
-                    let (px, py, pw, ph) = crate::render::get_settings_font_size_pill_rect(idx, right_x, sec1_y);
+                    let (px, py, pw, ph) =
+                        crate::render::get_settings_font_size_pill_rect(idx, right_x, sec1_y);
                     if (px..=px + pw).contains(&x) && (py..=py + ph).contains(&y) {
                         state.set_terminal_font_size(size);
-                        state.settings_save_status = Some((format!("终端字体大小已设置为 {}px", size as u32), true));
+                        state.settings_save_status =
+                            Some((format!("终端字体大小已设置为 {}px", size as u32), true));
                         return Some(UiAction::SaveSettings);
                     }
                 }
 
                 // Cursor style pills
                 let sec2_y = sec1_y + 76.0;
-                for (idx, (style_val, style_label)) in crate::render::CURSOR_STYLES.iter().enumerate() {
-                    let (px, py, pw, ph) = crate::render::get_settings_cursor_style_pill_rect(idx, right_x, sec2_y);
+                for (idx, (style_val, style_label)) in
+                    crate::render::CURSOR_STYLES.iter().enumerate()
+                {
+                    let (px, py, pw, ph) =
+                        crate::render::get_settings_cursor_style_pill_rect(idx, right_x, sec2_y);
                     if (px..=px + pw).contains(&x) && (py..=py + ph).contains(&y) {
                         state.set_terminal_cursor_style(style_val.to_string());
-                        state.settings_save_status = Some((format!("终端光标样式已设置为 {}", style_label), true));
+                        state.settings_save_status =
+                            Some((format!("终端光标样式已设置为 {}", style_label), true));
                         return Some(UiAction::SaveSettings);
                     }
                 }
@@ -629,10 +699,12 @@ pub fn handle_mouse_click(
                 // Font family pills
                 let sec3_y = sec2_y + 76.0;
                 for (idx, &font) in crate::render::FONT_FAMILIES.iter().enumerate() {
-                    let (px, py, pw, ph) = crate::render::get_settings_font_family_pill_rect(idx, right_x, sec3_y);
+                    let (px, py, pw, ph) =
+                        crate::render::get_settings_font_family_pill_rect(idx, right_x, sec3_y);
                     if (px..=px + pw).contains(&x) && (py..=py + ph).contains(&y) {
                         state.set_terminal_font_family(font.to_string());
-                        state.settings_save_status = Some((format!("终端字体族已设置为 {}", font), true));
+                        state.settings_save_status =
+                            Some((format!("终端字体族已设置为 {}", font), true));
                         return Some(UiAction::SaveSettings);
                     }
                 }
@@ -640,10 +712,12 @@ pub fn handle_mouse_click(
                 // Scrollback lines pills
                 let sec4_y = sec3_y + 76.0;
                 for (idx, &lines) in crate::render::SCROLLBACK_OPTIONS.iter().enumerate() {
-                    let (px, py, pw, ph) = crate::render::get_settings_scrollback_pill_rect(idx, right_x, sec4_y);
+                    let (px, py, pw, ph) =
+                        crate::render::get_settings_scrollback_pill_rect(idx, right_x, sec4_y);
                     if (px..=px + pw).contains(&x) && (py..=py + ph).contains(&y) {
                         state.set_terminal_scrollback(lines);
-                        state.settings_save_status = Some((format!("终端回滚上限已设置为 {} 行", lines), true));
+                        state.settings_save_status =
+                            Some((format!("终端回滚上限已设置为 {} 行", lines), true));
                         return Some(UiAction::SaveSettings);
                     }
                 }
@@ -653,10 +727,12 @@ pub fn handle_mouse_click(
 
                 // Probe interval pills
                 for (idx, &interval) in crate::render::PROBE_INTERVALS.iter().enumerate() {
-                    let (px, py, pw, ph) = crate::render::get_settings_probe_interval_pill_rect(idx, right_x, sec1_y);
+                    let (px, py, pw, ph) =
+                        crate::render::get_settings_probe_interval_pill_rect(idx, right_x, sec1_y);
                     if (px..=px + pw).contains(&x) && (py..=py + ph).contains(&y) {
                         state.set_probe_interval(interval);
-                        state.settings_save_status = Some((format!("遥测轮询周期已设置为 {} 秒", interval), true));
+                        state.settings_save_status =
+                            Some((format!("遥测轮询周期已设置为 {} 秒", interval), true));
                         return Some(UiAction::SaveSettings);
                     }
                 }
@@ -664,16 +740,19 @@ pub fn handle_mouse_click(
                 // Ping target preset pills
                 let sec2_y = sec1_y + 76.0;
                 for (idx, (ip, _)) in crate::render::PING_PRESETS.iter().enumerate() {
-                    let (px, py, pw, ph) = crate::render::get_settings_ping_preset_pill_rect(idx, right_x, sec2_y);
+                    let (px, py, pw, ph) =
+                        crate::render::get_settings_ping_preset_pill_rect(idx, right_x, sec2_y);
                     if (px..=px + pw).contains(&x) && (py..=py + ph).contains(&y) {
                         state.set_ping_target(ip.to_string());
-                        state.settings_save_status = Some((format!("探测节点已切换为 {}", ip), true));
+                        state.settings_save_status =
+                            Some((format!("探测节点已切换为 {}", ip), true));
                         return None;
                     }
                 }
 
                 // Ping custom target button
-                let (cx, cy, cw, ch) = crate::render::get_settings_ping_custom_btn_rect(right_x, sec2_y);
+                let (cx, cy, cw, ch) =
+                    crate::render::get_settings_ping_custom_btn_rect(right_x, sec2_y);
                 if (cx..=cx + cw).contains(&x) && (cy..=cy + ch).contains(&y) {
                     return Some(UiAction::PromptPingTarget);
                 }
@@ -683,11 +762,15 @@ pub fn handle_mouse_click(
 
                 // CPU threshold pills
                 for (idx, &opt) in crate::render::ALERT_THRESHOLDS.iter().enumerate() {
-                    let (px, py, pw, ph) = crate::render::get_settings_cpu_threshold_pill_rect(idx, right_x, sec1_y);
+                    let (px, py, pw, ph) =
+                        crate::render::get_settings_cpu_threshold_pill_rect(idx, right_x, sec1_y);
                     if (px..=px + pw).contains(&x) && (py..=py + ph).contains(&y) {
                         state.set_cpu_threshold(opt);
-                        let label = opt.map(|v| format!("{}%", v as u32)).unwrap_or_else(|| "禁用".to_string());
-                        state.settings_save_status = Some((format!("CPU 告警阈值已设置为 {}", label), true));
+                        let label = opt
+                            .map(|v| format!("{}%", v as u32))
+                            .unwrap_or_else(|| "禁用".to_string());
+                        state.settings_save_status =
+                            Some((format!("CPU 告警阈值已设置为 {}", label), true));
                         return Some(UiAction::SaveSettings);
                     }
                 }
@@ -695,11 +778,15 @@ pub fn handle_mouse_click(
                 // Memory threshold pills
                 let sec2_y = sec1_y + 76.0;
                 for (idx, &opt) in crate::render::ALERT_THRESHOLDS.iter().enumerate() {
-                    let (px, py, pw, ph) = crate::render::get_settings_mem_threshold_pill_rect(idx, right_x, sec2_y);
+                    let (px, py, pw, ph) =
+                        crate::render::get_settings_mem_threshold_pill_rect(idx, right_x, sec2_y);
                     if (px..=px + pw).contains(&x) && (py..=py + ph).contains(&y) {
                         state.set_mem_threshold(opt);
-                        let label = opt.map(|v| format!("{}%", v as u32)).unwrap_or_else(|| "禁用".to_string());
-                        state.settings_save_status = Some((format!("内存告警阈值已设置为 {}", label), true));
+                        let label = opt
+                            .map(|v| format!("{}%", v as u32))
+                            .unwrap_or_else(|| "禁用".to_string());
+                        state.settings_save_status =
+                            Some((format!("内存告警阈值已设置为 {}", label), true));
                         return Some(UiAction::SaveSettings);
                     }
                 }
@@ -707,35 +794,44 @@ pub fn handle_mouse_click(
                 // Disk threshold pills
                 let sec3_y = sec2_y + 76.0;
                 for (idx, &opt) in crate::render::ALERT_THRESHOLDS.iter().enumerate() {
-                    let (px, py, pw, ph) = crate::render::get_settings_disk_threshold_pill_rect(idx, right_x, sec3_y);
+                    let (px, py, pw, ph) =
+                        crate::render::get_settings_disk_threshold_pill_rect(idx, right_x, sec3_y);
                     if (px..=px + pw).contains(&x) && (py..=py + ph).contains(&y) {
                         state.set_disk_threshold(opt);
-                        let label = opt.map(|v| format!("{}%", v as u32)).unwrap_or_else(|| "禁用".to_string());
-                        state.settings_save_status = Some((format!("磁盘告警阈值已设置为 {}", label), true));
+                        let label = opt
+                            .map(|v| format!("{}%", v as u32))
+                            .unwrap_or_else(|| "禁用".to_string());
+                        state.settings_save_status =
+                            Some((format!("磁盘告警阈值已设置为 {}", label), true));
                         return Some(UiAction::SaveSettings);
                     }
                 }
 
                 // Webhook buttons: Set & Clear
                 let sec4_y = sec3_y + 76.0;
-                let (wx, wy, ww, wh) = crate::render::get_settings_webhook_set_btn_rect(right_x, sec4_y);
+                let (wx, wy, ww, wh) =
+                    crate::render::get_settings_webhook_set_btn_rect(right_x, sec4_y);
                 if (wx..=wx + ww).contains(&x) && (wy..=wy + wh).contains(&y) {
                     return Some(UiAction::PromptWebhookUrl);
                 }
 
-                let (cx, cy, cw, ch) = crate::render::get_settings_webhook_clear_btn_rect(right_x, sec4_y);
+                let (cx, cy, cw, ch) =
+                    crate::render::get_settings_webhook_clear_btn_rect(right_x, sec4_y);
                 if (cx..=cx + cw).contains(&x) && (cy..=cy + ch).contains(&y) {
                     state.set_webhook_url(None);
-                    state.settings_save_status = Some(("已清除 Webhook 推送地址".to_string(), true));
+                    state.settings_save_status =
+                        Some(("已清除 Webhook 推送地址".to_string(), true));
                     return Some(UiAction::SaveSettings);
                 }
 
-                let (tx, ty, tw, th) = crate::render::get_settings_webhook_test_btn_rect(right_x, sec4_y);
+                let (tx, ty, tw, th) =
+                    crate::render::get_settings_webhook_test_btn_rect(right_x, sec4_y);
                 if (tx..=tx + tw).contains(&x) && (ty..=ty + th).contains(&y) {
                     return Some(UiAction::TestWebhookAlert);
                 }
 
-                let (nx, ny, nw, nh) = crate::render::get_settings_notification_test_btn_rect(right_x, sec4_y);
+                let (nx, ny, nw, nh) =
+                    crate::render::get_settings_notification_test_btn_rect(right_x, sec4_y);
                 if (nx..=nx + nw).contains(&x) && (ny..=ny + nh).contains(&y) {
                     return Some(UiAction::TestBrowserNotification);
                 }
@@ -744,23 +840,27 @@ pub fn handle_mouse_click(
                 let sec1_y = right_y + 56.0;
 
                 // Export JSON button
-                let (ex, ey, ew, eh) = crate::render::get_settings_export_json_btn_rect(right_x, sec1_y + 16.0);
+                let (ex, ey, ew, eh) =
+                    crate::render::get_settings_export_json_btn_rect(right_x, sec1_y + 16.0);
                 if (ex..=ex + ew).contains(&x) && (ey..=ey + eh).contains(&y) {
                     return Some(UiAction::ExportSettingsJson);
                 }
 
                 // Import JSON button
-                let (ix, iy, iw, ih) = crate::render::get_settings_import_json_btn_rect(right_x, sec1_y + 16.0);
+                let (ix, iy, iw, ih) =
+                    crate::render::get_settings_import_json_btn_rect(right_x, sec1_y + 16.0);
                 if (ix..=ix + iw).contains(&x) && (iy..=iy + ih).contains(&y) {
                     return Some(UiAction::ImportSettingsJson);
                 }
 
                 // Reset defaults button
                 let sec2_y = sec1_y + 106.0;
-                let (rx, ry, rw, rh) = crate::render::get_settings_reset_btn_rect(right_x, sec2_y + 16.0);
+                let (rx, ry, rw, rh) =
+                    crate::render::get_settings_reset_btn_rect(right_x, sec2_y + 16.0);
                 if (rx..=rx + rw).contains(&x) && (ry..=ry + rh).contains(&y) {
                     state.reset_settings();
-                    state.settings_save_status = Some(("已成功恢复出厂默认设置！".to_string(), true));
+                    state.settings_save_status =
+                        Some(("已成功恢复出厂默认设置！".to_string(), true));
                     return Some(UiAction::SaveSettings);
                 }
             }
@@ -787,7 +887,9 @@ pub fn handle_key_down(state: &mut AppState, key: &str, is_ctrl: bool) -> Option
         }
 
         if (key == "s" || key == "S") && is_ctrl {
-            if let (Some(host_id), Some((path, content))) = (&state.selected_host_id, &state.sftp_editor) {
+            if let (Some(host_id), Some((path, content))) =
+                (&state.selected_host_id, &state.sftp_editor)
+            {
                 return Some(UiAction::SaveSftpFile {
                     host_id: host_id.clone(),
                     path: path.clone(),
@@ -943,7 +1045,10 @@ pub fn handle_key_down(state: &mut AppState, key: &str, is_ctrl: bool) -> Option
         }
     } else if state.active_view == ActiveView::Batch {
         if key == "Enter" && is_ctrl {
-            if !state.batch_is_running && !state.batch_selected_host_ids.is_empty() && !state.batch_command.trim().is_empty() {
+            if !state.batch_is_running
+                && !state.batch_selected_host_ids.is_empty()
+                && !state.batch_command.trim().is_empty()
+            {
                 state.set_batch_running(true);
                 return Some(UiAction::RunBatch {
                     host_ids: state.batch_selected_host_ids.iter().cloned().collect(),
@@ -990,28 +1095,33 @@ mod tests {
         assert_eq!(state.active_workbench_tab, WorkbenchTab::Terminal);
 
         // Click on Docker tab (index 1)
-        let (x, y, w, h) = crate::render::get_workbench_tab_rect(1, LAYOUT.sidebar_width, LAYOUT.topbar_height);
+        let (x, y, w, h) =
+            crate::render::get_workbench_tab_rect(1, LAYOUT.sidebar_width, LAYOUT.topbar_height);
         let action = handle_mouse_click(&mut state, x + w / 2.0, y + h / 2.0, 1200.0, 800.0);
         assert!(action.is_none());
         assert_eq!(state.active_workbench_tab, WorkbenchTab::Docker);
 
         // Click on Processes tab (index 2)
-        let (x, y, w, h) = crate::render::get_workbench_tab_rect(2, LAYOUT.sidebar_width, LAYOUT.topbar_height);
+        let (x, y, w, h) =
+            crate::render::get_workbench_tab_rect(2, LAYOUT.sidebar_width, LAYOUT.topbar_height);
         handle_mouse_click(&mut state, x + w / 2.0, y + h / 2.0, 1200.0, 800.0);
         assert_eq!(state.active_workbench_tab, WorkbenchTab::Processes);
 
         // Click on Network tab (index 3)
-        let (x, y, w, h) = crate::render::get_workbench_tab_rect(3, LAYOUT.sidebar_width, LAYOUT.topbar_height);
+        let (x, y, w, h) =
+            crate::render::get_workbench_tab_rect(3, LAYOUT.sidebar_width, LAYOUT.topbar_height);
         handle_mouse_click(&mut state, x + w / 2.0, y + h / 2.0, 1200.0, 800.0);
         assert_eq!(state.active_workbench_tab, WorkbenchTab::Network);
 
         // Click on Tunnels tab (index 4)
-        let (x, y, w, h) = crate::render::get_workbench_tab_rect(4, LAYOUT.sidebar_width, LAYOUT.topbar_height);
+        let (x, y, w, h) =
+            crate::render::get_workbench_tab_rect(4, LAYOUT.sidebar_width, LAYOUT.topbar_height);
         handle_mouse_click(&mut state, x + w / 2.0, y + h / 2.0, 1200.0, 800.0);
         assert_eq!(state.active_workbench_tab, WorkbenchTab::Tunnels);
 
         // Click on Snippets tab (index 5)
-        let (x, y, w, h) = crate::render::get_workbench_tab_rect(5, LAYOUT.sidebar_width, LAYOUT.topbar_height);
+        let (x, y, w, h) =
+            crate::render::get_workbench_tab_rect(5, LAYOUT.sidebar_width, LAYOUT.topbar_height);
         handle_mouse_click(&mut state, x + w / 2.0, y + h / 2.0, 1200.0, 800.0);
         assert_eq!(state.active_workbench_tab, WorkbenchTab::Snippets);
     }
@@ -1095,7 +1205,8 @@ mod tests {
         let content_w = 1200.0 - LAYOUT.sidebar_width;
 
         // 1. Refresh button click
-        let (rx, ry, rw, rh) = crate::render::get_sftp_refresh_btn_rect(content_x, content_y, content_w);
+        let (rx, ry, rw, rh) =
+            crate::render::get_sftp_refresh_btn_rect(content_x, content_y, content_w);
         let action = handle_mouse_click(&mut state, rx + rw / 2.0, ry + rh / 2.0, 1200.0, 800.0);
         assert_eq!(
             action,
@@ -1122,7 +1233,11 @@ mod tests {
         // 3. Breadcrumb navigation click
         state.set_sftp_loading(false);
         state.sftp_current_path = "/var/log/nginx".to_string();
-        let breadcrumbs = crate::render::get_sftp_breadcrumb_rects(content_x, content_y, &state.sftp_current_path);
+        let breadcrumbs = crate::render::get_sftp_breadcrumb_rects(
+            content_x,
+            content_y,
+            &state.sftp_current_path,
+        );
         // Click on segment 1 which is "/var"
         let (ref target, bx, by, bw, bh) = breadcrumbs[1];
         assert_eq!(target, "/var");
@@ -1160,8 +1275,10 @@ mod tests {
         ];
 
         // Click directory row (index 0)
-        let (r0x, r0y, r0w, r0h) = crate::render::get_sftp_file_row_rect(0, content_x, content_y, content_w);
-        let action = handle_mouse_click(&mut state, r0x + r0w / 2.0, r0y + r0h / 2.0, 1200.0, 800.0);
+        let (r0x, r0y, r0w, r0h) =
+            crate::render::get_sftp_file_row_rect(0, content_x, content_y, content_w);
+        let action =
+            handle_mouse_click(&mut state, r0x + r0w / 2.0, r0y + r0h / 2.0, 1200.0, 800.0);
         assert_eq!(
             action,
             Some(UiAction::FetchSftpList {
@@ -1172,8 +1289,10 @@ mod tests {
         assert_eq!(state.sftp_current_path, "/var/log");
 
         // Click file row (index 1)
-        let (r1x, r1y, r1w, r1h) = crate::render::get_sftp_file_row_rect(1, content_x, content_y, content_w);
-        let action = handle_mouse_click(&mut state, r1x + r1w / 2.0, r1y + r1h / 2.0, 1200.0, 800.0);
+        let (r1x, r1y, r1w, r1h) =
+            crate::render::get_sftp_file_row_rect(1, content_x, content_y, content_w);
+        let action =
+            handle_mouse_click(&mut state, r1x + r1w / 2.0, r1y + r1h / 2.0, 1200.0, 800.0);
         assert_eq!(
             action,
             Some(UiAction::ReadSftpFile {
@@ -1194,17 +1313,11 @@ mod tests {
         handle_key_down(&mut state, "T", false);
         handle_key_down(&mut state, "=", false);
         assert!(state.sftp_editor_modified);
-        assert_eq!(
-            state.sftp_editor.as_ref().unwrap().1,
-            "PORT=8080HOST="
-        );
+        assert_eq!(state.sftp_editor.as_ref().unwrap().1, "PORT=8080HOST=");
 
         // Backspace
         handle_key_down(&mut state, "Backspace", false);
-        assert_eq!(
-            state.sftp_editor.as_ref().unwrap().1,
-            "PORT=8080HOST"
-        );
+        assert_eq!(state.sftp_editor.as_ref().unwrap().1, "PORT=8080HOST");
 
         // Ctrl+S to save
         let action = handle_key_down(&mut state, "s", true);
@@ -1323,28 +1436,33 @@ mod tests {
         state.switch_settings_category(SettingsCategory::Terminal);
         let term_sec1_y = right_y + 56.0;
         // Click 16px (idx 3)
-        let (fx, fy, fw, fh) = crate::render::get_settings_font_size_pill_rect(3, right_x, term_sec1_y);
+        let (fx, fy, fw, fh) =
+            crate::render::get_settings_font_size_pill_rect(3, right_x, term_sec1_y);
         let action = handle_mouse_click(&mut state, fx + fw / 2.0, fy + fh / 2.0, 1200.0, 800.0);
         assert_eq!(action, Some(UiAction::SaveSettings));
         assert_eq!(state.settings.terminal_font_size, 16.0);
 
         let term_sec2_y = term_sec1_y + 76.0;
         // Click Underline cursor (idx 2)
-        let (ux, uy, uw, uh) = crate::render::get_settings_cursor_style_pill_rect(2, right_x, term_sec2_y);
+        let (ux, uy, uw, uh) =
+            crate::render::get_settings_cursor_style_pill_rect(2, right_x, term_sec2_y);
         let action = handle_mouse_click(&mut state, ux + uw / 2.0, uy + uh / 2.0, 1200.0, 800.0);
         assert_eq!(action, Some(UiAction::SaveSettings));
         assert_eq!(state.settings.terminal_cursor_style, "Underline");
 
         let term_sec3_y = term_sec2_y + 76.0;
         // Click Fira Code font (idx 1)
-        let (ffx, ffy, ffw, ffh) = crate::render::get_settings_font_family_pill_rect(1, right_x, term_sec3_y);
-        let action = handle_mouse_click(&mut state, ffx + ffw / 2.0, ffy + ffh / 2.0, 1200.0, 800.0);
+        let (ffx, ffy, ffw, ffh) =
+            crate::render::get_settings_font_family_pill_rect(1, right_x, term_sec3_y);
+        let action =
+            handle_mouse_click(&mut state, ffx + ffw / 2.0, ffy + ffh / 2.0, 1200.0, 800.0);
         assert_eq!(action, Some(UiAction::SaveSettings));
         assert_eq!(state.settings.terminal_font_family, "Fira Code");
 
         let term_sec4_y = term_sec3_y + 76.0;
         // Click 50000 scrollback (idx 3)
-        let (sx, sy, sw, sh) = crate::render::get_settings_scrollback_pill_rect(3, right_x, term_sec4_y);
+        let (sx, sy, sw, sh) =
+            crate::render::get_settings_scrollback_pill_rect(3, right_x, term_sec4_y);
         let action = handle_mouse_click(&mut state, sx + sw / 2.0, sy + sh / 2.0, 1200.0, 800.0);
         assert_eq!(action, Some(UiAction::SaveSettings));
         assert_eq!(state.settings.terminal_scrollback_lines, 50000);
@@ -1353,20 +1471,23 @@ mod tests {
         state.switch_settings_category(SettingsCategory::Probe);
         let probe_sec1_y = right_y + 56.0;
         // Click 5s interval (idx 2)
-        let (ix, iy, iw, ih) = crate::render::get_settings_probe_interval_pill_rect(2, right_x, probe_sec1_y);
+        let (ix, iy, iw, ih) =
+            crate::render::get_settings_probe_interval_pill_rect(2, right_x, probe_sec1_y);
         let action = handle_mouse_click(&mut state, ix + iw / 2.0, iy + ih / 2.0, 1200.0, 800.0);
         assert_eq!(action, Some(UiAction::SaveSettings));
         assert_eq!(state.settings.probe_interval_secs, 5);
 
         let probe_sec2_y = probe_sec1_y + 76.0;
         // Click 8.8.8.8 Ping preset (idx 1)
-        let (px, py, pw, ph) = crate::render::get_settings_ping_preset_pill_rect(1, right_x, probe_sec2_y);
+        let (px, py, pw, ph) =
+            crate::render::get_settings_ping_preset_pill_rect(1, right_x, probe_sec2_y);
         let action = handle_mouse_click(&mut state, px + pw / 2.0, py + ph / 2.0, 1200.0, 800.0);
         assert!(action.is_none());
         assert_eq!(state.ping_target, "8.8.8.8");
 
         // Click Custom Ping target button
-        let (cx, cy, cw, ch) = crate::render::get_settings_ping_custom_btn_rect(right_x, probe_sec2_y);
+        let (cx, cy, cw, ch) =
+            crate::render::get_settings_ping_custom_btn_rect(right_x, probe_sec2_y);
         let action = handle_mouse_click(&mut state, cx + cw / 2.0, cy + ch / 2.0, 1200.0, 800.0);
         assert_eq!(action, Some(UiAction::PromptPingTarget));
 
@@ -1374,45 +1495,52 @@ mod tests {
         state.switch_settings_category(SettingsCategory::Alerts);
         let alert_sec1_y = right_y + 56.0;
         // Click 80% CPU (idx 1)
-        let (ax, ay, aw, ah) = crate::render::get_settings_cpu_threshold_pill_rect(1, right_x, alert_sec1_y);
+        let (ax, ay, aw, ah) =
+            crate::render::get_settings_cpu_threshold_pill_rect(1, right_x, alert_sec1_y);
         let action = handle_mouse_click(&mut state, ax + aw / 2.0, ay + ah / 2.0, 1200.0, 800.0);
         assert_eq!(action, Some(UiAction::SaveSettings));
         assert_eq!(state.settings.alert_cpu_threshold, 80.0);
 
         let alert_sec2_y = alert_sec1_y + 76.0;
         // Click 禁用 Memory (idx 3)
-        let (mx, my, mw, mh) = crate::render::get_settings_mem_threshold_pill_rect(3, right_x, alert_sec2_y);
+        let (mx, my, mw, mh) =
+            crate::render::get_settings_mem_threshold_pill_rect(3, right_x, alert_sec2_y);
         let action = handle_mouse_click(&mut state, mx + mw / 2.0, my + mh / 2.0, 1200.0, 800.0);
         assert_eq!(action, Some(UiAction::SaveSettings));
         assert_eq!(state.settings.alert_mem_threshold, 0.0);
 
         let alert_sec3_y = alert_sec2_y + 76.0;
         // Click 90% Disk (idx 2)
-        let (dx, dy, dw, dh) = crate::render::get_settings_disk_threshold_pill_rect(2, right_x, alert_sec3_y);
+        let (dx, dy, dw, dh) =
+            crate::render::get_settings_disk_threshold_pill_rect(2, right_x, alert_sec3_y);
         let action = handle_mouse_click(&mut state, dx + dw / 2.0, dy + dh / 2.0, 1200.0, 800.0);
         assert_eq!(action, Some(UiAction::SaveSettings));
         assert_eq!(state.settings.alert_disk_threshold, 90.0);
 
         let alert_sec4_y = alert_sec3_y + 76.0;
         // Click Set Webhook button
-        let (wx, wy, ww, wh) = crate::render::get_settings_webhook_set_btn_rect(right_x, alert_sec4_y);
+        let (wx, wy, ww, wh) =
+            crate::render::get_settings_webhook_set_btn_rect(right_x, alert_sec4_y);
         let action = handle_mouse_click(&mut state, wx + ww / 2.0, wy + wh / 2.0, 1200.0, 800.0);
         assert_eq!(action, Some(UiAction::PromptWebhookUrl));
 
         // Click Clear Webhook button
         state.settings.alert_webhook_url = Some("https://example.com/webhook".to_string());
-        let (cx, cy, cw, ch) = crate::render::get_settings_webhook_clear_btn_rect(right_x, alert_sec4_y);
+        let (cx, cy, cw, ch) =
+            crate::render::get_settings_webhook_clear_btn_rect(right_x, alert_sec4_y);
         let action = handle_mouse_click(&mut state, cx + cw / 2.0, cy + ch / 2.0, 1200.0, 800.0);
         assert_eq!(action, Some(UiAction::SaveSettings));
         assert!(state.settings.alert_webhook_url.is_none());
 
         // Click Test Webhook button
-        let (tx, ty, tw, th) = crate::render::get_settings_webhook_test_btn_rect(right_x, alert_sec4_y);
+        let (tx, ty, tw, th) =
+            crate::render::get_settings_webhook_test_btn_rect(right_x, alert_sec4_y);
         let action = handle_mouse_click(&mut state, tx + tw / 2.0, ty + th / 2.0, 1200.0, 800.0);
         assert_eq!(action, Some(UiAction::TestWebhookAlert));
 
         // Click Test Browser Notification button
-        let (nx, ny, nw, nh) = crate::render::get_settings_notification_test_btn_rect(right_x, alert_sec4_y);
+        let (nx, ny, nw, nh) =
+            crate::render::get_settings_notification_test_btn_rect(right_x, alert_sec4_y);
         let action = handle_mouse_click(&mut state, nx + nw / 2.0, ny + nh / 2.0, 1200.0, 800.0);
         assert_eq!(action, Some(UiAction::TestBrowserNotification));
 
@@ -1420,21 +1548,27 @@ mod tests {
         state.switch_settings_category(SettingsCategory::Backup);
         let backup_sec1_y = right_y + 56.0;
         // Click Export JSON
-        let (ex, ey, ew, eh) = crate::render::get_settings_export_json_btn_rect(right_x, backup_sec1_y + 16.0);
+        let (ex, ey, ew, eh) =
+            crate::render::get_settings_export_json_btn_rect(right_x, backup_sec1_y + 16.0);
         let action = handle_mouse_click(&mut state, ex + ew / 2.0, ey + eh / 2.0, 1200.0, 800.0);
         assert_eq!(action, Some(UiAction::ExportSettingsJson));
 
         // Click Import JSON
-        let (ix, iy, iw, ih) = crate::render::get_settings_import_json_btn_rect(right_x, backup_sec1_y + 16.0);
+        let (ix, iy, iw, ih) =
+            crate::render::get_settings_import_json_btn_rect(right_x, backup_sec1_y + 16.0);
         let action = handle_mouse_click(&mut state, ix + iw / 2.0, iy + ih / 2.0, 1200.0, 800.0);
         assert_eq!(action, Some(UiAction::ImportSettingsJson));
 
         // Click Reset Defaults
         let backup_sec2_y = backup_sec1_y + 106.0;
-        let (rx, ry, rw, rh) = crate::render::get_settings_reset_btn_rect(right_x, backup_sec2_y + 16.0);
+        let (rx, ry, rw, rh) =
+            crate::render::get_settings_reset_btn_rect(right_x, backup_sec2_y + 16.0);
         let action = handle_mouse_click(&mut state, rx + rw / 2.0, ry + rh / 2.0, 1200.0, 800.0);
         assert_eq!(action, Some(UiAction::SaveSettings));
-        assert_eq!(state.settings, redash_types::settings::AppSettings::default());
+        assert_eq!(
+            state.settings,
+            redash_types::settings::AppSettings::default()
+        );
     }
 
     #[test]
@@ -1481,7 +1615,8 @@ mod tests {
         assert_eq!(state.batch_command, "df -h");
 
         // 5. Run Batch button click
-        let (bx, by, bw, bh) = crate::render::get_batch_run_btn_rect(content_x, content_y, content_w);
+        let (bx, by, bw, bh) =
+            crate::render::get_batch_run_btn_rect(content_x, content_y, content_w);
         // With no hosts selected, should do nothing
         let action = handle_mouse_click(&mut state, bx + bw / 2.0, by + bh / 2.0, 1200.0, 800.0);
         assert!(action.is_none());
@@ -1504,14 +1639,22 @@ mod tests {
         assert!(action.is_none());
 
         // 6. Waterfall host log button click
-        let (lx, ly, lw, lh) = crate::render::get_batch_log_btn_rect(0, content_x, content_y, content_w);
+        let (lx, ly, lw, lh) =
+            crate::render::get_batch_log_btn_rect(0, content_x, content_y, content_w);
         let action = handle_mouse_click(&mut state, lx + lw / 2.0, ly + lh / 2.0, 1200.0, 800.0);
         assert!(action.is_none());
         assert_eq!(state.batch_selected_log_host, Some("srv-1".to_string()));
 
         // 7. Close log modal via modal close button
-        let (cl_x, cl_y, cl_w, cl_h) = crate::render::get_batch_log_modal_close_btn_rect(1200.0, 800.0);
-        let action = handle_mouse_click(&mut state, cl_x + cl_w / 2.0, cl_y + cl_h / 2.0, 1200.0, 800.0);
+        let (cl_x, cl_y, cl_w, cl_h) =
+            crate::render::get_batch_log_modal_close_btn_rect(1200.0, 800.0);
+        let action = handle_mouse_click(
+            &mut state,
+            cl_x + cl_w / 2.0,
+            cl_y + cl_h / 2.0,
+            1200.0,
+            800.0,
+        );
         assert!(action.is_none());
         assert!(state.batch_selected_log_host.is_none());
 
@@ -1589,7 +1732,8 @@ mod tests {
         let base_x = LAYOUT.sidebar_width;
         let panel_y = LAYOUT.topbar_height + crate::render::WORKBENCH_TAB_BAR_HEIGHT;
         let panel_w = 1200.0 - base_x;
-        let (sb_x, sb_y, sb_w, _) = crate::render::get_terminal_search_bar_rect(base_x, panel_y, panel_w);
+        let (sb_x, sb_y, sb_w, _) =
+            crate::render::get_terminal_search_bar_rect(base_x, panel_y, panel_w);
         let (cx, cy, cw, ch) = crate::render::get_terminal_search_close_btn_rect(sb_x, sb_y, sb_w);
         let action = handle_mouse_click(&mut state, cx + cw / 2.0, cy + ch / 2.0, 1200.0, 800.0);
         assert!(action.is_none());
@@ -1614,12 +1758,14 @@ mod tests {
         });
 
         // Click HUD Apply button
-        let (ax, ay, aw, ah) = crate::render::get_agent_hud_apply_btn_rect(base_x, panel_y, panel_w);
+        let (ax, ay, aw, ah) =
+            crate::render::get_agent_hud_apply_btn_rect(base_x, panel_y, panel_w);
         let action = handle_mouse_click(&mut state, ax + aw / 2.0, ay + ah / 2.0, 1200.0, 800.0);
         assert_eq!(action, Some(UiAction::ApplyAgentSuggestion));
 
         // Click HUD Abort button
-        let (ox, oy, ow, oh) = crate::render::get_agent_hud_abort_btn_rect(base_x, panel_y, panel_w);
+        let (ox, oy, ow, oh) =
+            crate::render::get_agent_hud_abort_btn_rect(base_x, panel_y, panel_w);
         let action = handle_mouse_click(&mut state, ox + ow / 2.0, oy + oh / 2.0, 1200.0, 800.0);
         assert_eq!(action, Some(UiAction::AbortAgentTask));
     }
@@ -1642,7 +1788,8 @@ mod tests {
         let content_w = width - content_x;
 
         // 1. Click search bar to focus
-        let (sb_x, sb_y, _sb_w, sb_h) = crate::render::get_fleet_search_bar_rect(content_x, content_y, content_w);
+        let (sb_x, sb_y, _sb_w, sb_h) =
+            crate::render::get_fleet_search_bar_rect(content_x, content_y, content_w);
         assert!(!state.is_filter_focused);
         let action = handle_mouse_click(&mut state, sb_x + 10.0, sb_y + sb_h / 2.0, width, height);
         assert!(action.is_none());
@@ -1666,9 +1813,16 @@ mod tests {
         let card_w = ((content_w - padding * 3.0) / 2.0).max(340.0);
         let card_x = content_x + padding;
         let card_y = content_y + 54.0;
-        let (del_x, del_y, del_w, del_h) = crate::render::get_fleet_host_delete_btn_rect(card_x, card_y, card_w);
+        let (del_x, del_y, del_w, del_h) =
+            crate::render::get_fleet_host_delete_btn_rect(card_x, card_y, card_w);
 
-        let action = handle_mouse_click(&mut state, del_x + del_w / 2.0, del_y + del_h / 2.0, width, height);
+        let action = handle_mouse_click(
+            &mut state,
+            del_x + del_w / 2.0,
+            del_y + del_h / 2.0,
+            width,
+            height,
+        );
         assert_eq!(action, Some(UiAction::DeleteHost("h1".to_string())));
 
         // 5. Click host card body (select host)

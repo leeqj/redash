@@ -35,10 +35,7 @@ pub enum ServerTerminalMessage {
 #[serde(tag = "type")]
 pub enum MetricsMessage {
     #[serde(rename = "metrics")]
-    Metrics {
-        host_id: String,
-        data: NodeMetrics,
-    },
+    Metrics { host_id: String, data: NodeMetrics },
     #[serde(rename = "error")]
     Error { message: String },
 }

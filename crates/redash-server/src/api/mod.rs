@@ -3,8 +3,8 @@ pub mod hosts;
 pub mod settings;
 pub mod sftp;
 
-use axum::routing::{get, post};
 use axum::Router;
+use axum::routing::{get, post};
 
 use crate::state::AppState;
 

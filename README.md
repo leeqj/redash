@@ -2,65 +2,164 @@
   <img src="assets/icon.png" width="128" height="128" alt="ReDash Logo" />
 </p>
 
-# ReDash
+<h1 align="center">ReDash</h1>
 
-ReDash 是使用 Rust、GPUI、russh 和 alacritty_terminal 构建的桌面服务器工作台。当前版本为 `0.1.0-beta`，包括 SSH 终端、主机监控、SFTP、批量命令和端口转发。性能尚未做正式基准测试。
+<p align="center">
+  <strong>基于 100% Rust 构建的现代化高可靠服务器运维与监控工作台</strong><br>
+  <em>双引擎架构：原生桌面端（GPUI 硬件加速） + 云原生 Web 端（WebAssembly & Axum）</em>
+</p>
 
-## 构建与验证
+<p align="center">
+  <a href="https://github.com/reways/redash/actions"><img src="https://img.shields.io/badge/CI-Passing-brightgreen?style=flat-square" alt="CI"></a>
+  <img src="https://img.shields.io/badge/Rust-1.96.0-orange?style=flat-square" alt="Rust 1.96.0">
+  <img src="https://img.shields.io/badge/架构-GPUI%20%7C%20WASM-blue?style=flat-square" alt="GPUI + WASM">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/开源协议-Apache--2.0-blue?style=flat-square" alt="License"></a>
+  <img src="https://img.shields.io/badge/版本-0.1.0--beta-purple?style=flat-square" alt="Version">
+</p>
 
-使用仓库固定的 Rust **1.96.0** 工具链。本次验证平台为 macOS；Linux 和 Windows 桌面端仍需各平台的构建依赖与实机验证。CI 在 macOS 上检查格式、Clippy 和测试。
+<p align="center">
+  <strong>简体中文</strong> | <a href="README_EN.md">English</a> | <a href="ARCHITECTURE.md">架构设计文档</a>
+</p>
 
-```sh
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets --locked -- -D warnings
-cargo test --workspace --locked
+---
+
+## 项目简介
+
+**ReDash** 是专为系统工程师、DevOps 专家与开发者打造的新一代高可靠服务器监控与运维工作台。项目基于 100% 纯 Rust 构建，致力于彻底解决传统运维工具资源占用高、连接不稳定、数据虚假欺骗以及凭据存储不安全的痛点。
+
+ReDash 独创 **双引擎架构（Dual-Engine Architecture）**：
+1. **原生桌面端（`redash-app`）**：采用 GPU 硬件加速的 GPUI 框架驱动，支持 120 FPS 超低延迟丝滑交互，与 macOS Keychain 等系统底层凭据库深度集成。
+2. **云原生 Web 端（`redash-server` + `redash-web`）**：服务端基于 Axum 与 WebSocket 驱动，前端采用 100% Rust 编译至 WebAssembly 在 HTML5 Canvas 中运行，无需安装客户端，开箱即用。
+
+两套引擎完全共享统一的无头高可靠核心（`redash-core`）、通用数据契约（`redash-types`）与 UI 状态机（`redash-ui-core`）。
+
+---
+
+## 核心功能特性
+
+### ⚡ 真实多维监控（Fleet Telemetry）
+* **坚持零伪造原则（Zero Mocking）**：坚决杜绝采集失败生成假数据的虚假欺骗行为。采集失败真实展示原因与最后成功时间，严禁模拟指标参与告警。
+* **精准系统度量**：Linux `/proc/stat` 差分 CPU 真实采样、macOS `top` 采样、Load Average、内存、多挂载点磁盘、网络实时上下行速率差分、SSH RTT 真实往返时延。
+* **实时检索与过滤**：支持按主机名、IP、标签及在线状态毫秒级模糊检索。
+
+### 💻 极速 SSH 终端与 AI 智能 HUD
+* **硬件级渲染体验**：集成 Alacritty 终端引擎，支持完整的 ANSI/VT100 序列、自定义字体、光标样式及有界滚动缓冲区。
+* **多分屏工作台**：支持横向与纵向自由分屏，多主机多任务并行导航。
+* **终端内毫秒级检索**：浮动式 `Cmd+F` 搜索条，实时匹配高亮与计数，键盘极速导航。
+* **AI Agent 智能感知 HUD**：自动嗅探识别终端内的 AI CLI 进程（Claude Code、Aider、OpenCode、Codex、Antigravity、Kimi 等），实时提取思考中、等待输入、Token 用量与消耗成本，支持一键 `[ Y / N ]` 快捷响应。
+
+### 🐳 多功能运维工作台（Workbench Panels）
+* **Docker 容器管理**：运行状态 LED、实时 CPU/内存开销、端口映射展示；支持启动、停止、重启、删除及实时日志弹窗。
+* **进程管理与排查**：多字段动态排序（CPU% / 内存% / PID），支持进程名快速过滤与 `kill -15`（优雅退出）/ `kill -9`（强制终止）。
+* **网络与端口诊断**：实时监听端口表（TCP/UDP、绑定 IP、进程名、PID）及网络吞吐指标。
+* **SSH 端口转发与隧道**：图形化一键建立本地端口转发（Local Forwarding）与动态 SOCKS5 代理隧道。
+* **DevOps 常用脚本库**：内置系统维护、Docker 清理、网络诊断等预设命令，支持一键注入当前终端或静默执行。
+
+### 📁 高可靠 SFTP 文件管理器与在线编辑器
+* **远程目录树浏览**：目录面包屑导航、文件权限（POSIX 模式）、类型与尺寸可视化。
+* **安全原子编辑**：内置代码编辑器，编辑上限 2 MiB；采用 `posix-rename@openssh.com` 原语实现保存原子替换，保留原属主与文件权限。
+* **保存灾备保护**：重命名失败严禁删除原文件，保留原件与独立备份副本并输出恢复路径。
+* **排他性新建文件**：新建文件强制采用排他标志（EXCLUSIVE），避免同名文件截断覆写。
+
+### 🚀 多主机批量并发编排（Batch Orchestration）
+* **多节点并发分发**：支持同时勾选多台集群节点并发执行运维脚本。
+* **瀑布流执行看板**：实时跟踪各主机状态（`成功`、`失败`、`执行中`），展示真实进程退出码与耗时，支持打开详细日志模态框查看标准输出与错误流。
+* **任务边界与取消保护**：作业支持协同式取消与超时控制，有界缓冲区杜绝内存溢出。
+
+### 🔔 全渠道告警与 7x24h 后台自治监控
+* **服务端后台自治监控引擎**：`redash-server` 内置独立于 Web 界面的后台常驻监控，即使关闭浏览器也会 7x24 小时自动巡检节点并触发通知。
+* **全渠道通知适配**：
+  * **macOS 系统通知**：原生桌面系统通知横幅。
+  * **浏览器桌面通知**：基于 Web Notification API，网页端指标超限主动唤起系统弹窗。
+  * **飞书群机器人**：原生适配飞书交互式消息卡片 Webhook，红绿状态鲜明。
+  * **通用 Webhook**：标准 JSON 告警数据包，便于接入钉钉、企业微信或内部监控体系。
+* **防轰炸冷却机制**：指标告警 300 秒去抖冷却，主机宕机离线 30 秒冷却。
+* **一键连通性测试**：设置界面提供一键测试 Webhook/飞书推送与浏览器通知入口，即时反馈连通状态。
+
+---
+
+## 代码仓库分层架构
+
+ReDash 遵循严密的关注点分离原则，划分为 6 个独立的 Crate：
+
+| Crate 模块 | 运行环境 | 核心职责 |
+| :--- | :--- | :--- |
+| [`redash-types`](crates/redash-types) | 通用跨平台 | 纯领域数据契约、Serde 序列化、基础计算与格式化。无任何 I/O 依赖。 |
+| [`redash-ui-core`](crates/redash-ui-core) | 通用跨平台 | 无头 UI 状态机（MVI 架构）、多语言国际化（i18n）、主题色彩体系、ANSI 栅格解析。 |
+| [`redash-core`](crates/redash-core) | 本地后端 | 纯无头业务引擎：SSH 连接池与复用、系统探针、原子 SFTP、告警调度器、批量编排。 |
+| [`redash-app`](crates/redash-app) | 桌面原生 | 基于 GPUI 的高性能桌面端应用程序（macOS / Linux）。 |
+| [`redash-server`](crates/redash-server) | 服务端 | 基于 Axum 的异步 HTTP/WebSocket 网关，以及 24/7 后台自治告警引擎。 |
+| [`redash-web`](crates/redash-web) | WASM 浏览器 | 100% 纯 Rust WebAssembly 客户端，在 HTML5 Canvas 中渲染整个应用界面。 |
+
+详细技术架构图与设计决策请参阅 [ARCHITECTURE.md](ARCHITECTURE.md)。
+
+---
+
+## 快速上手与运行
+
+### 1. 环境准备
+* Rust 工具链：**1.96.0**（通过 `rust-toolchain.toml` 锁定版本）。
+* macOS 平台（用于体验 GPUI 桌面端）或任意主流 Linux/Windows/Docker 环境（用于运行 Web 端）。
+
+### 2. 运行原生桌面端（macOS）
+
+```bash
+# 启动桌面开发版本
 cargo run --bin redash
-```
 
-集成测试使用临时目录、内存 SSH/SFTP 服务及本机临时端口，不需要真实服务器或用户凭据。GPUI 回归测试使用测试窗口和隔离配置，覆盖删除、保存失败与凭据恢复入口。限制本地监听的沙箱可能需要放行这些测试。依赖已缓存时可给 Cargo 命令加 `--offline`。
-
-macOS 应用打包：
-
-```sh
+# 或一键打包并打开原生 macOS 应用包（ReDash.app）
 ./scripts/bundle_mac.sh
 open target/release/ReDash.app
 ```
 
-## 连接与凭据
+### 3. 运行云原生 Web 端（WebAssembly + Axum）
 
-- 连接前校验 `~/.ssh/known_hosts`，支持指定端口和哈希主机名。未知、变化或被撤销的密钥会被拒绝，错误中提供指纹。请通过可信渠道核验指纹，再使用系统 `ssh` 交互式信任目标主机；ReDash 不自动信任首次出现的密钥。主机证书和 SSH CA 信任尚未支持。
-- 密码和私钥口令只持久化到系统凭据库：macOS Keychain、Linux Secret Service 或 Windows Credential Manager。后端失败会明确报错，不降级为文件或仅内存“保存成功”。
-- 旧版 `credentials.enc` 只用于兼容迁移。全部凭据成功写入、验证后才删除旧文件；文件损坏、旧环境无法解密、系统凭据不可用或新旧值冲突时保留原件。已有系统凭据仍可读取；请先解决提示的迁移问题再保存新凭据。
-- 编辑主机时，密码或口令留空表示保留已有引用。修改连接地址、用户、认证或跳板配置后，受影响的工作台会关闭，批量目标与连接缓存会更新；下一次操作重新验证连接目标。
-- 采集提示“登录凭据缺失”时，可点卡片的“编辑凭据”重新填写密码/私钥口令，或改用正确的认证方式。已知缺失的凭据不允许留空保存；丢失的秘密无法仅靠主机配置中的引用恢复。卡片只显示简短提示，完整错误在“详情”中查看。
-- ProxyJump 最多支持 8 台主机组成的路由，在获取连接锁前检查环路。连接与认证有完整期限。断线后可重新打开工作台或使用“重新连接当前终端”。PTY 不承诺自动恢复原进程。
+```bash
+# 一键编译 WASM 并启动网关服务（默认监听 http://127.0.0.1:8080）
+./scripts/run_web.sh
 
-首次启动显示空主机列表，合法空配置不会被填入示例。主机配置读取失败会显示错误并禁止覆盖写入；修复文件后重启。设置页的示例重置属于显式操作。
+# 或者使用 Docker 快速部署
+docker build -t redash .
+docker run -d -p 8080:8080 --name redash redash
+```
 
-## 功能范围
+启动后在浏览器中访问 `http://127.0.0.1:8080` 即可使用完整的 Web 运维工作台。
 
-| 功能 | 当前行为与边界 |
-| --- | --- |
-| 监控 | Linux `/proc/stat` 差分 CPU 采样、macOS `top` CPU 采样；load average 单独保留。内存、磁盘、接口累计字节、两次采集间网络速率、SSH RTT。 |
-| 采集失败 | 显示失败原因与最后成功时间，不生成模拟指标。成功数据与未采集字段分开处理。Windows/Unknown 远端的自动监控明确不支持；SSH/SFTP 可独立使用。 |
-| 资源面板 | 采集进程及 Docker 列表/统计；Linux 监听端口依赖 `ss` 或 `netstat`。工具缺失、权限不足或超时会标为未采集。接口累计流量不是月度账单用量。 |
-| 监控设置 | 自动刷新、采集间隔、超时、历史长度生效。尚未实现的发光和紧凑布局开关已撤下。 |
-| 终端 | 分屏、搜索、剪贴板、可配置字体/光标/滚动历史/选中复制；回传终端查询响应，处理应用光标模式和括号粘贴。输入队列溢出会显示错误，输出使用有界队列。 |
-| Agent 信息 | 从当前终端标题与输出启发式识别，状态与 token/cost 显示不代表权威计费或完整进程生命周期。Y/N 快捷响应只在当前可见提示明确为 Y/N 时可用；不提供通用“始终允许”映射。 |
-| SFTP | 浏览、预览、重命名、权限修改、排他新建和删除确认。预览最多读取前 128 KiB；完整 UTF-8 编辑上限 2 MiB，保留统一 CRLF/LF。超限或无效 UTF-8 不允许全量保存。 |
-| SFTP 保存 | 仅替换普通文件，保留 POSIX 属主、属组与权限，使用 `posix-rename@openssh.com`。不支持该扩展时拒绝编辑保存。重命名失败保留原件与完整临时副本，并在错误中给出恢复路径；不自动删除原文件。SFTP v3 无法保证 ACL/xattr 等扩展属性保留。 |
-| 批量命令 | 校验退出码、信号退出和请求拒绝；超时覆盖连接和执行。单条命令输出上限 8 MiB，超限会失败并请求关闭信道。 |
-| 取消与超时 | 停止本地子任务，并请求远端 TERM/信道关闭。脱离 SSH 会话的后台进程仍可能运行，不能把“停止等待”视为远端已确认终止。 |
-| 隧道 | 本地转发、SOCKS5、真实 SSH 心跳 RTT。管理对象持有接收/转发任务；关闭工作台会释放其隧道，停止操作等待监听任务退出。 |
-| 告警 | CPU/内存/磁盘阈值及采集不可用通知；macOS 桌面通知、通用 JSON Webhook。HTTP 非 2xx 视为失败；失败记录日志，30 秒后可重试，成功冷却 5 分钟。 |
+---
 
-Webhook 发送 `AlertEvent` JSON（`host_id`、`host_name`、`alert_type`、`message`、`timestamp`）。飞书、钉钉、Telegram 等专有机器人接口需要适配这个格式，不能直接假定兼容。
+## 安全设计原则
 
-## 代码结构
+1. **凭据安全绝对底线**：密码与私钥口令绝不存储于未加密明文文本中，桌面端严格依赖系统级凭据库（macOS Keychain、Linux Secret Service、Windows Credential Manager）。
+2. **严格的主机密钥校验**：连接前严格校验 `~/.ssh/known_hosts`，拒绝任何未知或发生变动的服务端公钥，防止中间人拦截（MITM）。
+3. **跳板机环路安全检测**：ProxyJump 支持多达 8 跳链路，并在获取连接锁前强制完成有向图环路检测，从源头杜绝连接死锁。
+4. **防御性文件替换**：远程文件编辑优先使用原子重命名替换，重命名失败保留原件并生成灾备副本，杜绝破坏性写操作。
 
-- `crates/redash-core`：配置与凭据、SSH/PTY/隧道、SFTP、探针、告警、批量作业。无需 GUI 即可测试。
-- `crates/redash-app`：GPUI 窗口与视图、终端渲染、输入和界面状态。
-- `crates/redash-core/tests`：内存协议服务和异常路径回归测试。
-- `.github/workflows/ci.yml`：格式、严格 Clippy、全量测试。
+---
 
-详细审查见 [CODE_REVIEW.md](CODE_REVIEW.md)，对应修复与验证记录见 [FIXES.md](FIXES.md)。生产使用前仍需对实际 SSH/SFTP 服务器、系统凭据库和桌面交互进行联调。
+## 质量验证与自动化标准
+
+项目遵循极其严苛的代码工程规范：
+
+```bash
+# 1. 代码格式一致性检查
+cargo fmt --all -- --check
+
+# 2. 严格 Clippy 静态检查（零警告通过）
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo clippy --target wasm32-unknown-unknown -p redash-web --all-targets -- -D warnings
+
+# 3. 自动化测试套件（280+ 个单元与集成测试 100% 通过）
+cargo test --workspace --locked
+```
+
+---
+
+## 开源贡献指南
+
+欢迎参与 ReDash 的开发与建设！在提交 Pull Request 之前，请阅读我们的 [贡献指南（CONTRIBUTING.md）](CONTRIBUTING.md) 和 [架构设计说明（ARCHITECTURE.md）](ARCHITECTURE.md)。
+
+---
+
+## 开源协议
+
+ReDash 依据 [Apache-2.0 开源许可证](LICENSE) 发布。

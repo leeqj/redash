@@ -103,7 +103,7 @@ async fn test_hosts_api_crud() {
     let body = res.into_body().collect().await.unwrap().to_bytes();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["success"], true);
-    assert!(json["data"].as_array().unwrap().len() >= 1);
+    assert!(!json["data"].as_array().unwrap().is_empty());
 
     // 2. GET /api/hosts/test_host_123
     let res = app
@@ -186,9 +186,11 @@ async fn test_settings_api() {
     assert!(json["data"]["theme_name"].is_string());
 
     // 2. PUT /api/settings
-    let mut updated_settings = AppSettings::default();
-    updated_settings.theme_name = "CyberpunkNeon".to_string();
-    updated_settings.probe_interval_secs = 5;
+    let updated_settings = AppSettings {
+        theme_name: "CyberpunkNeon".to_string(),
+        probe_interval_secs: 5,
+        ..AppSettings::default()
+    };
 
     let res = app
         .oneshot(
@@ -286,4 +288,3 @@ async fn test_webhook_test_api() {
     assert_eq!(json2["success"], false);
     assert!(json2["message"].as_str().unwrap().contains("推送失败"));
 }
-

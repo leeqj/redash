@@ -165,7 +165,11 @@ impl TerminalGrid {
                     let mut seq = String::new();
                     for next_ch in chars.by_ref() {
                         seq.push(next_ch);
-                        if next_ch.is_ascii_alphabetic() || next_ch == '@' || next_ch == '`' || seq.len() >= 64 {
+                        if next_ch.is_ascii_alphabetic()
+                            || next_ch == '@'
+                            || next_ch == '`'
+                            || seq.len() >= 64
+                        {
                             break;
                         }
                     }

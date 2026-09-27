@@ -1,7 +1,7 @@
+use log::{error, info};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use log::{error, info};
 use tokio::sync::Mutex;
 
 use redash_core::config::alert::{AlertDispatcher, AlertEvent, AlertRule};

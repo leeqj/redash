@@ -35,10 +35,7 @@ mod tests {
         let first_line = grid.line_cells(0);
         assert_eq!(first_line.len(), 7);
         assert_eq!(first_line[0].c, 'S');
-        assert_eq!(
-            first_line[0].fg,
-            AnsiColor::Named(AnsiNamedColor::Green)
-        );
+        assert_eq!(first_line[0].fg, AnsiColor::Named(AnsiNamedColor::Green));
 
         // Bold and 256 colors
         grid.write_stream("\x1b[1;38;5;14mCYAN BOLD\x1b[0m");

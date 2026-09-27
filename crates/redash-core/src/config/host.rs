@@ -34,7 +34,10 @@ mod tests {
         let deserialized: HostConfig =
             serde_json::from_str(&serialized).expect("Deserialization failed");
         assert_eq!(deserialized.proxy_jump_id, Some(proxy_id));
-        assert_eq!(deserialized.proxy_id(), Some(&HostId("proxy_bastion_99".to_string())));
+        assert_eq!(
+            deserialized.proxy_id(),
+            Some(&HostId("proxy_bastion_99".to_string()))
+        );
     }
 
     #[test]

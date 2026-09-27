@@ -17,8 +17,8 @@ impl AppState {
     pub fn new() -> Self {
         let store = HostStore::load_from_file(&HostStore::default_path())
             .unwrap_or_else(|_| HostStore::new());
-        let settings = AppSettings::load_from_file(&AppSettings::default_path())
-            .unwrap_or_default();
+        let settings =
+            AppSettings::load_from_file(&AppSettings::default_path()).unwrap_or_default();
 
         Self {
             session_mgr: Arc::new(SessionManager::new()),

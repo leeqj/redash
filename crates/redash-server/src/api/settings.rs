@@ -1,7 +1,7 @@
+use axum::Json;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use axum::Json;
 use redash_core::config::{AppSettings, AppSettingsExt};
 
 use super::hosts::ApiResponse;
@@ -51,7 +51,10 @@ pub async fn test_webhook(
     Json(payload): Json<TestWebhookRequest>,
 ) -> impl IntoResponse {
     let saved_url = state.app_settings.read().await.alert_webhook_url.clone();
-    let url = payload.webhook_url.filter(|u| !u.trim().is_empty()).or(saved_url);
+    let url = payload
+        .webhook_url
+        .filter(|u| !u.trim().is_empty())
+        .or(saved_url);
 
     let Some(webhook_url) = url else {
         return Json(ApiResponse {
@@ -66,7 +69,8 @@ pub async fn test_webhook(
         host_id: "server-node-01".to_string(),
         host_name: "ReDash-Monitor-Service".to_string(),
         alert_type: "test".to_string(),
-        message: "这是一条来自 ReDash 监控中心的告警测试通知，指标监控与机器人通道运转正常。".to_string(),
+        message: "这是一条来自 ReDash 监控中心的告警测试通知，指标监控与机器人通道运转正常。"
+            .to_string(),
         timestamp: std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -75,7 +79,11 @@ pub async fn test_webhook(
 
     match redash_core::config::alert::AlertDispatcher::send_webhook(&webhook_url, &event).await {
         Ok(()) => {
-            let target = if is_feishu { "飞书群机器人" } else { "Webhook" };
+            let target = if is_feishu {
+                "飞书群机器人"
+            } else {
+                "Webhook"
+            };
             Json(ApiResponse {
                 success: true,
                 data: Some(format!("{} 测试消息推送成功！", target)),
@@ -89,4 +97,3 @@ pub async fn test_webhook(
         }),
     }
 }
-

@@ -1,7 +1,7 @@
+use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use axum::Json;
 use redash_core::config::{HostConfig, HostStore};
 use serde::Serialize;
 

@@ -344,7 +344,8 @@ impl BatchView {
                             }
                         }
                         BatchProgressEvent::HostCompleted(exec) => {
-                            view.active_executions.insert(HostId(exec.host_id.clone()), exec);
+                            view.active_executions
+                                .insert(HostId(exec.host_id.clone()), exec);
                         }
                         BatchProgressEvent::AllCompleted(result) => {
                             view.is_running = false;
