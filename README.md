@@ -33,6 +33,52 @@ ReDash features a unique **Dual-Engine Architecture**:
 
 ---
 
+## 📸 Showcase
+
+### ⚡ Fleet Telemetry Matrix
+> Real-time monitoring across your infrastructure with verified live probes, granular CPU & memory meters, and instant SSH access.
+
+<p align="center">
+  <img src="docs/images/screenshot-fleet-en.png" alt="Fleet Matrix (English)" width="95%" />
+</p>
+
+### 🚀 Multi-Host Batch Orchestration
+> Concurrent command dispatch across fleet nodes with real-time execution waterfall, sub-50ms latency tracking, and exit code inspection.
+
+<p align="center">
+  <img src="docs/images/screenshot-batch.png" alt="Batch Orchestration Waterfall" width="95%" />
+</p>
+
+### 🌐 Workbench: Network & Listening Ports Diagnostics
+> Live RTT latency gauge, real-time throughput metrics, and dynamic listening port inspection.
+
+<p align="center">
+  <img src="docs/images/screenshot-workbench-network.png" alt="Workbench Network Panel" width="95%" />
+</p>
+
+### ⚡ Workbench: Real-time Process Manager
+> Live process inspection sorted by CPU% or Memory%, with instant `kill -15` (graceful) and `kill -9` (force) controls.
+
+<p align="center">
+  <img src="docs/images/screenshot-workbench-processes.png" alt="Workbench Process Manager" width="95%" />
+</p>
+
+### 📋 Workbench: DevOps Command Snippets & SSH Tunnels
+<p align="center">
+  <img src="docs/images/screenshot-workbench-snippets.png" alt="DevOps Snippets" width="48%" />
+  <img src="docs/images/screenshot-workbench-tunnels.png" alt="SSH Tunnels & SOCKS5" width="48%" />
+</p>
+
+### 🎨 Themes & Multi-Language Internationalization
+> Seamless switching between Cyberpunk Neon, DarkTech, Retro Solarized, and High Contrast palettes, with full English, 简体中文, 繁體中文, and 日本語 support.
+
+<p align="center">
+  <img src="docs/images/screenshot-settings-en.png" alt="Settings Center (English)" width="48%" />
+  <img src="docs/images/screenshot-settings-zh.png" alt="Settings Center (Chinese)" width="48%" />
+</p>
+
+---
+
 ## Key Features
 
 ### ⚡ Fleet Telemetry & Monitoring

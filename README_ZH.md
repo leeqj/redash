@@ -35,6 +35,52 @@ ReDash 独创 **双引擎架构（Dual-Engine Architecture）**：
 
 ---
 
+## 📸 界面展示 (Showcase)
+
+### ⚡ 全局受控节点大盘 (Fleet Pulse Matrix)
+> 坚持零伪造原则的真实探针遥测，毫秒级实时反映全网集群节点负载、CPU/内存水位与连通性。
+
+<p align="center">
+  <img src="docs/images/screenshot-fleet-zh.png" alt="全局受控节点大盘 (中文)" width="95%" />
+</p>
+
+### 🚀 批量多机并发编排 (Batch Orchestration)
+> 一键向数十台服务器并发下发运维指令，毫秒级瀑布流实时聚合各节点退出码、执行耗时与 Stdout/Stderr 日志。
+
+<p align="center">
+  <img src="docs/images/screenshot-batch.png" alt="批量并发执行瀑布流" width="95%" />
+</p>
+
+### 🌐 工作台：实时网络与本地监听端口诊断
+> 实时 RTT 往返延迟仪表盘、实时网络吞吐速率统计与动态监听端口（TCP/UDP）解析。
+
+<p align="center">
+  <img src="docs/images/screenshot-workbench-network.png" alt="网络诊断面板" width="95%" />
+</p>
+
+### ⚡ 工作台：实时进程管理器 (Process Manager)
+> 按 CPU%、内存% 或 PID 实时动态排序监控全机进程，支持直接下发优雅终止 (SIGTERM) 与强制终止 (SIGKILL)。
+
+<p align="center">
+  <img src="docs/images/screenshot-workbench-processes.png" alt="实时进程管理器" width="95%" />
+</p>
+
+### 📋 工作台：DevOps 运维代码片段库与 SSH 隧道代理
+<p align="center">
+  <img src="docs/images/screenshot-workbench-snippets.png" alt="运维代码片段库" width="48%" />
+  <img src="docs/images/screenshot-workbench-tunnels.png" alt="SSH 端口转发与动态代理" width="48%" />
+</p>
+
+### 🎨 调色板主题与全站多语言国际化 (i18n)
+> 支持赛博朋克霓虹、赛博深空、复古琥珀与高对比度 4 大主题即时切换，全站原生支持简体中文、English、繁體中文与日本語。
+
+<p align="center">
+  <img src="docs/images/screenshot-settings-zh.png" alt="系统设置中心 (中文)" width="48%" />
+  <img src="docs/images/screenshot-settings-en.png" alt="系统设置中心 (英文)" width="48%" />
+</p>
+
+---
+
 ## 核心功能特性
 
 ### ⚡ 真实多维监控（Fleet Telemetry）
