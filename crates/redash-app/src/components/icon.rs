@@ -53,6 +53,10 @@ pub enum IconType {
     Apple,
     Windows,
 
+    // Terminal & Split
+    SplitVertical,
+    SplitHorizontal,
+
     // File, Transfer & Time
     Link,
     Archive,
@@ -218,6 +222,12 @@ impl Icon {
     }
     pub fn clock() -> Self {
         Self::new(IconType::Clock)
+    }
+    pub fn split_vertical() -> Self {
+        Self::new(IconType::SplitVertical)
+    }
+    pub fn split_horizontal() -> Self {
+        Self::new(IconType::SplitHorizontal)
     }
 }
 
@@ -1200,6 +1210,34 @@ impl IntoElement for Icon {
                                 window.paint_path(path, icon_color);
                             }
                         }
+
+                        IconType::SplitVertical => {
+                            let mut p = PathBuilder::stroke(stroke_w);
+                            p.move_to(pt(0.15, 0.15));
+                            p.line_to(pt(0.85, 0.15));
+                            p.line_to(pt(0.85, 0.85));
+                            p.line_to(pt(0.15, 0.85));
+                            p.close();
+                            p.move_to(pt(0.50, 0.15));
+                            p.line_to(pt(0.50, 0.85));
+                            if let Ok(path) = p.build() {
+                                window.paint_path(path, icon_color);
+                            }
+                        }
+
+                        IconType::SplitHorizontal => {
+                            let mut p = PathBuilder::stroke(stroke_w);
+                            p.move_to(pt(0.15, 0.15));
+                            p.line_to(pt(0.85, 0.15));
+                            p.line_to(pt(0.85, 0.85));
+                            p.line_to(pt(0.15, 0.85));
+                            p.close();
+                            p.move_to(pt(0.15, 0.50));
+                            p.line_to(pt(0.85, 0.50));
+                            if let Ok(path) = p.build() {
+                                window.paint_path(path, icon_color);
+                            }
+                        }
                     }
                 },
             )
@@ -1245,5 +1283,7 @@ mod tests {
         assert_eq!(Icon::download().icon_type, IconType::Download);
         assert_eq!(Icon::upload().icon_type, IconType::Upload);
         assert_eq!(Icon::clock().icon_type, IconType::Clock);
+        assert_eq!(Icon::split_vertical().icon_type, IconType::SplitVertical);
+        assert_eq!(Icon::split_horizontal().icon_type, IconType::SplitHorizontal);
     }
 }

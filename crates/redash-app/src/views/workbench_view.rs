@@ -403,10 +403,37 @@ impl WorkbenchView {
             DarkTechTheme::text_secondary()
         };
 
+        let mut tooltip_text = label.to_string();
+        if mode == WorkbenchMode::Terminal {
+            let agent = self
+                .terminal_views
+                .get(&self.split_manager.active_pane_id)
+                .and_then(|t| t.read(cx).detected_agent.clone())
+                .or_else(|| {
+                    self.terminal_views
+                        .values()
+                        .find_map(|t| t.read(cx).detected_agent.clone())
+                });
+            if let Some(a) = agent {
+                let badge_text = match a.status {
+                    redash_core::probe::agent::AgentStatus::NeedsInput => {
+                        crate::t!("agent.status_needs_input")
+                    }
+                    redash_core::probe::agent::AgentStatus::Thinking => {
+                        crate::t!("agent.status_thinking")
+                    }
+                    redash_core::probe::agent::AgentStatus::Done => crate::t!("agent.status_done"),
+                    redash_core::probe::agent::AgentStatus::Idle => crate::t!("agent.status_idle"),
+                };
+                tooltip_text = format!("{} ({})", label, badge_text);
+            }
+        }
+
         div()
             .id(ElementId::Name(format!("wb_mode_{}", label).into()))
+            .relative()
             .h(px(26.0))
-            .px_2p5()
+            .w(px(28.0))
             .rounded_md()
             .bg(if is_active {
                 DarkTechTheme::bg_panel_hover()
@@ -419,35 +446,23 @@ impl WorkbenchView {
             } else {
                 DarkTechTheme::border_default()
             })
-            .text_color(if is_active {
-                DarkTechTheme::text_accent()
-            } else {
-                DarkTechTheme::text_secondary()
-            })
-            .font_weight(if is_active {
-                FontWeight::BOLD
-            } else {
-                FontWeight::NORMAL
-            })
-            .text_size(px(11.0))
             .flex()
-            .flex_row()
             .items_center()
-            .gap_1p5()
+            .justify_center()
             .cursor_pointer()
             .hover(|s| {
                 if is_active {
                     s
                 } else {
                     s.border_color(DarkTechTheme::border_muted())
-                        .text_color(DarkTechTheme::text_primary())
+                        .bg(DarkTechTheme::bg_panel_hover())
                 }
             })
             .on_click(cx.listener(move |this, _e: &ClickEvent, window, cx| {
                 this.set_mode(mode, window, cx);
             }))
-            .child(icon.with_size(px(11.5)).with_color(icon_color))
-            .child(label)
+            .tooltip(crate::components::tooltip::tooltip(tooltip_text))
+            .child(icon.with_size(px(13.0)).with_color(icon_color))
             .children({
                 if mode == WorkbenchMode::Terminal {
                     let agent = self
@@ -460,32 +475,21 @@ impl WorkbenchView {
                                 .find_map(|t| t.read(cx).detected_agent.clone())
                         });
                     agent.as_ref().map(|a| {
-                        let (badge_color, badge_text) = match a.status {
-                            redash_core::probe::agent::AgentStatus::NeedsInput => {
-                                (0xf59e0b, crate::t!("agent.status_needs_input"))
-                            }
-                            redash_core::probe::agent::AgentStatus::Thinking => {
-                                (0x38bdf8, crate::t!("agent.status_thinking"))
-                            }
-                            redash_core::probe::agent::AgentStatus::Done => {
-                                (0x10b981, crate::t!("agent.status_done"))
-                            }
-                            redash_core::probe::agent::AgentStatus::Idle => {
-                                (0x64748b, crate::t!("agent.status_idle"))
-                            }
+                        let badge_color = match a.status {
+                            redash_core::probe::agent::AgentStatus::NeedsInput => 0xf59e0b,
+                            redash_core::probe::agent::AgentStatus::Thinking => 0x38bdf8,
+                            redash_core::probe::agent::AgentStatus::Done => 0x10b981,
+                            redash_core::probe::agent::AgentStatus::Idle => 0x64748b,
                         };
                         div()
-                            .ml_1()
-                            .px_1p5()
-                            .py_0p5()
-                            .rounded_sm()
-                            .bg(DarkTechTheme::bg_root())
-                            .border_1()
-                            .border_color(rgb(badge_color))
-                            .text_color(rgb(badge_color))
-                            .text_size(px(9.0))
-                            .font_weight(FontWeight::BOLD)
-                            .child(format!("● {}", badge_text))
+                            .id("wb_tab_agent_dot")
+                            .absolute()
+                            .top(px(3.0))
+                            .right(px(3.0))
+                            .w(px(5.0))
+                            .h(px(5.0))
+                            .rounded_full()
+                            .bg(rgb(badge_color))
                     })
                 } else {
                     None
@@ -1042,44 +1046,48 @@ impl Render for WorkbenchView {
                                             .child(
                                                 div()
                                                     .id("wb_split_v")
-                                                    .h(px(24.0))
-                                                    .px_2()
-                                                    .rounded_sm()
+                                                    .h(px(26.0))
+                                                    .w(px(28.0))
+                                                    .rounded_md()
                                                     .bg(DarkTechTheme::bg_input())
                                                     .border_1()
                                                     .border_color(DarkTechTheme::border_default())
-                                                    .text_color(DarkTechTheme::text_secondary())
-                                                    .text_size(px(10.5))
                                                     .flex()
                                                     .items_center()
-                                                    .gap_1()
+                                                    .justify_center()
                                                     .cursor_pointer()
-                                                    .hover(|s| s.bg(DarkTechTheme::bg_panel_hover()).text_color(DarkTechTheme::accent_cyan()))
+                                                    .hover(|s| {
+                                                        s.bg(DarkTechTheme::bg_panel_hover())
+                                                            .border_color(DarkTechTheme::border_muted())
+                                                    })
                                                     .on_click(cx.listener(|this, _e: &ClickEvent, _window, cx| {
                                                         this.split_terminal(SplitDirection::Vertical, cx);
                                                     }))
-                                                    .child(crate::t!("workbench.btn_split_v"))
+                                                    .tooltip(crate::components::tooltip::tooltip(crate::t!("workbench.btn_split_v")))
+                                                    .child(Icon::split_vertical().with_size(px(13.0)).with_color(DarkTechTheme::text_secondary()))
                                             )
                                             .child(
                                                 div()
                                                     .id("wb_split_h")
-                                                    .h(px(24.0))
-                                                    .px_2()
-                                                    .rounded_sm()
+                                                    .h(px(26.0))
+                                                    .w(px(28.0))
+                                                    .rounded_md()
                                                     .bg(DarkTechTheme::bg_input())
                                                     .border_1()
                                                     .border_color(DarkTechTheme::border_default())
-                                                    .text_color(DarkTechTheme::text_secondary())
-                                                    .text_size(px(10.5))
                                                     .flex()
                                                     .items_center()
-                                                    .gap_1()
+                                                    .justify_center()
                                                     .cursor_pointer()
-                                                    .hover(|s| s.bg(DarkTechTheme::bg_panel_hover()).text_color(DarkTechTheme::accent_cyan()))
+                                                    .hover(|s| {
+                                                        s.bg(DarkTechTheme::bg_panel_hover())
+                                                            .border_color(DarkTechTheme::border_muted())
+                                                    })
                                                     .on_click(cx.listener(|this, _e: &ClickEvent, _window, cx| {
                                                         this.split_terminal(SplitDirection::Horizontal, cx);
                                                     }))
-                                                    .child(crate::t!("workbench.btn_split_h"))
+                                                    .tooltip(crate::components::tooltip::tooltip(crate::t!("workbench.btn_split_h")))
+                                                    .child(Icon::split_horizontal().with_size(px(13.0)).with_color(DarkTechTheme::text_secondary()))
                                             )
                                              .children({
                                                 if self.split_manager.panes().len() > 1 {
@@ -1105,6 +1113,7 @@ impl Render for WorkbenchView {
                                                                     .on_click(cx.listener(|this, _e: &ClickEvent, _window, cx| {
                                                                         this.set_split_ratio(&[], 0.3, cx);
                                                                     }))
+                                                                    .tooltip(crate::components::tooltip::tooltip("30% : 70%"))
                                                                     .child("30:70")
                                                             )
                                                             .child(
@@ -1123,6 +1132,7 @@ impl Render for WorkbenchView {
                                                                     .on_click(cx.listener(|this, _e: &ClickEvent, _window, cx| {
                                                                         this.set_split_ratio(&[], 0.5, cx);
                                                                     }))
+                                                                    .tooltip(crate::components::tooltip::tooltip("50% : 50%"))
                                                                     .child("50:50")
                                                             )
                                                             .child(
@@ -1141,28 +1151,28 @@ impl Render for WorkbenchView {
                                                                     .on_click(cx.listener(|this, _e: &ClickEvent, _window, cx| {
                                                                         this.set_split_ratio(&[], 0.7, cx);
                                                                     }))
+                                                                    .tooltip(crate::components::tooltip::tooltip("70% : 30%"))
                                                                     .child("70:30")
                                                             )
                                                             .child(
                                                                 div()
                                                                     .id("wb_close_split")
-                                                                    .h(px(24.0))
-                                                                    .px_2()
-                                                                    .rounded_sm()
+                                                                    .h(px(26.0))
+                                                                    .w(px(28.0))
+                                                                    .rounded_md()
                                                                     .bg(DarkTechTheme::bg_input())
                                                                     .border_1()
                                                                     .border_color(DarkTechTheme::status_crit().opacity(0.4))
-                                                                    .text_color(DarkTechTheme::status_crit())
-                                                                    .text_size(px(10.5))
                                                                     .flex()
                                                                     .items_center()
-                                                                    .gap_1()
+                                                                    .justify_center()
                                                                     .cursor_pointer()
-                                                                    .hover(|s| s.bg(DarkTechTheme::status_crit().opacity(0.1)))
+                                                                    .hover(|s| s.bg(DarkTechTheme::status_crit().opacity(0.1)).border_color(DarkTechTheme::status_crit()))
                                                                     .on_click(cx.listener(|this, _e: &ClickEvent, _window, cx| {
                                                                         this.close_active_pane(cx);
                                                                     }))
-                                                                    .child(crate::t!("workbench.btn_close_pane"))
+                                                                    .tooltip(crate::components::tooltip::tooltip(crate::t!("workbench.btn_close_pane")))
+                                                                    .child(Icon::close().with_size(px(11.0)).with_color(DarkTechTheme::status_crit()))
                                                             )
                                                     )
                                                 } else {

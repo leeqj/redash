@@ -3,6 +3,7 @@ pub mod host_modal;
 pub mod icon;
 pub mod micro_meter;
 pub mod status_led;
+pub mod tooltip;
 
 pub use crate::theme;
 
