@@ -486,12 +486,13 @@ impl SftpView {
                     insert_idx += 1;
                 }
 
-                let last_p = paste_lines.last().unwrap();
-                let last_line_content = format!("{}{}", last_p, suffix);
-                lines.insert(insert_idx, last_line_content);
+                if let Some(last_p) = paste_lines.last() {
+                    let last_line_content = format!("{}{}", last_p, suffix);
+                    lines.insert(insert_idx, last_line_content);
 
-                *cursor_row = insert_idx;
-                *cursor_col = last_p.chars().count();
+                    *cursor_row = insert_idx;
+                    *cursor_col = last_p.chars().count();
+                }
             }
 
             *is_dirty = true;
@@ -1059,8 +1060,9 @@ impl Render for SftpView {
                             } else if key == "space" {
                                 this.editor_insert_char(' ');
                                 cx.notify();
-                            } else if key.chars().count() == 1 {
-                                let ch = key.chars().next().unwrap();
+                            } else if key.chars().count() == 1
+                                && let Some(ch) = key.chars().next()
+                            {
                                 this.editor_insert_char(ch);
                                 cx.notify();
                             }
@@ -1102,8 +1104,9 @@ impl Render for SftpView {
                             } else if key == "space" {
                                 this.rename_input_char(' ');
                                 cx.notify();
-                            } else if key.chars().count() == 1 {
-                                let ch = key.chars().next().unwrap();
+                            } else if key.chars().count() == 1
+                                && let Some(ch) = key.chars().next()
+                            {
                                 this.rename_input_char(ch);
                                 cx.notify();
                             }
@@ -1147,8 +1150,9 @@ impl Render for SftpView {
                             } else if key == "space" {
                                 this.new_item_input_char(' ');
                                 cx.notify();
-                            } else if key.chars().count() == 1 {
-                                let ch = key.chars().next().unwrap();
+                            } else if key.chars().count() == 1
+                                && let Some(ch) = key.chars().next()
+                            {
                                 this.new_item_input_char(ch);
                                 cx.notify();
                             }
@@ -1164,8 +1168,9 @@ impl Render for SftpView {
                         } else if key == "backspace" {
                             this.chmod_backspace();
                             cx.notify();
-                        } else if !modifiers.control && !modifiers.platform && key.len() == 1 {
-                            let ch = key.chars().next().unwrap();
+                        } else if !modifiers.control && !modifiers.platform && key.len() == 1
+                            && let Some(ch) = key.chars().next()
+                        {
                             this.chmod_input_char(ch);
                             cx.notify();
                         }

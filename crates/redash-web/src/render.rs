@@ -978,7 +978,7 @@ fn render_docker_panel(
     let _ = ctx.fill_text("快捷操作", col_x[6], th_y + 19.0);
 
     // Table Rows
-    let list = containers.unwrap();
+    let Some(list) = containers else { return; };
     let row_h = 36.0;
     let mut row_y = th_y + th_h + 4.0;
 

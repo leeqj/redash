@@ -163,12 +163,10 @@ impl TerminalGrid {
                 if chars.peek() == Some(&'[') {
                     chars.next(); // consume '['
                     let mut seq = String::new();
-                    while let Some(&next_ch) = chars.peek() {
-                        if next_ch.is_ascii_alphabetic() || next_ch == '@' || next_ch == '`' {
-                            seq.push(chars.next().unwrap());
+                    for next_ch in chars.by_ref() {
+                        seq.push(next_ch);
+                        if next_ch.is_ascii_alphabetic() || next_ch == '@' || next_ch == '`' || seq.len() >= 64 {
                             break;
-                        } else {
-                            seq.push(chars.next().unwrap());
                         }
                     }
                     self.parse_csi_sequence(&seq);
@@ -225,7 +223,9 @@ impl TerminalGrid {
         if self.lines.is_empty() {
             self.lines.push(Vec::new());
         }
-        let line = self.lines.last_mut().unwrap();
+        let Some(line) = self.lines.last_mut() else {
+            return;
+        };
 
         if self.cursor_col < line.len() {
             line[self.cursor_col] = cell;

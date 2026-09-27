@@ -499,8 +499,9 @@ impl BatchView {
                     cx.notify();
                     cx.stop_propagation();
                 }
-            } else if key.chars().count() == 1 {
-                let ch = key.chars().next().unwrap();
+            } else if key.chars().count() == 1
+                && let Some(ch) = key.chars().next()
+            {
                 self.insert_char_at_cursor(ch);
                 cx.notify();
                 cx.stop_propagation();

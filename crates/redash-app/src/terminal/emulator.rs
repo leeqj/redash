@@ -450,9 +450,10 @@ impl TerminalEmulator {
                 };
 
                 if can_merge {
-                    let last = runs.last_mut().unwrap();
-                    last.text.push(ch);
-                    last.cols += cell_cols;
+                    if let Some(last) = runs.last_mut() {
+                        last.text.push(ch);
+                        last.cols += cell_cols;
+                    }
                 } else {
                     runs.push(TextRun {
                         text: ch.to_string(),

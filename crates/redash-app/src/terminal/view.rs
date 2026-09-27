@@ -193,9 +193,12 @@ pub fn map_keystroke(key: &str, modifiers: &Modifiers) -> TerminalKeyAction {
 
         // All A-Z Control combinations (Ctrl+A = 1, ..., Ctrl+Z = 26)
         _ if modifiers.control && key.len() == 1 => {
-            let ch = key.chars().next().unwrap();
-            if ch.is_ascii_alphabetic() {
-                Some(vec![ch.to_ascii_lowercase() as u8 - b'a' + 1])
+            if let Some(ch) = key.chars().next() {
+                if ch.is_ascii_alphabetic() {
+                    Some(vec![ch.to_ascii_lowercase() as u8 - b'a' + 1])
+                } else {
+                    None
+                }
             } else {
                 None
             }

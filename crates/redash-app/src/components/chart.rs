@@ -359,7 +359,7 @@ impl IntoElement for SparklineChart {
                         fill_builder.move_to(point(bounds.origin.x, bottom_y));
                         fill_builder.line_to(points[0]);
                         append_curve(&mut fill_builder);
-                        let last_x = points.last().unwrap().x;
+                        let last_x = points.last().map(|p| p.x).unwrap_or(bounds.origin.x);
                         fill_builder.line_to(point(last_x, bottom_y));
                         fill_builder.close();
                         if let Ok(fill_path) = fill_builder.build() {

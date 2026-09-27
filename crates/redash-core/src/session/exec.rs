@@ -64,7 +64,7 @@ impl ExecChannel {
         let (mut reader, writer) = channel.split();
         let mut guard = ExecGuard(Some(writer));
         let result = timeout_at(deadline, async {
-            guard.0.as_ref().unwrap().exec(true, command).await.context("Failed to request exec")?;
+            guard.0.as_ref().context("Failed to acquire command channel writer")?.exec(true, command).await.context("Failed to request exec")?;
             let mut stdout = Vec::new();
             let mut stderr = Vec::new();
             let mut exit_code = None;
