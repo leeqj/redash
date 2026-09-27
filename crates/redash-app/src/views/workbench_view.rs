@@ -66,12 +66,12 @@ impl WorkbenchView {
         // 1. Terminal Entity
         let host_name = host.name.clone();
         let terminal_view =
-            cx.new(|cx| TerminalView::new(80, 24, None, output_rx, cx).with_host_name(host_name));
+            cx.new(|cx| TerminalView::new(120, 35, None, output_rx, cx).with_host_name(host_name));
 
         let term_entity = terminal_view.clone();
         cx.spawn(async move |_this, cx| {
             let result = session_mgr_clone
-                .open_pty(&host_clone, 80, 24, output_tx)
+                .open_pty(&host_clone, 120, 35, output_tx)
                 .await;
             let _ = term_entity.update(cx, |view, cx| match result {
                 Ok(pty) => view.attach_pty(Arc::new(pty), cx),
@@ -155,6 +155,15 @@ impl WorkbenchView {
     }
 
     pub fn split_terminal(&mut self, direction: SplitDirection, cx: &mut Context<Self>) {
+        let (init_cols, init_rows) = self
+            .terminal_views
+            .get(&self.split_manager.active_pane_id)
+            .map(|t| {
+                let r = t.read(cx);
+                (r.cols(), r.rows())
+            })
+            .unwrap_or((120, 35));
+
         let new_pane_id = self.split_manager.split_active(direction);
         let (output_tx, output_rx) = mpsc::channel(64);
         let host_clone = self.host.clone();
@@ -163,7 +172,7 @@ impl WorkbenchView {
         let host_name = self.host.name.clone();
         let settings = self.settings.clone();
         let new_term = cx.new(|cx| {
-            let mut tv = TerminalView::new(80, 24, None, output_rx, cx).with_host_name(host_name);
+            let mut tv = TerminalView::new(init_cols, init_rows, None, output_rx, cx).with_host_name(host_name);
             tv.apply_settings(&settings, cx);
             tv
         });
@@ -171,7 +180,7 @@ impl WorkbenchView {
         let term_entity = new_term.clone();
         cx.spawn(async move |_this, cx| {
             let result = session_mgr_clone
-                .open_pty(&host_clone, 80, 24, output_tx)
+                .open_pty(&host_clone, init_cols as u32, init_rows as u32, output_tx)
                 .await;
             let _ = term_entity.update(cx, |view, cx| match result {
                 Ok(pty) => view.attach_pty(Arc::new(pty), cx),
@@ -189,12 +198,21 @@ impl WorkbenchView {
     }
 
     pub fn reconnect_terminal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let (init_cols, init_rows) = self
+            .terminal_views
+            .get(&self.split_manager.active_pane_id)
+            .map(|t| {
+                let r = t.read(cx);
+                (r.cols(), r.rows())
+            })
+            .unwrap_or((120, 35));
+
         let (output_tx, output_rx) = mpsc::channel(64);
         let settings = self.settings.clone();
         let host = self.host.clone();
         let name = host.name.clone();
         let terminal = cx.new(|cx| {
-            let mut terminal = TerminalView::new(80, 24, None, output_rx, cx).with_host_name(name);
+            let mut terminal = TerminalView::new(init_cols, init_rows, None, output_rx, cx).with_host_name(name);
             terminal.apply_settings(&settings, cx);
             terminal
         });
@@ -203,7 +221,7 @@ impl WorkbenchView {
         self.terminal_view = terminal.clone();
         let manager = Arc::clone(&self.session_mgr);
         cx.spawn(async move |_, cx| {
-            let result = manager.open_pty(&host, 80, 24, output_tx).await;
+            let result = manager.open_pty(&host, init_cols as u32, init_rows as u32, output_tx).await;
             let _ = terminal.update(cx, |view, cx| match result {
                 Ok(pty) => view.attach_pty(Arc::new(pty), cx),
                 Err(error) => {

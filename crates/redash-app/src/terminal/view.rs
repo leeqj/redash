@@ -361,11 +361,25 @@ impl TerminalView {
         if pty.is_closed() {
             self.connection_error = Some("终端已关闭，请重新连接".into());
         } else {
+            let cols = self.emulator.cols as u32;
+            let rows = self.emulator.rows as u32;
+            let pty_clone = Arc::clone(&pty);
+            tokio::spawn(async move {
+                let _ = pty_clone.resize(cols, rows).await;
+            });
             self.pty_channel = Some(pty);
             self.connection_error = None;
             self.flush_responses();
         }
         cx.notify();
+    }
+
+    pub fn char_width(&self) -> f32 {
+        (self.font_size / 13.0) * TERM_CHAR_WIDTH
+    }
+
+    pub fn row_height(&self) -> f32 {
+        (self.font_size * 1.38).max(TERM_ROW_HEIGHT)
     }
     fn flush_responses(&self) {
         if self.pty_channel.is_some() {
@@ -440,13 +454,13 @@ impl TerminalView {
     }
 
     /// Resize terminal emulation grid and propagate window change to remote SSH PTY
-    #[allow(dead_code)]
     pub fn resize(&mut self, cols: usize, rows: usize) {
         let cols = cols.clamp(20, 500);
         let rows = rows.clamp(5, 200);
         if cols == self.emulator.cols && rows == self.emulator.rows {
             return;
         }
+        self.selection = None;
         self.emulator.resize(cols, rows);
         if let Some(pty) = &self.pty_channel {
             let pty = Arc::clone(pty);
@@ -688,6 +702,42 @@ impl Focusable for TerminalView {
 
 impl Render for TerminalView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let char_w = self.char_width();
+        let row_h = self.row_height();
+        let current_cols = self.emulator.cols;
+        let current_rows = self.emulator.rows;
+        let entity = cx.entity().downgrade();
+
+        let resize_detector = canvas(
+            |_bounds, _window, _cx| (),
+            move |bounds, (), window, cx| {
+                let width = f32::from(bounds.size.width);
+                let height = f32::from(bounds.size.height);
+                if width <= 20.0 || height <= 20.0 {
+                    return;
+                }
+
+                let avail_w = (width - 16.0).max(10.0);
+                let avail_h = (height - 16.0).max(10.0);
+                let target_cols = ((avail_w / char_w).floor() as usize).clamp(20, 500);
+                let target_rows = ((avail_h / row_h).floor() as usize).clamp(5, 200);
+
+                if target_cols != current_cols || target_rows != current_rows {
+                    let entity = entity.clone();
+                    window.defer(cx, move |_window, cx| {
+                        if let Some(view) = entity.upgrade() {
+                            view.update(cx, |this, cx| {
+                                this.resize(target_cols, target_rows);
+                                cx.notify();
+                            });
+                        }
+                    });
+                }
+            },
+        )
+        .absolute()
+        .inset_0();
+
         let cursor_opt = self.emulator.cursor_position();
         let search_ref = if self.search.is_active {
             Some(&self.search)
@@ -763,6 +813,7 @@ impl Render for TerminalView {
             .child(
                 div()
                     .id("terminal_screen_viewport")
+                    .relative()
                     .flex_1()
                     .w_full()
                     .p_2()
@@ -771,14 +822,14 @@ impl Render for TerminalView {
                     .bg(DarkTechTheme::bg_root())
                     .font_family(self.font_family.clone())
                     .text_size(px(self.font_size))
-                    .line_height(px(TERM_ROW_HEIGHT))
+                    .line_height(px(row_h))
                     .text_color(DarkTechTheme::text_primary())
                     .overflow_hidden()
-                    .on_scroll_wheel(cx.listener(|this, event: &ScrollWheelEvent, _window, cx| {
+                    .on_scroll_wheel(cx.listener(move |this, event: &ScrollWheelEvent, _window, cx| {
                         let delta_y = match event.delta {
                             ScrollDelta::Lines(delta) => delta.y as i32,
                             ScrollDelta::Pixels(delta) => {
-                                (f32::from(delta.y) / TERM_ROW_HEIGHT) as i32
+                                (f32::from(delta.y) / row_h) as i32
                             }
                         };
                         if delta_y != 0 {
@@ -786,14 +837,15 @@ impl Render for TerminalView {
                             cx.notify();
                         }
                     }))
+                    .child(resize_detector)
                     .children(lines.into_iter().enumerate().map(|(line_idx, line)| {
                         let mut row_el = div()
                             .id(ElementId::Name(format!("term_row_{}", line_idx).into()))
                             .flex()
                             .flex_row()
-                            .h(px(TERM_ROW_HEIGHT))
-                            .min_h(px(TERM_ROW_HEIGHT))
-                            .max_h(px(TERM_ROW_HEIGHT))
+                            .h(px(row_h))
+                            .min_h(px(row_h))
+                            .max_h(px(row_h))
                             .w_full()
                             .flex_shrink_0()
                             .overflow_hidden()
@@ -816,7 +868,7 @@ impl Render for TerminalView {
                                 let end_col = current_col + run.cols;
                                 current_col += run.cols;
 
-                                let width_px = (run.cols as f32) * TERM_CHAR_WIDTH;
+                                let width_px = (run.cols as f32) * char_w;
                                 let run_text = run.text.clone();
                                 let line_num = line_idx;
 
@@ -826,7 +878,7 @@ impl Render for TerminalView {
                                         let cursor = div()
                                             .w(px(width_px))
                                             .min_w(px(width_px))
-                                            .h(px(TERM_ROW_HEIGHT))
+                                            .h(px(row_h))
                                             .flex_shrink_0()
                                             .whitespace_nowrap()
                                             .overflow_hidden()
@@ -849,7 +901,7 @@ impl Render for TerminalView {
                                         div()
                                             .w(px(width_px))
                                             .min_w(px(width_px))
-                                            .h(px(TERM_ROW_HEIGHT))
+                                            .h(px(row_h))
                                             .flex_shrink_0()
                                             .whitespace_nowrap()
                                             .overflow_hidden()
@@ -866,7 +918,7 @@ impl Render for TerminalView {
                                             format!("cell_{}_{}", line_num, start_col).into(),
                                         ))
                                         .min_w(px(width_px))
-                                        .h(px(TERM_ROW_HEIGHT))
+                                        .h(px(row_h))
                                         .flex_shrink_0()
                                         .whitespace_nowrap()
                                         .overflow_hidden()
@@ -927,7 +979,7 @@ impl Render for TerminalView {
                             }));
                         } else {
                             row_el = row_el
-                                .child(div().h(px(TERM_ROW_HEIGHT)).w(px(0.0)).flex_shrink_0());
+                                .child(div().h(px(row_h)).w(px(0.0)).flex_shrink_0());
                         }
 
                         row_el
