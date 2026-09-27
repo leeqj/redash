@@ -111,9 +111,6 @@ struct TabItem {
     content: TabContent,
 }
 
-#[allow(dead_code)]
-type ServerBoxApp = ReDashApp;
-
 struct ReDashApp {
     error_msg: Option<String>,
     config_generation: Arc<std::sync::atomic::AtomicU64>,
@@ -573,7 +570,6 @@ impl ReDashApp {
         }
     }
 
-    #[allow(dead_code)]
     fn move_host_to_top(&mut self, host_id: HostId, cx: &mut Context<Self>) {
         let outcome = self.host_store.move_host_to_top(&host_id);
         if let Err(error) = &outcome {

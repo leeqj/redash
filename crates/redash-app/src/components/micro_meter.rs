@@ -1,7 +1,6 @@
 use crate::components::theme::DarkTechTheme;
 use gpui::*;
 
-#[allow(dead_code)]
 #[derive(Clone)]
 pub struct MicroMeter {
     pub label: String,
@@ -11,7 +10,6 @@ pub struct MicroMeter {
     pub height: Pixels,
 }
 
-#[allow(dead_code)]
 impl MicroMeter {
     pub fn new(
         label: impl Into<String>,
@@ -26,11 +24,6 @@ impl MicroMeter {
             bar_color,
             height: px(4.0),
         }
-    }
-
-    pub fn with_height(mut self, height: Pixels) -> Self {
-        self.height = height;
-        self
     }
 
     /// Helper returning appropriate color according to percentage threshold.

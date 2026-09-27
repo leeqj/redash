@@ -20,7 +20,6 @@ redash-ui-core = { workspace = true }
 redash-core = { workspace = true }
 russh-sftp = { workspace = true }
 gpui = { workspace = true }
-gpui-component.workspace = true
 anyhow.workspace = true
 thiserror.workspace = true
 log.workspace = true

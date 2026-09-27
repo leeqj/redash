@@ -18,9 +18,7 @@ uuid.workspace = true
 russh.workspace = true
 russh-sftp.workspace = true
 keyring.workspace = true
-smol.workspace = true
 dirs.workspace = true
-async-trait.workspace = true
 sha2 = "0.10"
 
 [dev-dependencies]

@@ -9,28 +9,6 @@ use crate::components::theme::DarkTechTheme;
 use redash_core::probe::agent::{AgentDetector, AgentStatus, DetectedAgent};
 use redash_core::session::PtyChannel;
 
-// Minimalist Dark Tech Theme Palette Tokens (Legacy Fallbacks)
-#[allow(dead_code)]
-const BG_ROOT: u32 = 0x0a0b10; // Deepest carbon canvas (#0a0b10)
-#[allow(dead_code)]
-const BG_INPUT: u32 = 0x0e0f17; // Recessed status bar (#0e0f17)
-#[allow(dead_code)]
-const BORDER_DEFAULT: u32 = 0x232738; // 1px Subtle tech border (#232738)
-#[allow(dead_code)]
-const BORDER_ACTIVE_GLOW: u32 = 0x38bdf844; // Glowing cyan 1px border (#38bdf844)
-#[allow(dead_code)]
-const ACCENT_CYAN: u32 = 0x38bdf8; // Bright tech cyan (#38bdf8)
-#[allow(dead_code)]
-const STATUS_ONLINE: u32 = 0x10b981; // Emerald green (#10b981)
-#[allow(dead_code)]
-const STATUS_CRIT: u32 = 0xef4444; // Laser red alert (#ef4444)
-#[allow(dead_code)]
-const TEXT_PRIMARY: u32 = 0xf1f5f9; // Crisp slate white (#f1f5f9)
-#[allow(dead_code)]
-const TEXT_SECONDARY: u32 = 0x94a3b8; // Medium slate 400 (#94a3b8)
-#[allow(dead_code)]
-const TEXT_MUTED: u32 = 0x64748b; // Muted slate 500 (#64748b)
-
 pub const TERM_CHAR_WIDTH: f32 = 7.82666;
 pub const TERM_ROW_HEIGHT: f32 = 18.0;
 

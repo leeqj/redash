@@ -1,7 +1,6 @@
 use crate::components::theme::DarkTechTheme;
 use gpui::*;
 
-#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HostLedState {
     Online,
@@ -10,7 +9,6 @@ pub enum HostLedState {
     Offline,
 }
 
-#[allow(dead_code)]
 impl HostLedState {
     /// Determines the host status based on connection state and resource metrics.
     pub fn from_metrics(is_connected: bool, cpu_usage: f32, mem_usage: f32) -> Self {
@@ -48,25 +46,13 @@ impl HostLedState {
             ),
         }
     }
-
-    /// Descriptive human-readable label localized via active locale.
-    pub fn label(&self) -> &'static str {
-        match self {
-            Self::Online => crate::t!("status.online"),
-            Self::Warning => crate::t!("status.warn"),
-            Self::Critical => crate::t!("status.crit"),
-            Self::Offline => crate::t!("status.offline"),
-        }
-    }
 }
 
-#[allow(dead_code)]
 pub struct StatusLed {
     pub state: HostLedState,
     pub size: Pixels,
 }
 
-#[allow(dead_code)]
 impl StatusLed {
     pub fn new(state: HostLedState) -> Self {
         Self {
@@ -127,22 +113,5 @@ mod tests {
             HostLedState::from_metrics(true, 50.0, 92.0),
             HostLedState::Critical
         );
-    }
-
-    #[core::prelude::v1::test]
-    fn test_led_labels() {
-        let _guard = redash_core::i18n::TEST_LOCALE_MUTEX.lock().unwrap();
-        crate::i18n::I18n::set_locale(crate::i18n::Locale::ZhCn);
-        assert_eq!(HostLedState::Online.label(), "在线");
-        assert_eq!(HostLedState::Warning.label(), "警告");
-        assert_eq!(HostLedState::Critical.label(), "紧急");
-        assert_eq!(HostLedState::Offline.label(), "离线");
-
-        crate::i18n::I18n::set_locale(crate::i18n::Locale::EnUs);
-        assert_eq!(HostLedState::Online.label(), "Online");
-        assert_eq!(HostLedState::Warning.label(), "Warning");
-        assert_eq!(HostLedState::Critical.label(), "Critical");
-        assert_eq!(HostLedState::Offline.label(), "Offline");
-        crate::i18n::I18n::set_locale(crate::i18n::Locale::ZhCn);
     }
 }

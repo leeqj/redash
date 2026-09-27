@@ -3,7 +3,6 @@ pub mod host_modal;
 pub mod icon;
 pub mod micro_meter;
 pub mod status_led;
-pub mod status_ribbon;
 
 pub use crate::theme;
 
@@ -18,8 +17,6 @@ pub use micro_meter::*;
 #[allow(unused_imports)]
 pub use status_led::*;
 #[allow(unused_imports)]
-pub use status_ribbon::*;
-#[allow(unused_imports)]
 pub use theme::*;
 
 impl gpui::IntoElement for status_led::StatusLed {
@@ -30,13 +27,6 @@ impl gpui::IntoElement for status_led::StatusLed {
 }
 
 impl gpui::IntoElement for micro_meter::MicroMeter {
-    type Element = gpui::Component<Self>;
-    fn into_element(self) -> Self::Element {
-        gpui::Component::new(self)
-    }
-}
-
-impl gpui::IntoElement for status_ribbon::StatusRibbon {
     type Element = gpui::Component<Self>;
     fn into_element(self) -> Self::Element {
         gpui::Component::new(self)

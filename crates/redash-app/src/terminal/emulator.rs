@@ -198,24 +198,6 @@ pub struct TerminalLineRuns {
     pub runs: Vec<TextRun>,
 }
 
-#[allow(dead_code)]
-#[derive(Debug, Clone)]
-pub struct TerminalCell {
-    pub c: char,
-    pub fg: u32,
-    pub bg: u32,
-    pub bold: bool,
-    pub underline: bool,
-    pub is_wide: bool,
-    pub is_spacer: bool,
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Clone)]
-pub struct TerminalLine {
-    pub cells: Vec<TerminalCell>,
-}
-
 pub struct TerminalEmulator {
     term: Term<TerminalEventListener>,
     events: TerminalEventListener,
@@ -582,88 +564,6 @@ impl TerminalEmulator {
             }
             lines.push(line_str.trim_end().to_string());
         }
-        lines
-    }
-
-    #[allow(dead_code)]
-    pub fn renderable_lines(&self) -> Vec<TerminalLine> {
-        let grid = self.term.grid();
-        let screen_lines = self.rows.min(grid.screen_lines());
-        let total_cols = self.cols.min(grid.columns());
-        let display_offset = grid.display_offset();
-        let history_size = grid.history_size();
-        let mut lines = Vec::with_capacity(self.rows);
-
-        for line_idx in 0..screen_lines {
-            let line_offset = (line_idx as i32) - (display_offset as i32);
-            if line_offset < -(history_size as i32) || line_offset >= (grid.screen_lines() as i32) {
-                lines.push(TerminalLine {
-                    cells: (0..self.cols)
-                        .map(|_| TerminalCell {
-                            c: ' ',
-                            fg: DEFAULT_TERM_FG,
-                            bg: DEFAULT_TERM_BG,
-                            bold: false,
-                            underline: false,
-                            is_wide: false,
-                            is_spacer: false,
-                        })
-                        .collect(),
-                });
-                continue;
-            }
-
-            let row = &grid[Line(line_offset)];
-            let mut cells = Vec::with_capacity(self.cols);
-
-            for col_idx in 0..total_cols {
-                let cell = &row[Column(col_idx)];
-                let mut fg = ansi_color_to_rgb(cell.fg, false);
-                let mut bg = ansi_color_to_rgb(cell.bg, true);
-                if cell.flags.contains(Flags::INVERSE) {
-                    std::mem::swap(&mut fg, &mut bg);
-                }
-
-                cells.push(TerminalCell {
-                    c: cell.c,
-                    fg,
-                    bg,
-                    bold: cell.flags.contains(Flags::BOLD),
-                    underline: cell.flags.contains(Flags::UNDERLINE),
-                    is_wide: cell.flags.contains(Flags::WIDE_CHAR),
-                    is_spacer: cell.flags.contains(Flags::WIDE_CHAR_SPACER),
-                });
-            }
-            for _ in total_cols..self.cols {
-                cells.push(TerminalCell {
-                    c: ' ',
-                    fg: DEFAULT_TERM_FG,
-                    bg: DEFAULT_TERM_BG,
-                    bold: false,
-                    underline: false,
-                    is_wide: false,
-                    is_spacer: false,
-                });
-            }
-            lines.push(TerminalLine { cells });
-        }
-
-        for _ in screen_lines..self.rows {
-            lines.push(TerminalLine {
-                cells: (0..self.cols)
-                    .map(|_| TerminalCell {
-                        c: ' ',
-                        fg: DEFAULT_TERM_FG,
-                        bg: DEFAULT_TERM_BG,
-                        bold: false,
-                        underline: false,
-                        is_wide: false,
-                        is_spacer: false,
-                    })
-                    .collect(),
-            });
-        }
-
         lines
     }
 
