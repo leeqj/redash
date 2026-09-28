@@ -1,0 +1,17 @@
+[Unit]
+Description=ReDash Host Telemetry & Zero-Trust Remediation Agent
+Documentation=https://github.com/reways/redash
+After=network.target docker.service
+Wants=docker.service
+
+[Service]
+Type=simple
+User=root
+EnvironmentFile=-/etc/default/redash-agent
+ExecStart=/usr/local/bin/redash-agent $REDASH_AGENT_OPTS
+Restart=always
+RestartSec=5s
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
