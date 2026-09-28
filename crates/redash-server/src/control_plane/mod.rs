@@ -4,8 +4,8 @@ pub mod registry;
 pub mod ws_agent;
 
 use crate::state::AppState;
-use axum::Router;
 use axum::routing::{get, post};
+use axum::Router;
 
 pub fn control_plane_router() -> Router<AppState> {
     Router::new()
@@ -16,4 +16,6 @@ pub fn control_plane_router() -> Router<AppState> {
         .route("/v1/control/nodes/{id}", get(api::get_node))
         .route("/v1/control/actions/dispatch", post(api::dispatch_action))
         .route("/v1/control/telemetry/sse", get(api::telemetry_sse))
+        // Reverse WebTTY Bridge
+        .route("/v1/control/tty/{node_id}", get(api::client_tty_handler))
 }

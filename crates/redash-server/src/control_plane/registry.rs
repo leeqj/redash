@@ -24,6 +24,7 @@ pub struct ActiveAgentSession {
 pub struct ControlPlaneRegistry {
     agents: Arc<DashMap<String, ActiveAgentSession>>,
     telemetry_bus: broadcast::Sender<AgentTelemetry>,
+    tty_subscribers: Arc<DashMap<String, mpsc::Sender<Vec<u8>>>>,
 }
 
 impl Default for ControlPlaneRegistry {
@@ -38,6 +39,7 @@ impl ControlPlaneRegistry {
         Self {
             agents: Arc::new(DashMap::new()),
             telemetry_bus: bus,
+            tty_subscribers: Arc::new(DashMap::new()),
         }
     }
 
@@ -218,5 +220,64 @@ impl ControlPlaneRegistry {
         }
 
         newly_offline
+    }
+
+    pub fn register_tty_subscriber(&self, session_id: String, tx: mpsc::Sender<Vec<u8>>) {
+        self.tty_subscribers.insert(session_id, tx);
+    }
+
+    pub fn unregister_tty_subscriber(&self, session_id: &str) {
+        self.tty_subscribers.remove(session_id);
+    }
+
+    pub fn forward_tty_output(&self, session_id: &str, data: Vec<u8>) {
+        if let Some(subscriber) = self.tty_subscribers.get(session_id) {
+            let _ = subscriber.try_send(data);
+        }
+    }
+
+    pub async fn send_tty_input_to_node(&self, node_id: &str, session_id: &str, data: Vec<u8>) {
+        if let Some(session) = self.agents.get(node_id) {
+            let _ = session
+                .command_tx
+                .send(HubToAgentMessage::TtyInput {
+                    session_id: session_id.to_string(),
+                    data,
+                })
+                .await;
+        }
+    }
+
+    pub async fn open_node_tty(&self, node_id: &str, session_id: &str, rows: u16, cols: u16) {
+        if let Some(session) = self.agents.get(node_id) {
+            let _ = session
+                .command_tx
+                .send(HubToAgentMessage::ExecuteAction(SignedAction {
+                    action_id: format!("open-{}", session_id),
+                    node_id: node_id.to_string(),
+                    action: redash_types::RemediationAction::TtyOpen {
+                        session_id: session_id.to_string(),
+                        rows,
+                        cols,
+                    },
+                    timestamp: 0,
+                    nonce: String::new(),
+                    public_key_hex: String::new(),
+                    signature_hex: String::new(),
+                }))
+                .await;
+        }
+    }
+
+    pub async fn close_node_tty(&self, node_id: &str, session_id: &str) {
+        if let Some(session) = self.agents.get(node_id) {
+            let _ = session
+                .command_tx
+                .send(HubToAgentMessage::TtyClose {
+                    session_id: session_id.to_string(),
+                })
+                .await;
+        }
+        self.unregister_tty_subscriber(session_id);
     }
 }

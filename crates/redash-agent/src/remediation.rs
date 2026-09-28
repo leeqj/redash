@@ -175,6 +175,21 @@ impl RemediationEngine {
                 info!("Executing custom recipe '{}'", name);
                 run_shell_cmd(&script).await
             }
+            RemediationAction::RestartService { service_name } => {
+                info!("Restarting system service '{}'", service_name);
+                let cmd = format!("systemctl restart {}", service_name);
+                run_shell_cmd(&cmd).await
+            }
+            RemediationAction::DiagnosePort { port } => {
+                info!("Diagnosing port {}", port);
+                let cmd = format!("lsof -nP -i :{} || ss -lptn 'sport = :{}'", port, port);
+                run_shell_cmd(&cmd).await
+            }
+            RemediationAction::KillPortConflict { port } => {
+                info!("Killing process occupying port {}", port);
+                let cmd = format!("fuser -k -9 {}/tcp || lsof -ti :{} | xargs -r kill -9", port, port);
+                run_shell_cmd(&cmd).await
+            }
             RemediationAction::TtyOpen { .. }
             | RemediationAction::TtyInput { .. }
             | RemediationAction::TtyResize { .. }

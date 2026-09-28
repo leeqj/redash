@@ -101,6 +101,15 @@ pub enum RemediationAction {
         name: String,
         script: String,
     },
+    RestartService {
+        service_name: String,
+    },
+    DiagnosePort {
+        port: u16,
+    },
+    KillPortConflict {
+        port: u16,
+    },
     TtyOpen {
         session_id: String,
         rows: u16,

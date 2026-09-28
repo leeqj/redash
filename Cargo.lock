@@ -5552,6 +5552,8 @@ dependencies = [
 name = "redash-ui-core"
 version = "0.1.1-beta"
 dependencies = [
+ "ed25519-dalek",
+ "hex",
  "redash-types",
  "serde",
  "serde_json",

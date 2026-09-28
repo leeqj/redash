@@ -111,7 +111,7 @@ async fn handle_agent_socket(
                         reg_in.update_heartbeat(&nid_in);
                     }
                     Ok(AgentToHubMessage::TtyOutput { session_id, data }) => {
-                        debug!("TTY output frame from node {} ({}: {} bytes)", nid_in, session_id, data.len());
+                        reg_in.forward_tty_output(&session_id, data);
                     }
                     other => {
                         debug!("Unhandled agent message from {}: {:?}", nid_in, other);
