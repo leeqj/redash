@@ -1,10 +1,12 @@
 pub mod control_plane;
+pub mod hud;
 pub mod i18n;
 pub mod state;
 pub mod terminal;
 pub mod theme;
 
 pub use control_plane::*;
+pub use hud::*;
 pub use i18n::*;
 pub use state::*;
 pub use terminal::*;
