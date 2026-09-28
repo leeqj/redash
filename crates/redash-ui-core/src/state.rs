@@ -133,6 +133,19 @@ pub enum UserAction {
         cols: usize,
         rows: usize,
     },
+    // Control Plane Actions
+    UpdateControlPlaneNodes(Vec<redash_types::ManagedNodeDetail>),
+    ReceiveAgentTelemetry(redash_types::AgentTelemetry),
+    SetClientKeypair {
+        public_key: String,
+        private_key: String,
+    },
+    TriggerRemediation {
+        node_id: String,
+        action: redash_types::RemediationAction,
+    },
+    ActionExecutionCompleted(redash_types::ActionResult),
+    ToggleAgentEnrollModal,
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -169,6 +182,10 @@ pub enum UiEffect {
         host_ids: Vec<String>,
         command: String,
     },
+    DispatchControlPlaneAction {
+        signed_action: redash_types::SignedAction,
+    },
+    FetchControlPlaneNodes,
 }
 
 pub struct AppStateMachine {
@@ -220,6 +237,13 @@ pub struct AppStateMachine {
     pub terminal_search_match_count: usize,
     pub hover_pos: Option<(f64, f64)>,
     pub is_filter_focused: bool,
+    pub control_plane_nodes: Vec<redash_types::ManagedNodeDetail>,
+    pub control_plane_telemetries: HashMap<String, redash_types::AgentTelemetry>,
+    pub client_keypair: Option<(String, String)>,
+    pub pending_action: Option<(String, redash_types::RemediationAction)>,
+    pub last_action_result: Option<redash_types::ActionResult>,
+    pub show_agent_enroll_modal: bool,
+    pub enroll_hub_url: String,
 }
 
 impl Default for AppStateMachine {
@@ -286,6 +310,13 @@ impl AppStateMachine {
             terminal_search_match_count: 0,
             hover_pos: None,
             is_filter_focused: false,
+            control_plane_nodes: Vec::new(),
+            control_plane_telemetries: HashMap::new(),
+            client_keypair: None,
+            pending_action: None,
+            last_action_result: None,
+            show_agent_enroll_modal: false,
+            enroll_hub_url: "ws://127.0.0.1:8080/v1/agent/ws".to_string(),
         }
     }
 
@@ -665,6 +696,50 @@ impl AppStateMachine {
                         rows: clamped_rows as u16,
                     });
                 }
+            }
+            UserAction::UpdateControlPlaneNodes(nodes) => {
+                self.control_plane_nodes = nodes;
+            }
+            UserAction::ReceiveAgentTelemetry(telemetry) => {
+                let node_id = telemetry.node_id.clone();
+                let cpu_pct = telemetry.cpu_usage_pct;
+                let history = self.cpu_histories.entry(format!("cp-{}", node_id)).or_default();
+                history.push(cpu_pct);
+                if history.len() > 60 {
+                    history.remove(0);
+                }
+                if let Some(node) = self.control_plane_nodes.iter_mut().find(|n| n.node_id == node_id) {
+                    node.status = redash_types::NodeOnlineStatus::Online;
+                    node.latest_telemetry = Some(telemetry.clone());
+                }
+                self.control_plane_telemetries.insert(node_id, telemetry);
+            }
+            UserAction::SetClientKeypair { public_key, private_key } => {
+                self.client_keypair = Some((public_key, private_key));
+            }
+            UserAction::TriggerRemediation { node_id, action } => {
+                if let Some((_, ref priv_key)) = self.client_keypair {
+                    let now = 1710000000;
+                    let nonce = format!("{:x}", now);
+                    if let Ok(signed) = crate::control_plane::ClientSigner::sign_action(
+                        priv_key,
+                        &node_id,
+                        action.clone(),
+                        now,
+                        &nonce,
+                    ) {
+                        self.pending_action = Some((node_id, action));
+                        effects.push(UiEffect::DispatchControlPlaneAction { signed_action: signed });
+                    }
+                }
+            }
+            UserAction::ActionExecutionCompleted(result) => {
+                self.last_action_result = Some(result);
+                self.pending_action = None;
+                effects.push(UiEffect::FetchControlPlaneNodes);
+            }
+            UserAction::ToggleAgentEnrollModal => {
+                self.show_agent_enroll_modal = !self.show_agent_enroll_modal;
             }
         }
 
@@ -1584,4 +1659,72 @@ mod tests {
         let effects_same = sm.resize_terminal(160, 50);
         assert!(effects_same.is_empty());
     }
+
+    #[test]
+    fn test_control_plane_mvi_flow() {
+        let mut state = AppStateMachine::new();
+
+        // 1. Set client keypair
+        let seed = [9u8; 32];
+        let (pub_hex, priv_hex) = crate::control_plane::ClientSigner::keypair_from_seed(&seed);
+        state.handle_action(UserAction::SetClientKeypair {
+            public_key: pub_hex.clone(),
+            private_key: priv_hex.clone(),
+        });
+        assert_eq!(state.client_keypair, Some((pub_hex, priv_hex)));
+
+        // 2. Receive Agent Telemetry
+        let telemetry = redash_types::AgentTelemetry {
+            node_id: "node-vps-99".to_string(),
+            hostname: "vps-lon".to_string(),
+            os: "linux".to_string(),
+            arch: "x86_64".to_string(),
+            timestamp: 1710000000,
+            uptime_secs: 7200,
+            cpu_usage_pct: 45.0,
+            cpu_cores: 2,
+            mem_used_bytes: 1024 * 1024 * 500,
+            mem_total_bytes: 1024 * 1024 * 1000,
+            disk_used_bytes: 1024 * 1024 * 1024 * 5,
+            disk_total_bytes: 1024 * 1024 * 1024 * 20,
+            net_rx_rate: 100,
+            net_tx_rate: 200,
+            containers: vec![],
+        };
+        state.handle_action(UserAction::ReceiveAgentTelemetry(telemetry));
+        assert!(state.control_plane_telemetries.contains_key("node-vps-99"));
+        assert_eq!(state.cpu_histories.get("cp-node-vps-99").unwrap().len(), 1);
+
+        // 3. Trigger Remediation Action
+        let action = redash_types::RemediationAction::RestartContainer {
+            container_id: "docker-app-1".to_string(),
+        };
+        let effects = state.handle_action(UserAction::TriggerRemediation {
+            node_id: "node-vps-99".to_string(),
+            action,
+        });
+
+        assert_eq!(effects.len(), 1);
+        if let UiEffect::DispatchControlPlaneAction { signed_action } = &effects[0] {
+            assert_eq!(signed_action.node_id, "node-vps-99");
+            assert!(!signed_action.signature_hex.is_empty());
+        } else {
+            panic!("Expected DispatchControlPlaneAction effect");
+        }
+
+        // 4. Action completed
+        let res = redash_types::ActionResult {
+            action_id: "act-1".to_string(),
+            node_id: "node-vps-99".to_string(),
+            success: true,
+            exit_code: Some(0),
+            stdout: "Container restarted".to_string(),
+            stderr: String::new(),
+            duration_ms: 12,
+        };
+        state.handle_action(UserAction::ActionExecutionCompleted(res.clone()));
+        assert_eq!(state.last_action_result, Some(res));
+        assert_eq!(state.pending_action, None);
+    }
 }
+
