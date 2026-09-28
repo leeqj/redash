@@ -73,6 +73,10 @@ async fn test_web_assets_serving() {
 
 #[tokio::test]
 async fn test_hosts_api_crud() {
+    let test_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/test_config");
+    let _ = std::fs::create_dir_all(&test_dir);
+    unsafe { std::env::set_var("REDASH_CONFIG_DIR", &test_dir); }
+
     let state = AppState::new();
 
     // Insert a test host into state directly
@@ -164,6 +168,10 @@ async fn test_hosts_api_crud() {
 
 #[tokio::test]
 async fn test_settings_api() {
+    let test_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/test_config");
+    let _ = std::fs::create_dir_all(&test_dir);
+    unsafe { std::env::set_var("REDASH_CONFIG_DIR", &test_dir); }
+
     let state = AppState::new();
     let app = build_router(state);
 

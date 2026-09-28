@@ -21,6 +21,9 @@ impl AppSettingsExt for AppSettings {
     }
 
     fn default_path() -> PathBuf {
+        if let Ok(dir) = std::env::var("REDASH_CONFIG_DIR") {
+            return PathBuf::from(dir).join("settings.json");
+        }
         let base = dirs::data_dir().unwrap_or_else(|| PathBuf::from("./.redash"));
         let redash_path = base.join("redash").join("settings.json");
         if redash_path.exists() {
