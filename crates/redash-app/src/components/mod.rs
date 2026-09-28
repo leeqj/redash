@@ -1,3 +1,4 @@
+pub mod agent_enroll_modal;
 pub mod chart;
 pub mod host_modal;
 pub mod icon;

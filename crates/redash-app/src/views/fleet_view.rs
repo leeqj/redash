@@ -9,6 +9,20 @@ use crate::components::theme::DarkTechTheme;
 use crate::{t, t_fmt};
 use redash_core::config::{HostConfig, HostId, MissingCredential, TargetOs};
 use redash_core::probe::NodeMetrics;
+use redash_types::{format_bytes_rate, ManagedNodeDetail, NodeOnlineStatus, RemediationAction};
+
+fn format_agent_uptime(secs: u64) -> String {
+    let days = secs / 86400;
+    let hours = (secs % 86400) / 3600;
+    let mins = (secs % 3600) / 60;
+    if days > 0 {
+        format!("{}d {}h", days, hours)
+    } else if hours > 0 {
+        format!("{}h {}m", hours, mins)
+    } else {
+        format!("{}m", mins)
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct ProbeFailure {
@@ -38,6 +52,14 @@ pub enum FleetAction {
     OpenSftp(HostConfig),
     OpenBatch(Vec<HostConfig>),
     AddNewHost,
+    AddNewAgentNode,
+    TriggerAgentRemediation {
+        node_id: String,
+        action: RemediationAction,
+    },
+    OpenAgentTty {
+        node_id: String,
+    },
     EditHost(HostConfig),
     CloneHost(HostConfig),
     DeleteHost(HostId),
@@ -120,6 +142,7 @@ pub fn slice_history_for_range(history: &[f32], range: ChartTimeRange) -> Vec<f3
 }
 
 pub struct FleetView {
+    pub control_plane_nodes: Vec<ManagedNodeDetail>,
     pub probe_errors: HashMap<HostId, ProbeFailure>,
     pub history_limit: usize,
     pub hosts: Vec<HostConfig>,
@@ -140,6 +163,7 @@ pub struct FleetView {
 impl FleetView {
     pub fn new(hosts: Vec<HostConfig>) -> Self {
         Self {
+            control_plane_nodes: Vec::new(),
             hosts,
             probe_errors: HashMap::new(),
             history_limit: 1800,
@@ -156,6 +180,497 @@ impl FleetView {
             on_action: None,
             scroll_handle: ScrollHandle::new(),
         }
+    }
+
+    #[allow(dead_code)]
+    pub fn set_control_plane_nodes(
+        &mut self,
+        nodes: Vec<ManagedNodeDetail>,
+        cx: &mut Context<Self>,
+    ) {
+        self.control_plane_nodes = nodes;
+        cx.notify();
+    }
+
+    pub fn render_control_plane_card(
+        &self,
+        node: &ManagedNodeDetail,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
+        let node_id = node.node_id.clone();
+        let hostname = if node.hostname.is_empty() {
+            node.node_id.clone()
+        } else {
+            node.hostname.clone()
+        };
+        let status_color = match node.status {
+            NodeOnlineStatus::Online => DarkTechTheme::accent_emerald(),
+            NodeOnlineStatus::Stale => DarkTechTheme::status_warn(),
+            NodeOnlineStatus::Offline => DarkTechTheme::status_crit(),
+        };
+        let status_halo = match node.status {
+            NodeOnlineStatus::Online => rgba(0x10b98133),
+            NodeOnlineStatus::Stale => rgba(0xf59e0b33),
+            NodeOnlineStatus::Offline => rgba(0xef444433),
+        };
+
+        let telemetry = node.latest_telemetry.as_ref();
+        let (cpu_pct, mem_pct, disk_pct, net_rx, net_tx, uptime_str, containers) =
+            if let Some(t) = telemetry {
+                (
+                    t.cpu_usage_pct,
+                    t.memory_usage_pct(),
+                    t.disk_usage_pct(),
+                    format_bytes_rate(t.net_rx_rate),
+                    format_bytes_rate(t.net_tx_rate),
+                    format_agent_uptime(t.uptime_secs),
+                    t.containers.clone(),
+                )
+            } else {
+                (
+                    0.0,
+                    0.0,
+                    0.0,
+                    "--".to_string(),
+                    "--".to_string(),
+                    "--".to_string(),
+                    Vec::new(),
+                )
+            };
+
+        let node_id_for_tty = node_id.clone();
+        let node_id_for_vacuum = node_id.clone();
+        let node_id_for_port = node_id.clone();
+
+        div()
+            .id(ElementId::Name(format!("agent_card_{}", node_id).into()))
+            .w(px(330.0))
+            .min_h(px(210.0))
+            .bg(DarkTechTheme::bg_panel())
+            .border_1()
+            .border_color(DarkTechTheme::border_default())
+            .rounded_lg()
+            .p_3()
+            .flex()
+            .flex_col()
+            .justify_between()
+            .gap_2()
+            .hover(|s| {
+                s.bg(DarkTechTheme::bg_panel_hover())
+                    .border_color(DarkTechTheme::accent_cyan())
+            })
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .child(
+                        // Header row
+                        div()
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap_1p5()
+                                    .child(
+                                        div()
+                                            .size(px(10.0))
+                                            .rounded_full()
+                                            .bg(status_halo)
+                                            .flex()
+                                            .items_center()
+                                            .justify_center()
+                                            .child(
+                                                div().size(px(5.0)).rounded_full().bg(status_color),
+                                            ),
+                                    )
+                                    .child(
+                                        div()
+                                            .px_1p5()
+                                            .py_0p5()
+                                            .rounded_xs()
+                                            .bg(rgba(0x38bdf818))
+                                            .border_1()
+                                            .border_color(rgba(0x38bdf850))
+                                            .text_size(px(9.0))
+                                            .font_weight(FontWeight::BOLD)
+                                            .text_color(DarkTechTheme::accent_cyan())
+                                            .child("⚡ AGENT"),
+                                    )
+                                    .child(
+                                        div()
+                                            .id(ElementId::Name(format!("agent_title_{}", node_id).into()))
+                                            .font_weight(FontWeight::BOLD)
+                                            .text_size(px(13.5))
+                                            .text_color(DarkTechTheme::text_primary())
+                                            .tooltip(crate::components::tooltip::tooltip(format!(
+                                                "Node ID: {}\nIP: {}\nOS: {} ({})",
+                                                node.node_id, node.remote_ip, node.os, node.arch
+                                            )))
+                                            .child(hostname),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .px_1p5()
+                                    .py_0p5()
+                                    .rounded_xs()
+                                    .bg(DarkTechTheme::bg_input())
+                                    .border_1()
+                                    .border_color(DarkTechTheme::border_muted())
+                                    .text_size(px(9.0))
+                                    .text_color(DarkTechTheme::text_muted())
+                                    .child(format!("{} · {}", node.os, node.arch)),
+                            ),
+                    )
+                    .child(
+                        // Metrics Row (CPU, RAM, DISK)
+                        div()
+                            .flex()
+                            .flex_row()
+                            .gap_1p5()
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .p_1p5()
+                                    .rounded_md()
+                                    .bg(DarkTechTheme::bg_input())
+                                    .border_1()
+                                    .border_color(DarkTechTheme::border_muted())
+                                    .flex()
+                                    .flex_col()
+                                    .child(
+                                        div()
+                                            .text_size(px(8.5))
+                                            .text_color(DarkTechTheme::text_muted())
+                                            .child("CPU"),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_size(px(12.0))
+                                            .font_weight(FontWeight::BOLD)
+                                            .font_family("Menlo")
+                                            .text_color(if cpu_pct > 80.0 {
+                                                DarkTechTheme::status_crit()
+                                            } else {
+                                                DarkTechTheme::accent_cyan()
+                                            })
+                                            .child(format!("{:.1}%", cpu_pct)),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .p_1p5()
+                                    .rounded_md()
+                                    .bg(DarkTechTheme::bg_input())
+                                    .border_1()
+                                    .border_color(DarkTechTheme::border_muted())
+                                    .flex()
+                                    .flex_col()
+                                    .child(
+                                        div()
+                                            .text_size(px(8.5))
+                                            .text_color(DarkTechTheme::text_muted())
+                                            .child("RAM"),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_size(px(12.0))
+                                            .font_weight(FontWeight::BOLD)
+                                            .font_family("Menlo")
+                                            .text_color(if mem_pct > 85.0 {
+                                                DarkTechTheme::status_crit()
+                                            } else {
+                                                DarkTechTheme::accent_emerald()
+                                            })
+                                            .child(format!("{:.1}%", mem_pct)),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .p_1p5()
+                                    .rounded_md()
+                                    .bg(DarkTechTheme::bg_input())
+                                    .border_1()
+                                    .border_color(DarkTechTheme::border_muted())
+                                    .flex()
+                                    .flex_col()
+                                    .child(
+                                        div()
+                                            .text_size(px(8.5))
+                                            .text_color(DarkTechTheme::text_muted())
+                                            .child("DISK"),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_size(px(12.0))
+                                            .font_weight(FontWeight::BOLD)
+                                            .font_family("Menlo")
+                                            .text_color(if disk_pct > 85.0 {
+                                                DarkTechTheme::status_crit()
+                                            } else {
+                                                DarkTechTheme::status_warn()
+                                            })
+                                            .child(format!("{:.1}%", disk_pct)),
+                                    ),
+                            ),
+                    )
+                    .child(
+                        // Network & Uptime row
+                        div()
+                            .flex()
+                            .justify_between()
+                            .items_center()
+                            .text_size(px(9.0))
+                            .text_color(DarkTechTheme::text_muted())
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap_1()
+                                    .child(
+                                        Icon::network()
+                                            .with_size(px(9.0))
+                                            .with_color(DarkTechTheme::text_muted()),
+                                    )
+                                    .child(format!("↓ {}  ↑ {}", net_rx, net_tx)),
+                            )
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap_1()
+                                    .child(
+                                        Icon::clock()
+                                            .with_size(px(9.0))
+                                            .with_color(DarkTechTheme::text_muted()),
+                                    )
+                                    .child(format!("up {}", uptime_str)),
+                            ),
+                    )
+                    .children(if !containers.is_empty() {
+                        Some(
+                            div()
+                                .p_1p5()
+                                .rounded_md()
+                                .bg(DarkTechTheme::bg_root())
+                                .border_1()
+                                .border_color(DarkTechTheme::border_muted())
+                                .flex()
+                                .flex_col()
+                                .gap_1()
+                                .children(containers.into_iter().take(2).map(|c| {
+                                    let c_id = c.id.clone();
+                                    let c_node_id = node_id.clone();
+                                    let is_running = c.state == "running";
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .justify_between()
+                                        .text_size(px(9.0))
+                                        .child(
+                                            div()
+                                                .flex()
+                                                .items_center()
+                                                .gap_1p5()
+                                                .child(
+                                                    div()
+                                                        .size(px(5.0))
+                                                        .rounded_full()
+                                                        .bg(if is_running {
+                                                            DarkTechTheme::accent_emerald()
+                                                        } else {
+                                                            DarkTechTheme::status_offline()
+                                                        }),
+                                                )
+                                                .child(
+                                                    div()
+                                                        .font_weight(FontWeight::MEDIUM)
+                                                        .text_color(DarkTechTheme::text_primary())
+                                                        .child(
+                                                            c.name
+                                                                .trim_start_matches('/')
+                                                                .to_string(),
+                                                        ),
+                                                ),
+                                        )
+                                        .child(
+                                            div()
+                                                .id(ElementId::Name(
+                                                    format!("btn_restart_c_{}_{}", c_node_id, c_id)
+                                                        .into(),
+                                                ))
+                                                .px_1p5()
+                                                .py_0p5()
+                                                .rounded_xs()
+                                                .bg(DarkTechTheme::bg_input())
+                                                .border_1()
+                                                .border_color(DarkTechTheme::border_default())
+                                                .text_size(px(8.5))
+                                                .text_color(DarkTechTheme::accent_cyan())
+                                                .hover(|s| s.bg(DarkTechTheme::bg_panel_hover()))
+                                                .cursor_pointer()
+                                                .child("↺ 重启")
+                                                .on_click(cx.listener(move |this, _, window, cx| {
+                                                    if let Some(cb) = &this.on_action {
+                                                        cb(
+                                                            FleetAction::TriggerAgentRemediation {
+                                                                node_id: c_node_id.clone(),
+                                                                action:
+                                                                    RemediationAction::RestartContainer {
+                                                                        container_id: c_id.clone(),
+                                                                    },
+                                                            },
+                                                            window,
+                                                            cx,
+                                                        );
+                                                    }
+                                                })),
+                                        )
+                                })),
+                        )
+                    } else {
+                        None
+                    }),
+            )
+            .child(
+                // Card Footer with 3 quick remediation buttons
+                div()
+                    .w_full()
+                    .pt_1()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap_1p5()
+                    .child(
+                        div()
+                            .id(ElementId::Name(format!("btn_agent_tty_{}", node_id).into()))
+                            .flex_1()
+                            .h(px(24.0))
+                            .rounded_md()
+                            .bg(DarkTechTheme::accent_cyan().opacity(0.15))
+                            .border_1()
+                            .border_color(DarkTechTheme::accent_cyan().opacity(0.5))
+                            .text_color(DarkTechTheme::accent_cyan())
+                            .font_weight(FontWeight::BOLD)
+                            .text_size(px(9.5))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .gap_1()
+                            .hover(|s| {
+                                s.bg(DarkTechTheme::accent_cyan().opacity(0.3))
+                                    .border_color(DarkTechTheme::accent_cyan())
+                            })
+                            .cursor_pointer()
+                            .child(
+                                Icon::terminal()
+                                    .with_size(px(10.0))
+                                    .with_color(DarkTechTheme::accent_cyan()),
+                            )
+                            .child("应急终端")
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                if let Some(cb) = &this.on_action {
+                                    cb(
+                                        FleetAction::OpenAgentTty {
+                                            node_id: node_id_for_tty.clone(),
+                                        },
+                                        window,
+                                        cx,
+                                    );
+                                }
+                            })),
+                    )
+                    .child(
+                        div()
+                            .id(ElementId::Name(
+                                format!("btn_agent_vacuum_{}", node_id).into(),
+                            ))
+                            .flex_1()
+                            .h(px(24.0))
+                            .rounded_md()
+                            .bg(DarkTechTheme::bg_input())
+                            .border_1()
+                            .border_color(DarkTechTheme::border_default())
+                            .text_color(DarkTechTheme::text_secondary())
+                            .text_size(px(9.5))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .gap_1()
+                            .hover(|s| {
+                                s.bg(DarkTechTheme::bg_panel_hover())
+                                    .text_color(DarkTechTheme::accent_emerald())
+                            })
+                            .cursor_pointer()
+                            .child(
+                                Icon::trash()
+                                    .with_size(px(9.5))
+                                    .with_color(DarkTechTheme::text_secondary()),
+                            )
+                            .child("清理日志")
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                if let Some(cb) = &this.on_action {
+                                    cb(
+                                        FleetAction::TriggerAgentRemediation {
+                                            node_id: node_id_for_vacuum.clone(),
+                                            action: RemediationAction::VacuumLogs {
+                                                max_size_mb: 50,
+                                            },
+                                        },
+                                        window,
+                                        cx,
+                                    );
+                                }
+                            })),
+                    )
+                    .child(
+                        div()
+                            .id(ElementId::Name(format!("btn_agent_port_{}", node_id).into()))
+                            .flex_1()
+                            .h(px(24.0))
+                            .rounded_md()
+                            .bg(DarkTechTheme::bg_input())
+                            .border_1()
+                            .border_color(DarkTechTheme::border_default())
+                            .text_color(DarkTechTheme::text_secondary())
+                            .text_size(px(9.5))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .gap_1()
+                            .hover(|s| {
+                                s.bg(DarkTechTheme::bg_panel_hover())
+                                    .text_color(DarkTechTheme::status_warn())
+                            })
+                            .cursor_pointer()
+                            .child(
+                                Icon::zap()
+                                    .with_size(px(9.5))
+                                    .with_color(DarkTechTheme::text_secondary()),
+                            )
+                            .child("释放端口")
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                if let Some(cb) = &this.on_action {
+                                    cb(
+                                        FleetAction::TriggerAgentRemediation {
+                                            node_id: node_id_for_port.clone(),
+                                            action: RemediationAction::KillPortConflict {
+                                                port: 8080,
+                                            },
+                                        },
+                                        window,
+                                        cx,
+                                    );
+                                }
+                            })),
+                    ),
+            )
     }
 
     pub fn set_hosts(&mut self, hosts: Vec<HostConfig>, cx: &mut Context<Self>) {
@@ -399,7 +914,7 @@ impl FleetView {
 
 impl Render for FleetView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let total_hosts = self.hosts.len();
+        let total_hosts = self.hosts.len() + self.control_plane_nodes.len();
         let selected_count = self.selected_hosts.len();
 
         let filtered_hosts: Vec<HostConfig> = self
@@ -504,6 +1019,29 @@ impl Render for FleetView {
                                         }
                                     }))
                                     .child(format!("+ {}", crate::t!("fleet.add_host"))),
+                            )
+                            // Prominent "+ ⚡ 探针入网" Button
+                            .child(
+                                div()
+                                    .id("btn_fleet_add_agent")
+                                    .h(px(22.0))
+                                    .px_2p5()
+                                    .rounded_sm()
+                                    .bg(DarkTechTheme::accent_emerald())
+                                    .text_color(DarkTechTheme::bg_root())
+                                    .font_weight(FontWeight::BOLD)
+                                    .text_size(px(10.5))
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .hover(|s| s.bg(DarkTechTheme::accent_cyan()))
+                                    .cursor_pointer()
+                                    .on_click(cx.listener(|this, _event: &ClickEvent, window, cx| {
+                                        if let Some(cb) = &this.on_action {
+                                            cb(FleetAction::AddNewAgentNode, window, cx);
+                                        }
+                                    }))
+                                    .child("+ ⚡ 探针入网"),
                             )
                             // Filter: All
                             .child(
@@ -768,6 +1306,27 @@ impl Render for FleetView {
                             .flex_wrap()
                             .gap_3()
                             .pb_6()
+                            .children({
+                                let filtered_agents: Vec<ManagedNodeDetail> = self
+                                    .control_plane_nodes
+                                    .iter()
+                                    .filter(|n| {
+                                        if self.search_query.is_empty() {
+                                            true
+                                        } else {
+                                            let q = self.search_query.to_lowercase();
+                                            n.node_id.to_lowercase().contains(&q)
+                                                || n.hostname.to_lowercase().contains(&q)
+                                                || n.remote_ip.to_lowercase().contains(&q)
+                                                || n.os.to_lowercase().contains(&q)
+                                        }
+                                    })
+                                    .cloned()
+                                    .collect();
+                                filtered_agents.into_iter().map(|node| {
+                                    self.render_control_plane_card(&node, cx)
+                                })
+                            })
                             .children(filtered_hosts.into_iter().enumerate().map(|(idx, host)| {
                         let host_id = host.id.clone();
                         let is_selected = self.selected_hosts.contains(&host_id);
@@ -2034,5 +2593,28 @@ mod tests {
         assert_eq!(disk_hist.len(), 30);
         assert_eq!(disk_hist[0], 15.0);
         assert_eq!(disk_hist[29], 44.0);
+    }
+
+    #[core::prelude::v1::test]
+    fn test_fleet_view_control_plane_nodes() {
+        let mut fleet = FleetView::new(Vec::new());
+        assert_eq!(fleet.control_plane_nodes.len(), 0);
+
+        let node = ManagedNodeDetail {
+            node_id: "node-vps-1".to_string(),
+            hostname: "vps-prod-tokyo".to_string(),
+            os: "linux".to_string(),
+            arch: "x86_64".to_string(),
+            version: "0.1.1".to_string(),
+            remote_ip: "1.2.3.4".to_string(),
+            status: NodeOnlineStatus::Online,
+            connected_at: 1710000000,
+            last_heartbeat_at: 1710000010,
+            latest_telemetry: None,
+        };
+
+        fleet.control_plane_nodes.push(node);
+        assert_eq!(fleet.control_plane_nodes.len(), 1);
+        assert_eq!(fleet.control_plane_nodes[0].node_id, "node-vps-1");
     }
 }

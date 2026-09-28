@@ -1,0 +1,16 @@
+services:
+  redash-agent:
+    image: ghcr.io/reways/redash-agent:latest
+    container_name: redash-agent
+    restart: always
+    pid: "host"
+    network_mode: "host"
+    environment:
+      - REDASH_HUB_URL=${REDASH_HUB_URL:-ws://127.0.0.1:8080/v1/agent/ws}
+      - REDASH_NODE_ID=${REDASH_NODE_ID:-}
+      - REDASH_AUTH_TOKEN=${REDASH_AUTH_TOKEN:-default-token}
+      - REDASH_TRUSTED_KEY=${REDASH_TRUSTED_KEY:-}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /proc:/host/proc:ro
+      - /:/host/root:ro

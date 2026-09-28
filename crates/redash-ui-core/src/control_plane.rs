@@ -4,6 +4,25 @@ use redash_types::{RemediationAction, SignedAction};
 pub struct ClientSigner;
 
 impl ClientSigner {
+    /// Generates an ED25519 keypair.
+    pub fn generate_keypair() -> (String, String) {
+        let mut seed = [0u8; 32];
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let pid = std::process::id();
+        let now_bytes = now.to_le_bytes();
+        let pid_bytes = pid.to_le_bytes();
+        for i in 0..16 {
+            seed[i] = now_bytes[i % now_bytes.len()] ^ 0x5a ^ (i as u8);
+        }
+        for i in 16..32 {
+            seed[i] = pid_bytes[(i - 16) % pid_bytes.len()] ^ 0xa5 ^ (i as u8);
+        }
+        Self::keypair_from_seed(&seed)
+    }
+
     /// Generates an ED25519 keypair from a 32-byte seed.
     /// Returns `(public_key_hex, private_key_hex)`.
     pub fn keypair_from_seed(seed: &[u8; 32]) -> (String, String) {
@@ -83,6 +102,34 @@ impl ClientSigner {
             cmd.push_str(&format!(" --key {}", key));
         }
 
+        cmd
+    }
+
+    /// Generates the one-line docker run command for containerized agent deployment.
+    pub fn format_docker_command(
+        hub_url: &str,
+        node_id: Option<&str>,
+        auth_token: &str,
+        public_key_hex: Option<&str>,
+    ) -> String {
+        let mut cmd = format!(
+            "docker run -d --name redash-agent --restart always --net host --pid host -v /var/run/docker.sock:/var/run/docker.sock:ro -e REDASH_HUB_URL={}",
+            hub_url
+        );
+
+        if let Some(id) = node_id {
+            cmd.push_str(&format!(" -e REDASH_NODE_ID={}", id));
+        }
+
+        if !auth_token.is_empty() && auth_token != "default-token" {
+            cmd.push_str(&format!(" -e REDASH_AUTH_TOKEN={}", auth_token));
+        }
+
+        if let Some(key) = public_key_hex {
+            cmd.push_str(&format!(" -e REDASH_TRUSTED_KEY={}", key));
+        }
+
+        cmd.push_str(" ghcr.io/reways/redash-agent:latest");
         cmd
     }
 }

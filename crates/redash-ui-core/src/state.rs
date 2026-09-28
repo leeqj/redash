@@ -146,6 +146,9 @@ pub enum UserAction {
     },
     ActionExecutionCompleted(redash_types::ActionResult),
     ToggleAgentEnrollModal,
+    SetEnrollNodeId(String),
+    SetEnrollToken(String),
+    SetEnrollTab(usize),
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -244,6 +247,9 @@ pub struct AppStateMachine {
     pub last_action_result: Option<redash_types::ActionResult>,
     pub show_agent_enroll_modal: bool,
     pub enroll_hub_url: String,
+    pub enroll_node_id_input: String,
+    pub enroll_token_input: String,
+    pub enroll_tab: usize,
 }
 
 impl Default for AppStateMachine {
@@ -317,6 +323,9 @@ impl AppStateMachine {
             last_action_result: None,
             show_agent_enroll_modal: false,
             enroll_hub_url: "ws://127.0.0.1:8080/v1/agent/ws".to_string(),
+            enroll_node_id_input: String::new(),
+            enroll_token_input: "default-token".to_string(),
+            enroll_tab: 0,
         }
     }
 
@@ -741,6 +750,15 @@ impl AppStateMachine {
             UserAction::ToggleAgentEnrollModal => {
                 self.show_agent_enroll_modal = !self.show_agent_enroll_modal;
             }
+            UserAction::SetEnrollNodeId(id) => {
+                self.enroll_node_id_input = id;
+            }
+            UserAction::SetEnrollToken(token) => {
+                self.enroll_token_input = token;
+            }
+            UserAction::SetEnrollTab(tab) => {
+                self.enroll_tab = tab;
+            }
         }
 
         effects
@@ -1046,6 +1064,38 @@ impl AppStateMachine {
 
     pub fn resize_terminal(&mut self, cols: usize, rows: usize) -> Vec<UiEffect> {
         self.handle_action(UserAction::ResizeTerminal { cols, rows })
+    }
+
+    pub fn generate_current_onboarding_command(&self) -> String {
+        let node_id = if self.enroll_node_id_input.trim().is_empty() {
+            None
+        } else {
+            Some(self.enroll_node_id_input.trim())
+        };
+        let pub_key = self.client_keypair.as_ref().map(|(pk, _)| pk.as_str());
+
+        crate::control_plane::ClientSigner::format_onboarding_command(
+            &self.enroll_hub_url,
+            node_id,
+            &self.enroll_token_input,
+            pub_key,
+        )
+    }
+
+    pub fn generate_current_docker_command(&self) -> String {
+        let node_id = if self.enroll_node_id_input.trim().is_empty() {
+            None
+        } else {
+            Some(self.enroll_node_id_input.trim())
+        };
+        let pub_key = self.client_keypair.as_ref().map(|(pk, _)| pk.as_str());
+
+        crate::control_plane::ClientSigner::format_docker_command(
+            &self.enroll_hub_url,
+            node_id,
+            &self.enroll_token_input,
+            pub_key,
+        )
     }
 
     pub fn current_palette(&self) -> &'static crate::theme::ThemePalette {
@@ -1725,6 +1775,17 @@ mod tests {
         state.handle_action(UserAction::ActionExecutionCompleted(res.clone()));
         assert_eq!(state.last_action_result, Some(res));
         assert_eq!(state.pending_action, None);
+
+        // 5. Enrollment command generation
+        state.handle_action(UserAction::SetEnrollNodeId("vps-node-1".to_string()));
+        state.handle_action(UserAction::SetEnrollToken("auth-token-xyz".to_string()));
+        let bash_cmd = state.generate_current_onboarding_command();
+        assert!(bash_cmd.contains("--node-id vps-node-1"));
+        assert!(bash_cmd.contains("--token auth-token-xyz"));
+
+        let docker_cmd = state.generate_current_docker_command();
+        assert!(docker_cmd.contains("-e REDASH_NODE_ID=vps-node-1"));
+        assert!(docker_cmd.contains("-e REDASH_AUTH_TOKEN=auth-token-xyz"));
     }
 }
 

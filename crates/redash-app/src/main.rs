@@ -23,7 +23,9 @@ use redash_core::config::{
 use redash_core::probe::ProbeScheduler;
 use redash_core::session::SessionManager;
 
+use crate::components::agent_enroll_modal::{AgentEnrollModal, AgentEnrollModalAction};
 use crate::components::host_modal::{HostModal, HostModalAction};
+use redash_ui_core::control_plane::ClientSigner;
 use crate::components::icon::Icon;
 use crate::components::theme::DarkTechTheme;
 use crate::views::{
@@ -121,6 +123,10 @@ struct ReDashApp {
     host_resolver_cache: Arc<std::sync::RwLock<std::collections::HashMap<HostId, HostConfig>>>,
     app_settings: Arc<tokio::sync::RwLock<AppSettings>>,
     active_modal: Option<Entity<HostModal>>,
+    agent_enroll_modal: Option<Entity<AgentEnrollModal>>,
+    client_keypair: Option<(String, String)>,
+    #[allow(dead_code)]
+    control_plane_nodes: Vec<redash_types::ManagedNodeDetail>,
     tabs: Vec<TabItem>,
     active_tab_index: usize,
 }
@@ -182,6 +188,9 @@ impl ReDashApp {
             host_resolver_cache,
             app_settings,
             active_modal: None,
+            agent_enroll_modal: None,
+            client_keypair: Some(ClientSigner::generate_keypair()),
+            control_plane_nodes: Vec::new(),
             tabs: vec![TabItem {
                 id: "fleet".to_string(),
                 title: "全局脉搏大盘".to_string(),
@@ -266,6 +275,21 @@ impl ReDashApp {
                                     app.reorder_hosts(host_ids, cx);
                                 });
                             }
+                            FleetAction::AddNewAgentNode => {
+                                app.update(cx, |app, cx| {
+                                    app.open_agent_enroll_modal(window, cx);
+                                });
+                            }
+                            FleetAction::TriggerAgentRemediation { node_id, action } => {
+                                app.update(cx, |app, cx| {
+                                    app.trigger_agent_remediation(&node_id, action, cx);
+                                });
+                            }
+                            FleetAction::OpenAgentTty { node_id } => {
+                                app.update(cx, |app, cx| {
+                                    app.open_agent_tty_tab(&node_id, window, cx);
+                                });
+                            }
                         }
                     }
                 });
@@ -348,6 +372,97 @@ impl ReDashApp {
             }
             view.set_hosts(hosts, cx);
         });
+    }
+
+    fn open_agent_enroll_modal(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        let pub_key = self.client_keypair.as_ref().map(|(pk, _)| pk.clone());
+        let hub_url = "http://127.0.0.1:8088/v1/control/ws-agent".to_string();
+        let modal = cx.new(|_cx| AgentEnrollModal::new(hub_url, pub_key));
+
+        let app_entity = cx.entity().downgrade();
+        cx.subscribe(
+            &modal,
+            move |_subscriber, _emitter, event: &AgentEnrollModalAction, cx| {
+                if let Some(app) = app_entity.upgrade() {
+                    match event {
+                        AgentEnrollModalAction::Close => {
+                            app.update(cx, |app, cx| {
+                                app.agent_enroll_modal = None;
+                                cx.notify();
+                            });
+                        }
+                        AgentEnrollModalAction::CopyCommand(_cmd) => {}
+                    }
+                }
+            },
+        )
+        .detach();
+
+        self.agent_enroll_modal = Some(modal);
+        cx.notify();
+    }
+
+    fn trigger_agent_remediation(
+        &mut self,
+        node_id: &str,
+        action: redash_types::RemediationAction,
+        _cx: &mut Context<Self>,
+    ) {
+        if let Some((_, ref priv_key)) = self.client_keypair {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            let nonce = format!("{:x}", now);
+            if let Ok(signed_action) = ClientSigner::sign_action(
+                priv_key,
+                node_id,
+                action,
+                now,
+                &nonce,
+            ) {
+                log::info!(
+                    "Dispatching signed zero-trust remediation action: action_id={}, node_id={}",
+                    signed_action.action_id,
+                    signed_action.node_id
+                );
+            }
+        }
+    }
+
+    fn open_agent_tty_tab(
+        &mut self,
+        node_id: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let tty_tab_id = format!("agent_tty_{}", node_id);
+        if let Some(idx) = self.tabs.iter().position(|t| t.id == tty_tab_id) {
+            self.active_tab_index = idx;
+            if let TabContent::Workbench(_, wb) = &self.tabs[idx].content {
+                wb.read(cx).focus_terminal(window, cx);
+            }
+            cx.notify();
+            return;
+        }
+
+        let mut dummy_host = HostConfig::new(
+            format!("⚡ {}", node_id),
+            node_id,
+            "root",
+        );
+        dummy_host.id = HostId(tty_tab_id.clone());
+        let session_mgr = Arc::clone(&self.session_mgr);
+        let workbench_view = cx.new(|cx| WorkbenchView::new(dummy_host, session_mgr, cx));
+        workbench_view.read(cx).focus_terminal(window, cx);
+
+        self.tabs.push(TabItem {
+            id: tty_tab_id,
+            title: format!("⚡ TTY · {}", node_id),
+            content: TabContent::Workbench(HostId(node_id.to_string()), workbench_view),
+        });
+        self.active_tab_index = self.tabs.len() - 1;
+        cx.notify();
     }
 
     fn open_add_host_modal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -1482,6 +1597,7 @@ impl Render for ReDashApp {
             )
             // 3. Modal Overlay if active
             .children(self.active_modal.clone())
+            .children(self.agent_enroll_modal.clone())
     }
 }
 
