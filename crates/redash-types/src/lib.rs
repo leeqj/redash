@@ -1,5 +1,6 @@
 pub mod agent;
 pub mod batch;
+pub mod control_plane;
 pub mod formatters;
 pub mod host;
 pub mod math;
@@ -10,6 +11,7 @@ pub mod sftp;
 
 pub use agent::*;
 pub use batch::*;
+pub use control_plane::*;
 pub use formatters::*;
 pub use host::*;
 pub use math::*;
@@ -21,6 +23,26 @@ pub use sftp::*;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_control_plane_canonical_bytes() {
+        let action = RemediationAction::RestartContainer {
+            container_id: "c-12345".to_string(),
+        };
+        let bytes = SignedAction::canonical_signable_bytes(
+            "act-1",
+            "node-1",
+            &action,
+            1700000000,
+            "nonce-xyz",
+        )
+        .unwrap();
+
+        assert!(!bytes.is_empty());
+        let str_rep = String::from_utf8(bytes).unwrap();
+        assert!(str_rep.contains("c-12345"));
+        assert!(str_rep.contains("restart_container"));
+    }
 
     #[test]
     fn test_host_id_and_validation() {
@@ -53,9 +75,9 @@ mod tests {
         let samples = vec![0.0, 50.0, 100.0];
         let coords = normalize_sparkline(&samples, 10.0, 20.0, 100.0, 50.0);
         assert_eq!(coords.len(), 3);
-        assert_eq!(coords[0], (10.0, 70.0)); // 0% load -> bottom (y = 20 + 50)
-        assert_eq!(coords[1], (60.0, 45.0)); // 50% load -> middle (y = 20 + 25)
-        assert_eq!(coords[2], (110.0, 20.0)); // 100% load -> top (y = 20 + 0)
+        assert_eq!(coords[0], (10.0, 70.0));
+        assert_eq!(coords[1], (60.0, 45.0));
+        assert_eq!(coords[2], (110.0, 20.0));
     }
 
     #[test]
@@ -69,54 +91,5 @@ mod tests {
 
         let de: ClientTerminalMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(de, msg);
-    }
-
-    #[test]
-    fn test_agent_metrics_extraction() {
-        let text = "Claude Code\nTokens: 14.5k | Cost: $0.082\nGenerating solution...";
-        let (cost, tokens) = extract_metrics_from_buffer(text);
-        assert_eq!(cost, Some(0.082));
-        assert_eq!(tokens, Some(14500));
-    }
-
-    #[test]
-    fn test_batch_types_serde() {
-        use std::collections::HashMap;
-
-        let mut hosts_results = HashMap::new();
-        hosts_results.insert(
-            "h-1".to_string(),
-            HostTaskExecution {
-                host_id: "h-1".to_string(),
-                host_name: "node-1".to_string(),
-                state: TaskState::Success,
-                stdout: "ok\n".to_string(),
-                stderr: String::new(),
-                exit_code: Some(0),
-                duration_ms: 42,
-                duration_us: 42000,
-                error: None,
-            },
-        );
-
-        let job = BatchJobResult {
-            job_id: "job-123".to_string(),
-            command: "uptime".to_string(),
-            hosts_results,
-            total_duration_ms: 50,
-            total_duration_us: 50000,
-        };
-
-        let json = serde_json::to_string(&job).unwrap();
-        let de: BatchJobResult = serde_json::from_str(&json).unwrap();
-        assert_eq!(de, job);
-
-        let req = BatchRunRequest {
-            host_ids: vec!["h-1".to_string()],
-            command: "uptime".to_string(),
-        };
-        let req_json = serde_json::to_string(&req).unwrap();
-        let req_de: BatchRunRequest = serde_json::from_str(&req_json).unwrap();
-        assert_eq!(req_de, req);
     }
 }

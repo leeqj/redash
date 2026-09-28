@@ -1,5 +1,6 @@
 pub mod alert_monitor;
 pub mod api;
+pub mod control_plane;
 pub mod state;
 pub mod web_assets;
 pub mod ws;
@@ -20,6 +21,7 @@ pub fn build_router(state: AppState) -> Router {
         // API and WebSocket Routes
         .merge(api::api_router())
         .merge(ws::ws_router())
+        .merge(control_plane::control_plane_router())
         .fallback(web_assets::not_found)
         .layer(CorsLayer::permissive())
         .with_state(state)

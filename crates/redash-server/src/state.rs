@@ -1,3 +1,4 @@
+use crate::control_plane::registry::ControlPlaneRegistry;
 use redash_core::config::{AppSettings, AppSettingsExt, HostConfig, HostId, HostStore};
 use redash_core::probe::NodeMetrics;
 use redash_core::session::SessionManager;
@@ -11,6 +12,7 @@ pub struct AppState {
     pub host_store: Arc<RwLock<HostStore>>,
     pub app_settings: Arc<RwLock<AppSettings>>,
     pub metrics_cache: Arc<RwLock<HashMap<HostId, NodeMetrics>>>,
+    pub control_plane: ControlPlaneRegistry,
 }
 
 impl AppState {
@@ -25,6 +27,7 @@ impl AppState {
             host_store: Arc::new(RwLock::new(store)),
             app_settings: Arc::new(RwLock::new(settings)),
             metrics_cache: Arc::new(RwLock::new(HashMap::new())),
+            control_plane: ControlPlaneRegistry::new(),
         }
     }
 

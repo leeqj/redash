@@ -7,6 +7,7 @@ members = [
     "crates/redash-app",
     "crates/redash-server",
     "crates/redash-web",
+    "crates/redash-agent",
 ]
 
 [workspace.package]

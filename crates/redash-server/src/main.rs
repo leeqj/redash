@@ -8,6 +8,10 @@ async fn main() -> anyhow::Result<()> {
 
     let state = AppState::new();
     redash_server::alert_monitor::start_alert_monitor(state.clone());
+    redash_server::control_plane::health_sentinel::start_health_sentinel(
+        state.clone(),
+        state.control_plane.clone(),
+    );
 
     let mut port = 8080;
     let mut host = "127.0.0.1".to_string();
@@ -42,15 +46,23 @@ async fn main() -> anyhow::Result<()> {
         format!("{}:{}/ws", host, port)
     );
     println!(
-        "  │  REST API:         http://{:<33} │",
-        format!("{}:{}/api", host, port)
+        "  │  Agent Inbound WS: ws://{:<35} │",
+        format!("{}:{}/v1/agent/ws", host, port)
+    );
+    println!(
+        "  │  Control Plane API:http://{:<33} │",
+        format!("{}:{}/v1/control", host, port)
     );
     println!("  │  Status:           Online (120 FPS High-Performance Web)   │");
     println!("  └─────────────────────────────────────────────────────────────┘");
     println!();
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app).await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await?;
 
     Ok(())
 }
