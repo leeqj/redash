@@ -106,6 +106,17 @@ impl TtyManager {
         }
     }
 
+    /// Resizes a running session viewport.
+    pub async fn resize_session(&self, session_id: &str, rows: u16, cols: u16) {
+        info!("Resizing emergency shell session {}: {}x{}", session_id, cols, rows);
+        let mut sessions = self.sessions.lock().await;
+        if let Some(stdin) = sessions.get_mut(session_id) {
+            let resize_cmd = format!("export COLUMNS={} LINES={}\n", cols, rows);
+            let _ = stdin.write_all(resize_cmd.as_bytes()).await;
+            let _ = stdin.flush().await;
+        }
+    }
+
     /// Closes a running session.
     pub async fn close_session(&self, session_id: &str) {
         info!("Closing emergency shell session: {}", session_id);

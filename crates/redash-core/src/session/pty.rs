@@ -118,7 +118,16 @@ impl PtyChannel {
                                     break;
                                 }
                             }
-                            Some(PtyCommand::Resize { .. }) => {}
+                            Some(PtyCommand::Resize { cols, rows }) => {
+                                let payload = serde_json::json!({
+                                    "type": "resize",
+                                    "cols": cols,
+                                    "rows": rows,
+                                });
+                                if ws_sink.send(Message::Text(payload.to_string().into())).await.is_err() {
+                                    break;
+                                }
+                            }
                             Some(PtyCommand::Close) | None => {
                                 let _ = ws_sink.close().await;
                                 break;

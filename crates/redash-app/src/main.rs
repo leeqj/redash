@@ -205,6 +205,7 @@ impl ReDashApp {
         // Wire FleetView actions
         app.bind_fleet_actions(fleet_view, cx);
         app.start_monitoring_loop(cx);
+        app.start_control_plane_sync_loop(cx);
 
         app
     }
@@ -379,7 +380,15 @@ impl ReDashApp {
 
     fn open_agent_enroll_modal(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         let pub_key = self.client_keypair.as_ref().map(|(pk, _)| pk.clone());
-        let hub_url = "http://127.0.0.1:8088/v1/control/ws-agent".to_string();
+        let http_base = self.session_mgr.hub_http_base();
+        let ws_base = if let Some(stripped) = http_base.strip_prefix("http://") {
+            format!("ws://{}", stripped)
+        } else if let Some(stripped) = http_base.strip_prefix("https://") {
+            format!("wss://{}", stripped)
+        } else {
+            http_base
+        };
+        let hub_url = format!("{}/v1/agent/ws", ws_base.trim_end_matches('/'));
         let modal = cx.new(|_cx| AgentEnrollModal::new(hub_url, pub_key));
 
         let app_entity = cx.entity().downgrade();
@@ -394,7 +403,12 @@ impl ReDashApp {
                                 cx.notify();
                             });
                         }
-                        AgentEnrollModalAction::CopyCommand(_cmd) => {}
+                        AgentEnrollModalAction::CopyCommand(_cmd) => {
+                            app.update(cx, |app, cx| {
+                                app.error_msg = Some("📋 接入安装命令已复制到剪贴板，请在受控节点终端执行".to_string());
+                                cx.notify();
+                            });
+                        }
                     }
                 }
             },
@@ -409,7 +423,7 @@ impl ReDashApp {
         &mut self,
         node_id: &str,
         action: redash_types::RemediationAction,
-        _cx: &mut Context<Self>,
+        cx: &mut Context<Self>,
     ) {
         if let Some((_, ref priv_key)) = self.client_keypair {
             let now = std::time::SystemTime::now()
@@ -424,11 +438,63 @@ impl ReDashApp {
                 now,
                 &nonce,
             ) {
-                log::info!(
-                    "Dispatching signed zero-trust remediation action: action_id={}, node_id={}",
-                    signed_action.action_id,
-                    signed_action.node_id
-                );
+                let action_summary = match &signed_action.action {
+                    redash_types::RemediationAction::PruneContainers => "清理废弃容器 (docker prune)".to_string(),
+                    redash_types::RemediationAction::RestartContainer { container_id } => format!("重启容器 {}", container_id),
+                    redash_types::RemediationAction::StopContainer { container_id } => format!("停止容器 {}", container_id),
+                    redash_types::RemediationAction::VacuumLogs { max_size_mb } => format!("清理日志 (限额 {}MB)", max_size_mb),
+                    redash_types::RemediationAction::KillPortConflict { port } => format!("释放冲突端口 :{}", port),
+                    redash_types::RemediationAction::KillProcess { pid, .. } => format!("终止进程 PID {}", pid),
+                    redash_types::RemediationAction::RestartService { service_name } => format!("重启服务 {}", service_name),
+                    _ => "执行自动化运维".to_string(),
+                };
+
+                self.error_msg = Some(format!("⚡ 正在下发治理指令 [{}]: {}...", signed_action.node_id, action_summary));
+                cx.notify();
+
+                let http_base = self.session_mgr.hub_http_base();
+                let url = format!("{}/v1/control/actions", http_base.trim_end_matches('/'));
+                if let Ok(payload) = serde_json::to_string(&signed_action) {
+                    cx.spawn(async move |this, cx| {
+                        let res = tokio::process::Command::new("curl")
+                            .arg("-s")
+                            .arg("-X")
+                            .arg("POST")
+                            .arg("-H")
+                            .arg("Content-Type: application/json")
+                            .arg("-d")
+                            .arg(&payload)
+                            .arg(&url)
+                            .output()
+                            .await;
+
+                        match res {
+                            Ok(out) if out.status.success() => {
+                                let body = String::from_utf8_lossy(&out.stdout);
+                                let _ = this.update(cx, |app, cx| {
+                                    app.error_msg = Some(format!("✅ 治理指令成功响应: {}", body.trim()));
+                                    cx.notify();
+                                });
+                            }
+                            Ok(out) => {
+                                let err_body = String::from_utf8_lossy(&out.stderr);
+                                let out_body = String::from_utf8_lossy(&out.stdout);
+                                let detail = if !err_body.trim().is_empty() { err_body } else { out_body };
+                                let _ = this.update(cx, |app, cx| {
+                                    app.error_msg = Some(format!("⚠️ 治理指令执行异常: {}", detail.trim()));
+                                    cx.notify();
+                                });
+                            }
+                            Err(e) => {
+                                let _ = this.update(cx, |app, cx| {
+                                    app.error_msg = Some(format!("❌ 指令分发失败: {}", e));
+                                    cx.notify();
+                                });
+                            }
+                        }
+                    })
+                    .detach();
+                }
             }
         }
     }
@@ -1134,6 +1200,38 @@ impl ReDashApp {
         }
     }
 
+    fn start_control_plane_sync_loop(&self, cx: &mut Context<Self>) {
+        let http_base = self.session_mgr.hub_http_base();
+        let url = format!("{}/v1/control/nodes", http_base.trim_end_matches('/'));
+        cx.spawn(async move |this, cx| {
+            loop {
+                smol::Timer::after(Duration::from_secs(2)).await;
+
+                let output = tokio::process::Command::new("curl")
+                    .arg("-s")
+                    .arg("--connect-timeout")
+                    .arg("1")
+                    .arg(&url)
+                    .output()
+                    .await;
+
+                if let Ok(out) = output
+                    && out.status.success()
+                    && let Ok(nodes) = serde_json::from_slice::<Vec<redash_types::ManagedNodeDetail>>(&out.stdout)
+                {
+                    let _ = this.update(cx, |app, cx| {
+                        app.control_plane_nodes = nodes.clone();
+                        app.fleet_view.update(cx, |fleet, cx| {
+                            fleet.set_control_plane_nodes(nodes, cx);
+                        });
+                        cx.notify();
+                    });
+                }
+            }
+        })
+        .detach();
+    }
+
     fn start_monitoring_loop(&self, cx: &mut Context<Self>) {
         use futures::StreamExt;
         let scheduler = Arc::clone(&self.probe_scheduler);
@@ -1285,10 +1383,46 @@ impl Render for ReDashApp {
             .overflow_hidden()
             .children(self.error_msg.as_ref().map(|message| {
                 div()
-                    .p_2()
-                    .text_sm()
-                    .text_color(DarkTechTheme::status_warn())
-                    .child(message.clone())
+                    .id("app_global_notification_banner")
+                    .px_3()
+                    .py_1p5()
+                    .bg(DarkTechTheme::bg_popup())
+                    .border_b_1()
+                    .border_color(DarkTechTheme::border_muted())
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .justify_between()
+                    .child(
+                        div()
+                            .text_size(px(11.0))
+                            .text_color(if message.starts_with("❌") {
+                                DarkTechTheme::status_crit()
+                            } else if message.starts_with("⚠️") {
+                                DarkTechTheme::status_warn()
+                            } else if message.starts_with("✅") || message.starts_with("📋") {
+                                DarkTechTheme::status_online()
+                            } else {
+                                DarkTechTheme::accent_cyan()
+                            })
+                            .child(message.clone()),
+                    )
+                    .child(
+                        div()
+                            .id("btn_dismiss_notification_banner")
+                            .px_1p5()
+                            .py_0p5()
+                            .rounded_xs()
+                            .cursor_pointer()
+                            .text_size(px(10.0))
+                            .text_color(DarkTechTheme::text_muted())
+                            .hover(|s| s.text_color(DarkTechTheme::text_primary()))
+                            .child("✕")
+                            .on_click(cx.listener(|this, _, _window, cx| {
+                                this.error_msg = None;
+                                cx.notify();
+                            })),
+                    )
             }))
             // 1. Full-Width Top Window Bar (increased 10% to 30px)
             .child(

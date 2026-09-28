@@ -50,6 +50,23 @@ impl SessionManager {
         *self.hub_ws_base.write().unwrap() = Some(url.into());
     }
 
+    pub fn hub_http_base(&self) -> String {
+        let base = self
+            .hub_ws_base
+            .read()
+            .unwrap()
+            .clone()
+            .unwrap_or_else(|| "http://127.0.0.1:8080".to_string());
+        let base = base.trim_end_matches('/');
+        if let Some(stripped) = base.strip_prefix("ws://") {
+            format!("http://{}", stripped)
+        } else if let Some(stripped) = base.strip_prefix("wss://") {
+            format!("https://{}", stripped)
+        } else {
+            base.to_string()
+        }
+    }
+
     pub fn with_host_resolver(self, resolver: HostResolver) -> Self {
         *self.host_resolver.write().unwrap() = Some(resolver);
         self
@@ -393,9 +410,16 @@ impl SessionManager {
                 .read()
                 .unwrap()
                 .clone()
-                .unwrap_or_else(|| "ws://127.0.0.1:8088".to_string());
+                .unwrap_or_else(|| "ws://127.0.0.1:8080".to_string());
             let base = base.trim_end_matches('/');
-            let ws_url = format!("{}/v1/control/tty/{}", base, node_id);
+            let ws_base = if let Some(stripped) = base.strip_prefix("http://") {
+                format!("ws://{}", stripped)
+            } else if let Some(stripped) = base.strip_prefix("https://") {
+                format!("wss://{}", stripped)
+            } else {
+                base.to_string()
+            };
+            let ws_url = format!("{}/v1/control/tty/{}", ws_base, node_id);
             return PtyChannel::new_reverse_ws(&ws_url, cols, rows, output_tx).await;
         }
 

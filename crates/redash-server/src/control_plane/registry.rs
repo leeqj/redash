@@ -269,6 +269,19 @@ impl ControlPlaneRegistry {
         }
     }
 
+    pub async fn resize_node_tty(&self, node_id: &str, session_id: &str, rows: u16, cols: u16) {
+        if let Some(session) = self.agents.get(node_id) {
+            let _ = session
+                .command_tx
+                .send(HubToAgentMessage::TtyResize {
+                    session_id: session_id.to_string(),
+                    rows,
+                    cols,
+                })
+                .await;
+        }
+    }
+
     pub async fn close_node_tty(&self, node_id: &str, session_id: &str) {
         if let Some(session) = self.agents.get(node_id) {
             let _ = session

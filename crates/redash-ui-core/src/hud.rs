@@ -16,6 +16,7 @@ pub struct AmbientFleetSummary {
     pub led_color_hex: &'static str,
     pub summary_label: String,
     pub status_tooltip: String,
+    pub worst_culprit_name: Option<String>,
 }
 
 impl AmbientFleetSummary {
@@ -129,11 +130,11 @@ where
             (label, tip)
         }
         MeterLevel::Warning => {
-            let culprit = worst_culprit.map(|(n, r)| format!("{} ({})", n, r)).unwrap_or_else(|| "负载偏高".to_string());
+            let culprit = worst_culprit.as_ref().map(|(n, r)| format!("{} ({})", n, r)).unwrap_or_else(|| "负载偏高".to_string());
             (format!("⚠️ 警告: {}", culprit), format!("存在异常波动 - 最高 CPU: {:.0}%, 内存: {:.0}%", max_cpu, max_mem))
         }
         MeterLevel::Critical => {
-            let culprit = worst_culprit.map(|(n, r)| format!("{} [{}]", n, r)).unwrap_or_else(|| "离线或重度过载".to_string());
+            let culprit = worst_culprit.as_ref().map(|(n, r)| format!("{} [{}]", n, r)).unwrap_or_else(|| "离线或重度过载".to_string());
             (format!("🚨 告警: {}", culprit), format!("严重告警: {} 台离线, 最高负载: {:.0}%", offline_nodes, max_cpu.max(max_mem)))
         }
     };
@@ -150,6 +151,7 @@ where
         led_color_hex,
         summary_label,
         status_tooltip,
+        worst_culprit_name: worst_culprit.map(|(n, _)| n),
     }
 }
 
@@ -232,5 +234,6 @@ mod tests {
         assert_eq!(summary.led_color_hex, "#ef4444");
         assert!(summary.summary_label.contains("告警"));
         assert!(summary.summary_label.contains("vps-frankfurt"));
+        assert_eq!(summary.worst_culprit_name, Some("vps-frankfurt".to_string()));
     }
 }

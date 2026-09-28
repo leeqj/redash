@@ -227,6 +227,9 @@ impl AgentClient {
                         Ok(HubToAgentMessage::TtyInput { session_id, data }) => {
                             tty_mgr.write_input(&session_id, &data).await;
                         }
+                        Ok(HubToAgentMessage::TtyResize { session_id, rows, cols }) => {
+                            tty_mgr.resize_session(&session_id, rows, cols).await;
+                        }
                         Ok(HubToAgentMessage::TtyClose { session_id }) => {
                             tty_mgr.close_session(&session_id).await;
                         }

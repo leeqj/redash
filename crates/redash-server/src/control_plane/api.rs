@@ -102,6 +102,14 @@ async fn handle_client_tty(
     while let Some(msg_res) = client_stream.next().await {
         match msg_res {
             Ok(WsMessage::Text(text)) => {
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text)
+                    && v.get("type").and_then(|t| t.as_str()) == Some("resize")
+                {
+                    let cols = v.get("cols").and_then(|c| c.as_u64()).unwrap_or(80) as u16;
+                    let rows = v.get("rows").and_then(|r| r.as_u64()).unwrap_or(24) as u16;
+                    reg_in.resize_node_tty(&nid_in, &sid_in, rows, cols).await;
+                    continue;
+                }
                 reg_in.send_tty_input_to_node(&nid_in, &sid_in, text.as_bytes().to_vec()).await;
             }
             Ok(WsMessage::Binary(bytes)) => {

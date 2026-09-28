@@ -250,6 +250,8 @@ impl FleetView {
         let node_id_for_tty = node_id.clone();
         let node_id_for_vacuum = node_id.clone();
         let node_id_for_port = node_id.clone();
+        let node_id_for_prune = node_id.clone();
+        let has_dead_containers = containers.iter().any(|c| c.state != "running");
 
         div()
             .id(ElementId::Name(format!("agent_card_{}", node_id).into()))
@@ -473,6 +475,50 @@ impl FleetView {
                                 .flex()
                                 .flex_col()
                                 .gap_1()
+                                .children(if has_dead_containers {
+                                    Some(
+                                        div()
+                                            .flex()
+                                            .items_center()
+                                            .justify_between()
+                                            .pb_0p5()
+                                            .child(
+                                                div()
+                                                    .text_size(px(8.5))
+                                                    .text_color(DarkTechTheme::status_warn())
+                                                    .child("⚠️ 发现异常退出的容器"),
+                                            )
+                                            .child(
+                                                div()
+                                                    .id(ElementId::Name(format!("btn_prune_{}", node_id_for_prune).into()))
+                                                    .px_1p5()
+                                                    .py_0p5()
+                                                    .rounded_xs()
+                                                    .bg(DarkTechTheme::status_warn().opacity(0.15))
+                                                    .border_1()
+                                                    .border_color(DarkTechTheme::status_warn().opacity(0.4))
+                                                    .text_size(px(8.0))
+                                                    .text_color(DarkTechTheme::status_warn())
+                                                    .hover(|s| s.bg(DarkTechTheme::status_warn().opacity(0.25)))
+                                                    .cursor_pointer()
+                                                    .child("🧹 立即清理")
+                                                    .on_click(cx.listener(move |this, _, window, cx| {
+                                                        if let Some(cb) = &this.on_action {
+                                                            cb(
+                                                                FleetAction::TriggerAgentRemediation {
+                                                                    node_id: node_id_for_prune.clone(),
+                                                                    action: RemediationAction::PruneContainers,
+                                                                },
+                                                                window,
+                                                                cx,
+                                                            );
+                                                        }
+                                                    })),
+                                            ),
+                                    )
+                                } else {
+                                    None
+                                })
                                 .children(containers.into_iter().take(2).map(|c| {
                                     let c_id = c.id.clone();
                                     let c_node_id = node_id.clone();
@@ -1023,6 +1069,21 @@ impl Render for FleetView {
                                         MeterLevel::Critical => hsla(0.0 / 360.0, 0.84, 0.60, 0.15),
                                     })
                                     .tooltip(crate::components::tooltip::tooltip(ambient.status_tooltip))
+                                    .cursor_pointer()
+                                    .hover(|s| s.opacity(0.85))
+                                    .on_click(cx.listener({
+                                        let culprit_opt = ambient.worst_culprit_name.clone();
+                                        move |this, _, _window, cx| {
+                                            if let Some(culprit) = &culprit_opt {
+                                                if this.search_query == *culprit {
+                                                    this.search_query.clear();
+                                                } else {
+                                                    this.search_query = culprit.clone();
+                                                }
+                                                cx.notify();
+                                            }
+                                        }
+                                    }))
                                     .child(
                                         div()
                                             .w(px(5.5))
