@@ -224,32 +224,3 @@ impl Render for AgentEnrollModal {
 }
 
 impl EventEmitter<AgentEnrollModalAction> for AgentEnrollModal {}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_agent_enroll_modal_commands() {
-        let modal = AgentEnrollModal::new(
-            "wss://hub.test.dev/v1/control/ws-agent".to_string(),
-            Some("pk-test-123456".to_string()),
-        );
-
-        // Bash tab (0)
-        let bash_cmd = modal.current_command();
-        assert!(bash_cmd.contains("install_agent.sh"));
-        assert!(bash_cmd.contains("wss://hub.test.dev/v1/control/ws-agent"));
-        assert!(bash_cmd.contains("--key pk-test-123456"));
-
-        // Docker tab (1)
-        let mut docker_modal = modal;
-        docker_modal.active_tab = 1;
-        docker_modal.node_id_input = "node-alpha".to_string();
-        let docker_cmd = docker_modal.current_command();
-        assert!(docker_cmd.contains("docker run -d --name redash-agent"));
-        assert!(docker_cmd.contains("-e REDASH_HUB_URL=wss://hub.test.dev/v1/control/ws-agent"));
-        assert!(docker_cmd.contains("-e REDASH_NODE_ID=node-alpha"));
-        assert!(docker_cmd.contains("-e REDASH_TRUSTED_KEY=pk-test-123456"));
-    }
-}

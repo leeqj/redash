@@ -1,3 +1,57 @@
+/// Pure function determining the next telemetry sampling cadence based on real-time load volatility.
+/// - Returns 1s under critical stress (CPU >= 80%, RAM >= 85%), rapid metric shifts (ΔRAM >= 2%, ΔCPU >= 5%),
+///   or container state transitions/unhealthy states.
+/// - Returns base_interval (typically 5s~10s) during steady state to minimize CPU & bandwidth usage.
+pub fn calculate_adaptive_cadence(
+    base_interval_secs: u64,
+    current: &redash_types::AgentTelemetry,
+    last_cpu: Option<f32>,
+    last_mem_pct: Option<f32>,
+    last_containers_snapshot: Option<&[(String, String)]>,
+) -> Duration {
+    let cur_cpu = current.cpu_usage_pct;
+    let cur_mem_pct = current.memory_usage_pct();
+
+    // 1. Critical threshold stress (> 80% CPU or > 85% RAM)
+    if cur_cpu >= 80.0 || cur_mem_pct >= 85.0 {
+        return Duration::from_secs(1);
+    }
+
+    // 2. Metric rapid delta (CPU change >= 5.0% or RAM change >= 2.0%)
+    if let Some(prev_cpu) = last_cpu
+        && (cur_cpu - prev_cpu).abs() >= 5.0
+    {
+        return Duration::from_secs(1);
+    }
+    if let Some(prev_mem) = last_mem_pct
+        && (cur_mem_pct - prev_mem).abs() >= 2.0
+    {
+        return Duration::from_secs(1);
+    }
+
+    // 3. Container state transitions or unhealthy containers
+    let cur_containers: Vec<(String, String)> = current
+        .containers
+        .iter()
+        .map(|c| (c.id.clone(), c.state.clone()))
+        .collect();
+
+    // If any container is not in running state, trigger high frequency
+    if cur_containers.iter().any(|(_, s)| s != "running") {
+        return Duration::from_secs(1);
+    }
+
+    // If container list or state transitioned compared to previous sample
+    if let Some(prev) = last_containers_snapshot
+        && prev != cur_containers.as_slice()
+    {
+        return Duration::from_secs(1);
+    }
+
+    // Steady state: low load & stable metrics
+    Duration::from_secs(base_interval_secs.max(1))
+}
+
 use crate::collector::TelemetryCollector;
 use crate::remediation::RemediationEngine;
 use crate::tty::TtyManager;
@@ -98,15 +152,37 @@ impl AgentClient {
             }
         });
 
-        // 3. Telemetry reporting task
+        // 3. Telemetry reporting task with Adaptive Cadence
         let node_id = self.config.node_id.clone();
         let interval_secs = self.config.telemetry_interval_secs.max(1);
         let tx_telemetry = outbound_tx.clone();
 
         let telemetry_task = tokio::spawn(async move {
             let mut collector = TelemetryCollector::new(node_id);
+            let mut last_cpu: Option<f32> = None;
+            let mut last_mem_pct: Option<f32> = None;
+            let mut last_containers: Option<Vec<(String, String)>> = None;
+
             loop {
                 let snapshot = collector.collect().await;
+                let cadence = calculate_adaptive_cadence(
+                    interval_secs,
+                    &snapshot,
+                    last_cpu,
+                    last_mem_pct,
+                    last_containers.as_deref(),
+                );
+
+                last_cpu = Some(snapshot.cpu_usage_pct);
+                last_mem_pct = Some(snapshot.memory_usage_pct());
+                last_containers = Some(
+                    snapshot
+                        .containers
+                        .iter()
+                        .map(|c| (c.id.clone(), c.state.clone()))
+                        .collect(),
+                );
+
                 if tx_telemetry
                     .send(AgentToHubMessage::Telemetry(snapshot))
                     .await
@@ -114,7 +190,7 @@ impl AgentClient {
                 {
                     break;
                 }
-                sleep(Duration::from_secs(interval_secs)).await;
+                sleep(cadence).await;
             }
         });
 

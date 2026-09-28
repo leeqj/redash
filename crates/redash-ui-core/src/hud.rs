@@ -1,4 +1,4 @@
-use redash_types::math::MeterLevel;
+pub use redash_types::math::MeterLevel;
 use redash_types::NodeOnlineStatus;
 
 /// Lightweight summary designed specifically for ambient menu bar items,
@@ -24,125 +24,143 @@ impl AmbientFleetSummary {
     }
 }
 
+use redash_types::{HostConfig, ManagedNodeDetail, NodeMetrics};
+
+/// Computes an instant, zero-allocation ambient health summary across all monitored nodes.
+pub fn evaluate_fleet_ambient_summary<'a, I>(
+    control_plane_nodes: &[ManagedNodeDetail],
+    hosts: &[HostConfig],
+    metrics_iter: I,
+) -> AmbientFleetSummary
+where
+    I: IntoIterator<Item = (&'a str, &'a NodeMetrics)>,
+{
+    let total_nodes = control_plane_nodes.len().max(hosts.len());
+    let mut online_nodes = 0;
+    let mut stale_nodes = 0;
+    let mut offline_nodes = 0;
+
+    let mut max_cpu = 0.0f32;
+    let mut max_mem = 0.0f32;
+    let mut max_disk = 0.0f32;
+    let mut worst_culprit: Option<(String, String)> = None; // (NodeName, Reason)
+
+    // Evaluate Control-Plane agent nodes
+    for node in control_plane_nodes {
+        match node.status {
+            NodeOnlineStatus::Online => online_nodes += 1,
+            NodeOnlineStatus::Stale => {
+                stale_nodes += 1;
+                if worst_culprit.is_none() {
+                    worst_culprit = Some((node.hostname.clone(), "心跳延迟 (Stale)".to_string()));
+                }
+            }
+            NodeOnlineStatus::Offline => {
+                offline_nodes += 1;
+                worst_culprit = Some((node.hostname.clone(), "失联离线 (Offline)".to_string()));
+            }
+        }
+
+        if let Some(t) = &node.latest_telemetry {
+            if t.cpu_usage_pct > max_cpu {
+                max_cpu = t.cpu_usage_pct;
+                if t.cpu_usage_pct >= 90.0 {
+                    worst_culprit = Some((node.hostname.clone(), format!("CPU {:.1}%", t.cpu_usage_pct)));
+                }
+            }
+            let mem_pct = t.memory_usage_pct();
+            if mem_pct > max_mem {
+                max_mem = mem_pct;
+                if mem_pct >= 90.0 {
+                    worst_culprit = Some((node.hostname.clone(), format!("内存 {:.1}%", mem_pct)));
+                }
+            }
+            let disk_pct = t.disk_usage_pct();
+            if disk_pct > max_disk {
+                max_disk = disk_pct;
+                if disk_pct >= 90.0 {
+                    worst_culprit = Some((node.hostname.clone(), format!("磁盘 {:.1}%", disk_pct)));
+                }
+            }
+        }
+    }
+
+    // Also evaluate traditional SSH hosts if present
+    for (host_id, m) in metrics_iter {
+        if m.cpu.usage_percent > max_cpu {
+            max_cpu = m.cpu.usage_percent;
+        }
+        if m.mem.usage_percent > max_mem {
+            max_mem = m.mem.usage_percent;
+        }
+        for d in &m.disks {
+            if d.usage_percent > max_disk {
+                max_disk = d.usage_percent;
+            }
+        }
+        if m.cpu.usage_percent >= 90.0 || m.mem.usage_percent >= 90.0 {
+            let name = hosts.iter().find(|h| h.id.0 == host_id).map(|h| h.name.clone()).unwrap_or_else(|| host_id.to_string());
+            worst_culprit = Some((name, "负载严重超标".to_string()));
+        }
+    }
+
+    let overall_level = if offline_nodes > 0 || max_cpu >= 90.0 || max_mem >= 90.0 || max_disk >= 95.0 {
+        MeterLevel::Critical
+    } else if stale_nodes > 0 || max_cpu >= 75.0 || max_mem >= 80.0 || max_disk >= 85.0 {
+        MeterLevel::Warning
+    } else {
+        MeterLevel::Normal
+    };
+
+    let led_color_hex = match overall_level {
+        MeterLevel::Normal => "#10b981",   // Emerald green
+        MeterLevel::Warning => "#f59e0b",  // Amber warning
+        MeterLevel::Critical => "#ef4444", // Rose red alert
+    };
+
+    let (summary_label, status_tooltip) = match overall_level {
+        MeterLevel::Normal => {
+            let label = if total_nodes > 0 {
+                format!("{} 节点全部正常", total_nodes)
+            } else {
+                "无受控节点".to_string()
+            };
+            let tip = format!("全网正常 (最高 CPU: {:.0}%, 内存: {:.0}%)", max_cpu, max_mem);
+            (label, tip)
+        }
+        MeterLevel::Warning => {
+            let culprit = worst_culprit.map(|(n, r)| format!("{} ({})", n, r)).unwrap_or_else(|| "负载偏高".to_string());
+            (format!("⚠️ 警告: {}", culprit), format!("存在异常波动 - 最高 CPU: {:.0}%, 内存: {:.0}%", max_cpu, max_mem))
+        }
+        MeterLevel::Critical => {
+            let culprit = worst_culprit.map(|(n, r)| format!("{} [{}]", n, r)).unwrap_or_else(|| "离线或重度过载".to_string());
+            (format!("🚨 告警: {}", culprit), format!("严重告警: {} 台离线, 最高负载: {:.0}%", offline_nodes, max_cpu.max(max_mem)))
+        }
+    };
+
+    AmbientFleetSummary {
+        total_nodes,
+        online_nodes,
+        stale_nodes,
+        offline_nodes,
+        max_cpu_pct: max_cpu,
+        max_mem_pct: max_mem,
+        max_disk_pct: max_disk,
+        overall_level,
+        led_color_hex,
+        summary_label,
+        status_tooltip,
+    }
+}
+
 impl crate::state::AppStateMachine {
     /// Computes an instant, zero-allocation ambient health summary across all monitored nodes.
     pub fn evaluate_ambient_summary(&self) -> AmbientFleetSummary {
-        let total_nodes = self.control_plane_nodes.len().max(self.hosts.len());
-        let mut online_nodes = 0;
-        let mut stale_nodes = 0;
-        let mut offline_nodes = 0;
-
-        let mut max_cpu = 0.0f32;
-        let mut max_mem = 0.0f32;
-        let mut max_disk = 0.0f32;
-        let mut worst_culprit: Option<(String, String)> = None; // (NodeName, Reason)
-
-        // Evaluate Control-Plane agent nodes
-        for node in &self.control_plane_nodes {
-            match node.status {
-                NodeOnlineStatus::Online => online_nodes += 1,
-                NodeOnlineStatus::Stale => {
-                    stale_nodes += 1;
-                    if worst_culprit.is_none() {
-                        worst_culprit = Some((node.hostname.clone(), "心跳延迟 (Stale)".to_string()));
-                    }
-                }
-                NodeOnlineStatus::Offline => {
-                    offline_nodes += 1;
-                    worst_culprit = Some((node.hostname.clone(), "失联离线 (Offline)".to_string()));
-                }
-            }
-
-            if let Some(t) = &node.latest_telemetry {
-                if t.cpu_usage_pct > max_cpu {
-                    max_cpu = t.cpu_usage_pct;
-                    if t.cpu_usage_pct >= 90.0 {
-                        worst_culprit = Some((node.hostname.clone(), format!("CPU {:.1}%", t.cpu_usage_pct)));
-                    }
-                }
-                let mem_pct = t.memory_usage_pct();
-                if mem_pct > max_mem {
-                    max_mem = mem_pct;
-                    if mem_pct >= 90.0 {
-                        worst_culprit = Some((node.hostname.clone(), format!("内存 {:.1}%", mem_pct)));
-                    }
-                }
-                let disk_pct = t.disk_usage_pct();
-                if disk_pct > max_disk {
-                    max_disk = disk_pct;
-                    if disk_pct >= 90.0 {
-                        worst_culprit = Some((node.hostname.clone(), format!("磁盘 {:.1}%", disk_pct)));
-                    }
-                }
-            }
-        }
-
-        // Also evaluate traditional SSH hosts if present
-        for (host_id, m) in &self.metrics {
-            if m.cpu.usage_percent > max_cpu {
-                max_cpu = m.cpu.usage_percent;
-            }
-            if m.mem.usage_percent > max_mem {
-                max_mem = m.mem.usage_percent;
-            }
-            for d in &m.disks {
-                if d.usage_percent > max_disk {
-                    max_disk = d.usage_percent;
-                }
-            }
-            if m.cpu.usage_percent >= 90.0 || m.mem.usage_percent >= 90.0 {
-                let name = self.hosts.iter().find(|h| h.id.0 == *host_id).map(|h| h.name.clone()).unwrap_or_else(|| host_id.clone());
-                worst_culprit = Some((name, "负载严重超标".to_string()));
-            }
-        }
-
-        let overall_level = if offline_nodes > 0 || max_cpu >= 90.0 || max_mem >= 90.0 || max_disk >= 95.0 {
-            MeterLevel::Critical
-        } else if stale_nodes > 0 || max_cpu >= 75.0 || max_mem >= 80.0 || max_disk >= 85.0 {
-            MeterLevel::Warning
-        } else {
-            MeterLevel::Normal
-        };
-
-        let led_color_hex = match overall_level {
-            MeterLevel::Normal => "#10b981",   // Emerald green
-            MeterLevel::Warning => "#f59e0b",  // Amber warning
-            MeterLevel::Critical => "#ef4444", // Rose red alert
-        };
-
-        let (summary_label, status_tooltip) = match overall_level {
-            MeterLevel::Normal => {
-                let label = if total_nodes > 0 {
-                    format!("{} 节点全部正常", total_nodes)
-                } else {
-                    "无受控节点".to_string()
-                };
-                let tip = format!("全网正常 (最高 CPU: {:.0}%, 内存: {:.0}%)", max_cpu, max_mem);
-                (label, tip)
-            }
-            MeterLevel::Warning => {
-                let culprit = worst_culprit.map(|(n, r)| format!("{} ({})", n, r)).unwrap_or_else(|| "负载偏高".to_string());
-                (format!("⚠️ 警告: {}", culprit), format!("存在异常波动 - 最高 CPU: {:.0}%, 内存: {:.0}%", max_cpu, max_mem))
-            }
-            MeterLevel::Critical => {
-                let culprit = worst_culprit.map(|(n, r)| format!("{} [{}]", n, r)).unwrap_or_else(|| "离线或重度过载".to_string());
-                (format!("🚨 告警: {}", culprit), format!("严重告警: {} 台离线, 最高负载: {:.0}%", offline_nodes, max_cpu.max(max_mem)))
-            }
-        };
-
-        AmbientFleetSummary {
-            total_nodes,
-            online_nodes,
-            stale_nodes,
-            offline_nodes,
-            max_cpu_pct: max_cpu,
-            max_mem_pct: max_mem,
-            max_disk_pct: max_disk,
-            overall_level,
-            led_color_hex,
-            summary_label,
-            status_tooltip,
-        }
+        evaluate_fleet_ambient_summary(
+            &self.control_plane_nodes,
+            &self.hosts,
+            self.metrics.iter().map(|(k, v)| (k.as_str(), v)),
+        )
     }
 }
 

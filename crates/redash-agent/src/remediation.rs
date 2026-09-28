@@ -9,6 +9,7 @@ use tokio::process::Command;
 pub struct RemediationEngine {
     trusted_public_key: Option<VerifyingKey>,
     docker_client: DockerClient,
+    seen_nonces: std::sync::Mutex<std::collections::HashMap<String, u64>>,
 }
 
 impl RemediationEngine {
@@ -26,12 +27,13 @@ impl RemediationEngine {
         Ok(Self {
             trusted_public_key: key,
             docker_client: DockerClient::new(),
+            seen_nonces: std::sync::Mutex::new(std::collections::HashMap::new()),
         })
     }
 
     /// Verifies cryptographic signature and execution timestamp freshness.
     pub fn verify_signature(&self, action: &SignedAction) -> Result<(), String> {
-        // 1. Replay attack check: must be within 60 seconds
+        // 1. Timestamp freshness check: must be within 60 seconds of current time
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
@@ -44,7 +46,27 @@ impl RemediationEngine {
             ));
         }
 
-        // 2. Cryptographic signature check if trusted key is configured
+        // 2. Sliding window Nonce replay attack defense
+        {
+            let mut nonces = self
+                .seen_nonces
+                .lock()
+                .map_err(|e| format!("Lock failure: {}", e))?;
+
+            // Prune expired nonces older than 120 seconds
+            nonces.retain(|_, ts| now.saturating_sub(*ts) <= 120);
+
+            if nonces.contains_key(&action.nonce) {
+                return Err(format!(
+                    "Action rejected: duplicate nonce '{}' detected (replay attack thwarted)",
+                    action.nonce
+                ));
+            }
+
+            nonces.insert(action.nonce.clone(), action.timestamp);
+        }
+
+        // 3. Cryptographic signature check if trusted key is configured
         if let Some(trusted_key) = &self.trusted_public_key {
             let canonical_bytes = SignedAction::canonical_signable_bytes(
                 &action.action_id,

@@ -22,6 +22,7 @@ pub struct SessionManager {
     sessions: Arc<RwLock<HashMap<HostId, CachedSession>>>,
     connect_locks: Arc<tokio::sync::Mutex<HashMap<HostId, Arc<tokio::sync::Mutex<()>>>>>,
     host_resolver: Arc<std::sync::RwLock<Option<HostResolver>>>,
+    hub_ws_base: Arc<std::sync::RwLock<Option<String>>>,
 }
 
 impl Default for SessionManager {
@@ -36,7 +37,17 @@ impl SessionManager {
             sessions: Arc::new(RwLock::new(HashMap::new())),
             connect_locks: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             host_resolver: Arc::new(std::sync::RwLock::new(None)),
+            hub_ws_base: Arc::new(std::sync::RwLock::new(None)),
         }
+    }
+
+    pub fn with_hub_ws_base(self, url: impl Into<String>) -> Self {
+        *self.hub_ws_base.write().unwrap() = Some(url.into());
+        self
+    }
+
+    pub fn set_hub_ws_base(&self, url: impl Into<String>) {
+        *self.hub_ws_base.write().unwrap() = Some(url.into());
     }
 
     pub fn with_host_resolver(self, resolver: HostResolver) -> Self {
@@ -371,6 +382,23 @@ impl SessionManager {
         rows: u32,
         output_tx: mpsc::Sender<Vec<u8>>,
     ) -> Result<PtyChannel> {
+        if host.id.0.starts_with("agent_tty_") || host.hostname.starts_with("agent://") {
+            let node_id = host
+                .id
+                .0
+                .strip_prefix("agent_tty_")
+                .unwrap_or_else(|| host.hostname.strip_prefix("agent://").unwrap_or(&host.hostname));
+            let base = self
+                .hub_ws_base
+                .read()
+                .unwrap()
+                .clone()
+                .unwrap_or_else(|| "ws://127.0.0.1:8088".to_string());
+            let base = base.trim_end_matches('/');
+            let ws_url = format!("{}/v1/control/tty/{}", base, node_id);
+            return PtyChannel::new_reverse_ws(&ws_url, cols, rows, output_tx).await;
+        }
+
         let handle = self.get_or_connect(host).await?;
         PtyChannel::new(&handle, cols, rows, output_tx).await
     }

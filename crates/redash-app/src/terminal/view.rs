@@ -1028,10 +1028,13 @@ impl Render for TerminalView {
                                         DarkTechTheme::text_muted()
                                     })
                                     .child(if let Some(pty) = &self.pty_channel {
-                                        format!(
-                                            "PTY: Connected (xterm-256color) [Ch #{}]",
-                                            pty.channel_id
-                                        )
+                                        match pty.channel_id {
+                                            Some(ch) => format!(
+                                                "PTY: Connected (xterm-256color) [Ch #{}]",
+                                                ch
+                                            ),
+                                            None => "PTY: Connected (Reverse WebTTY)".to_string(),
+                                        }
                                     } else {
                                         "PTY: Disconnected".to_string()
                                     }),

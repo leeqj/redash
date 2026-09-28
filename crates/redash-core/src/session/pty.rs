@@ -12,7 +12,7 @@ pub enum PtyCommand {
 
 pub struct PtyChannel {
     cmd_tx: mpsc::Sender<PtyCommand>,
-    pub channel_id: ChannelId,
+    pub channel_id: Option<ChannelId>,
 }
 
 impl PtyChannel {
@@ -85,6 +85,67 @@ impl PtyChannel {
                 }
             }
             let _ = channel.close().await;
+        });
+
+        Ok(Self { cmd_tx, channel_id: Some(channel_id) })
+    }
+
+    pub async fn new_reverse_ws(
+        ws_url: &str,
+        _cols: u32,
+        _rows: u32,
+        output_tx: mpsc::Sender<Vec<u8>>,
+    ) -> Result<Self> {
+        use futures::{SinkExt, StreamExt};
+        use tokio_tungstenite::connect_async;
+        use tokio_tungstenite::tungstenite::Message;
+
+        let (ws_stream, _) = connect_async(ws_url)
+            .await
+            .context("Failed to connect to Reverse WebTTY WebSocket bridge")?;
+
+        let (mut ws_sink, mut ws_reader) = ws_stream.split();
+        let (cmd_tx, mut cmd_rx) = mpsc::channel::<PtyCommand>(256);
+        let channel_id = None;
+
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    cmd = cmd_rx.recv() => {
+                        match cmd {
+                            Some(PtyCommand::Data(data)) => {
+                                if ws_sink.send(Message::Binary(data.into())).await.is_err() {
+                                    break;
+                                }
+                            }
+                            Some(PtyCommand::Resize { .. }) => {}
+                            Some(PtyCommand::Close) | None => {
+                                let _ = ws_sink.close().await;
+                                break;
+                            }
+                        }
+                    }
+                    msg = ws_reader.next() => {
+                        match msg {
+                            Some(Ok(Message::Binary(data))) => {
+                                if output_tx.send(data.to_vec()).await.is_err() {
+                                    break;
+                                }
+                            }
+                            Some(Ok(Message::Text(text))) => {
+                                if output_tx.send(text.as_bytes().to_vec()).await.is_err() {
+                                    break;
+                                }
+                            }
+                            Some(Ok(Message::Close(_))) | Some(Err(_)) | None => {
+                                break;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            let _ = ws_sink.close().await;
         });
 
         Ok(Self { cmd_tx, channel_id })

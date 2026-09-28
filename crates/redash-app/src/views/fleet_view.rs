@@ -10,6 +10,7 @@ use crate::{t, t_fmt};
 use redash_core::config::{HostConfig, HostId, MissingCredential, TargetOs};
 use redash_core::probe::NodeMetrics;
 use redash_types::{format_bytes_rate, ManagedNodeDetail, NodeOnlineStatus, RemediationAction};
+use redash_ui_core::hud::{evaluate_fleet_ambient_summary, AmbientFleetSummary, MeterLevel};
 
 fn format_agent_uptime(secs: u64) -> String {
     let days = secs / 86400;
@@ -182,6 +183,14 @@ impl FleetView {
         }
     }
 
+    pub fn evaluate_ambient_summary(&self) -> AmbientFleetSummary {
+        evaluate_fleet_ambient_summary(
+            &self.control_plane_nodes,
+            &self.hosts,
+            self.metrics.iter().map(|(k, v)| (k.0.as_str(), v)),
+        )
+    }
+
     #[allow(dead_code)]
     pub fn set_control_plane_nodes(
         &mut self,
@@ -204,7 +213,7 @@ impl FleetView {
             node.hostname.clone()
         };
         let status_color = match node.status {
-            NodeOnlineStatus::Online => DarkTechTheme::accent_emerald(),
+            NodeOnlineStatus::Online => DarkTechTheme::status_online(),
             NodeOnlineStatus::Stale => DarkTechTheme::status_warn(),
             NodeOnlineStatus::Offline => DarkTechTheme::status_crit(),
         };
@@ -385,7 +394,7 @@ impl FleetView {
                                             .text_color(if mem_pct > 85.0 {
                                                 DarkTechTheme::status_crit()
                                             } else {
-                                                DarkTechTheme::accent_emerald()
+                                                DarkTechTheme::status_online()
                                             })
                                             .child(format!("{:.1}%", mem_pct)),
                                     ),
@@ -483,7 +492,7 @@ impl FleetView {
                                                         .size(px(5.0))
                                                         .rounded_full()
                                                         .bg(if is_running {
-                                                            DarkTechTheme::accent_emerald()
+                                                            DarkTechTheme::status_online()
                                                         } else {
                                                             DarkTechTheme::status_offline()
                                                         }),
@@ -605,7 +614,7 @@ impl FleetView {
                             .gap_1()
                             .hover(|s| {
                                 s.bg(DarkTechTheme::bg_panel_hover())
-                                    .text_color(DarkTechTheme::accent_emerald())
+                                    .text_color(DarkTechTheme::status_online())
                             })
                             .cursor_pointer()
                             .child(
@@ -916,6 +925,7 @@ impl Render for FleetView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let total_hosts = self.hosts.len() + self.control_plane_nodes.len();
         let selected_count = self.selected_hosts.len();
+        let ambient = self.evaluate_ambient_summary();
 
         let filtered_hosts: Vec<HostConfig> = self
             .hosts
@@ -989,6 +999,52 @@ impl Render for FleetView {
                                         total = total_hosts.to_string(),
                                         selected = selected_count.to_string(),
                                     )),
+                            )
+                            // Ambient Pulse HUD Indicator Pill
+                            .child(
+                                div()
+                                    .id("pill_ambient_pulse_hud")
+                                    .h(px(18.0))
+                                    .px_2()
+                                    .rounded_full()
+                                    .flex()
+                                    .flex_row()
+                                    .items_center()
+                                    .gap_1p5()
+                                    .border_1()
+                                    .border_color(match ambient.overall_level {
+                                        MeterLevel::Normal => hsla(160.0 / 360.0, 0.84, 0.39, 0.35),
+                                        MeterLevel::Warning => hsla(38.0 / 360.0, 0.92, 0.50, 0.45),
+                                        MeterLevel::Critical => hsla(0.0 / 360.0, 0.84, 0.60, 0.50),
+                                    })
+                                    .bg(match ambient.overall_level {
+                                        MeterLevel::Normal => hsla(160.0 / 360.0, 0.84, 0.39, 0.08),
+                                        MeterLevel::Warning => hsla(38.0 / 360.0, 0.92, 0.50, 0.12),
+                                        MeterLevel::Critical => hsla(0.0 / 360.0, 0.84, 0.60, 0.15),
+                                    })
+                                    .tooltip(crate::components::tooltip::tooltip(ambient.status_tooltip))
+                                    .child(
+                                        div()
+                                            .w(px(5.5))
+                                            .h(px(5.5))
+                                            .rounded_full()
+                                            .bg(match ambient.overall_level {
+                                                MeterLevel::Normal => DarkTechTheme::status_online(),
+                                                MeterLevel::Warning => DarkTechTheme::status_warn(),
+                                                MeterLevel::Critical => DarkTechTheme::status_crit(),
+                                            }),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_size(px(9.5))
+                                            .font_weight(FontWeight::MEDIUM)
+                                            .text_color(match ambient.overall_level {
+                                                MeterLevel::Normal => DarkTechTheme::status_online(),
+                                                MeterLevel::Warning => DarkTechTheme::status_warn(),
+                                                MeterLevel::Critical => DarkTechTheme::status_crit(),
+                                            })
+                                            .child(ambient.summary_label),
+                                    ),
                             ),
                     )
                     .child(
@@ -1027,7 +1083,7 @@ impl Render for FleetView {
                                     .h(px(22.0))
                                     .px_2p5()
                                     .rounded_sm()
-                                    .bg(DarkTechTheme::accent_emerald())
+                                    .bg(DarkTechTheme::status_online())
                                     .text_color(DarkTechTheme::bg_root())
                                     .font_weight(FontWeight::BOLD)
                                     .text_size(px(10.5))
@@ -1375,7 +1431,7 @@ impl Render for FleetView {
                         let (rtt_text, rtt_color, rtt_bg) = match rtt_ms_val {
                             Some(ms) if ms < 80 => (
                                 format!("{}ms", ms),
-                                DarkTechTheme::accent_emerald(),
+                                DarkTechTheme::status_online(),
                                 rgba(0x10b98122),
                             ),
                             Some(ms) if ms < 250 => (
@@ -1860,7 +1916,7 @@ impl Render for FleetView {
                                                                     .font_weight(FontWeight::BOLD)
                                                                     .border_1()
                                                                     .border_color(if is_all_active {
-                                                                        DarkTechTheme::accent_emerald()
+                                                                        DarkTechTheme::status_online()
                                                                     } else {
                                                                         DarkTechTheme::border_muted()
                                                                     })
@@ -1870,7 +1926,7 @@ impl Render for FleetView {
                                                                         hsla(0.0, 0.0, 0.0, 0.0)
                                                                     })
                                                                     .text_color(if is_all_active {
-                                                                        DarkTechTheme::accent_emerald()
+                                                                        DarkTechTheme::status_online()
                                                                     } else {
                                                                         DarkTechTheme::text_muted()
                                                                     })

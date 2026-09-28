@@ -4,6 +4,38 @@ use redash_types::{RemediationAction, SignedAction};
 pub struct ClientSigner;
 
 impl ClientSigner {
+    /// Loads an ED25519 keypair from a JSON file, or generates a new one and persists it.
+    /// Ensures consistent key identity across application launches.
+    pub fn load_or_generate_keypair(key_path: &std::path::Path) -> (String, String) {
+        #[derive(serde::Serialize, serde::Deserialize)]
+        struct KeyPairStore {
+            public_key: String,
+            private_key: String,
+        }
+
+        if let Ok(content) = std::fs::read_to_string(key_path)
+            && let Ok(store) = serde_json::from_str::<KeyPairStore>(&content)
+            && store.public_key.len() == 64
+            && store.private_key.len() == 64
+        {
+            return (store.public_key, store.private_key);
+        }
+
+        let (pub_hex, priv_hex) = Self::generate_keypair();
+        if let Some(parent) = key_path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let store = KeyPairStore {
+            public_key: pub_hex.clone(),
+            private_key: priv_hex.clone(),
+        };
+        if let Ok(json) = serde_json::to_string_pretty(&store) {
+            let _ = std::fs::write(key_path, json);
+        }
+
+        (pub_hex, priv_hex)
+    }
+
     /// Generates an ED25519 keypair.
     pub fn generate_keypair() -> (String, String) {
         let mut seed = [0u8; 32];

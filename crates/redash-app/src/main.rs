@@ -189,7 +189,10 @@ impl ReDashApp {
             app_settings,
             active_modal: None,
             agent_enroll_modal: None,
-            client_keypair: Some(ClientSigner::generate_keypair()),
+            client_keypair: {
+                let key_path = HostStore::default_path().with_file_name("control_plane_key.json");
+                Some(ClientSigner::load_or_generate_keypair(&key_path))
+            },
             control_plane_nodes: Vec::new(),
             tabs: vec![TabItem {
                 id: "fleet".to_string(),
