@@ -1,5 +1,5 @@
 use crate::collector::docker::DockerClient;
-use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+use ed25519_dalek::{Signature, VerifyingKey};
 use log::{error, info, warn};
 use redash_types::{ActionResult, RemediationAction, SignedAction};
 use std::process::Stdio;
@@ -46,28 +46,9 @@ impl RemediationEngine {
             ));
         }
 
-        // 2. Sliding window Nonce replay attack defense
-        {
-            let mut nonces = self
-                .seen_nonces
-                .lock()
-                .map_err(|e| format!("Lock failure: {}", e))?;
-
-            // Prune expired nonces older than 120 seconds
-            nonces.retain(|_, ts| now.saturating_sub(*ts) <= 120);
-
-            if nonces.contains_key(&action.nonce) {
-                return Err(format!(
-                    "Action rejected: duplicate nonce '{}' detected (replay attack thwarted)",
-                    action.nonce
-                ));
-            }
-
-            nonces.insert(action.nonce.clone(), action.timestamp);
-        }
-
         // 3. Cryptographic signature check if trusted key is configured
-        if let Some(trusted_key) = &self.trusted_public_key {
+        let trusted_key = self.trusted_public_key.as_ref().ok_or("Remote commands disabled: no trusted client key configured")?;
+        {
             let canonical_bytes = SignedAction::canonical_signable_bytes(
                 &action.action_id,
                 &action.node_id,
@@ -87,8 +68,29 @@ impl RemediationEngine {
             let signature = Signature::from_bytes(&sig_array);
 
             trusted_key
-                .verify(&canonical_bytes, &signature)
+                .verify_strict(&canonical_bytes, &signature)
                 .map_err(|e| format!("Cryptographic signature verification failed: {}", e))?;
+        }
+
+        if action.nonce.is_empty() || action.nonce.len() > 128 { return Err("Invalid nonce".into()); }
+        // 2. Sliding window Nonce replay attack defense
+        {
+            let mut nonces = self
+                .seen_nonces
+                .lock()
+                .map_err(|e| format!("Lock failure: {}", e))?;
+
+            // Prune expired nonces older than 120 seconds
+            nonces.retain(|_, ts| now.saturating_sub(*ts) <= 120);
+
+            if nonces.contains_key(&action.nonce) {
+                return Err(format!(
+                    "Action rejected: duplicate nonce '{}' detected (replay attack thwarted)",
+                    action.nonce
+                ));
+            }
+
+            nonces.insert(action.nonce.clone(), action.timestamp);
         }
 
         Ok(())
@@ -175,22 +177,36 @@ impl RemediationEngine {
                 run_shell_cmd(&cmd_str).await
             }
             RemediationAction::KillProcess { pid, signal } => {
-                let res = unsafe { libc::kill(pid as libc::pid_t, signal) };
-                if res == 0 {
-                    (
-                        true,
-                        Some(0),
-                        format!("Signal {} sent to PID {}", signal, pid),
-                        String::new(),
-                    )
-                } else {
-                    let err = std::io::Error::last_os_error();
+                let my_pid = std::process::id();
+                let ppid = unsafe { libc::getppid() as u32 };
+                if pid == 0 || pid == 1 || pid == my_pid || pid == ppid {
                     (
                         false,
-                        Some(res),
+                        Some(403),
                         String::new(),
-                        format!("Failed to signal PID {}: {}", pid, err),
+                        format!(
+                            "Self-preservation alert: Refusing to kill protected PID {} (current agent PID={}, parent PID={})",
+                            pid, my_pid, ppid
+                        ),
                     )
+                } else {
+                    let res = unsafe { libc::kill(pid as libc::pid_t, signal) };
+                    if res == 0 {
+                        (
+                            true,
+                            Some(0),
+                            format!("Signal {} sent to PID {}", signal, pid),
+                            String::new(),
+                        )
+                    } else {
+                        let err = std::io::Error::last_os_error();
+                        (
+                            false,
+                            Some(res),
+                            String::new(),
+                            format!("Failed to signal PID {}: {}", pid, err),
+                        )
+                    }
                 }
             }
             RemediationAction::ExecuteRecipe { name, script } => {
@@ -208,9 +224,34 @@ impl RemediationEngine {
                 run_shell_cmd(&cmd).await
             }
             RemediationAction::KillPortConflict { port } => {
-                info!("Killing process occupying port {}", port);
-                let cmd = format!("fuser -k -9 {}/tcp || lsof -ti :{} | xargs -r kill -9", port, port);
-                run_shell_cmd(&cmd).await
+                info!("Releasing port conflict on port {}", port);
+                if port == 0 {
+                    (false, Some(400), String::new(), "Invalid port 0".to_string())
+                } else if port == 22 {
+                    (
+                        false,
+                        Some(403),
+                        String::new(),
+                        "Self-preservation alert: Port 22 is reserved for SSH remote management and protected against termination".to_string(),
+                    )
+                } else {
+                    let my_pid = std::process::id();
+                    let ppid = unsafe { libc::getppid() as u32 };
+                    let cmd = format!(
+                        "PIDS=$(lsof -ti :{port} 2>/dev/null || ss -lptn 'sport = :{port}' 2>/dev/null | grep -o 'pid=[0-9]*' | cut -d= -f2 | sort -u); \
+                         if [ -z \"$PIDS\" ]; then echo 'No process found occupying port {port}'; exit 0; fi; \
+                         KILLED=0; \
+                         for p in $PIDS; do \
+                           if [ \"$p\" -eq 1 ] || [ \"$p\" -eq {my_pid} ] || [ \"$p\" -eq {ppid} ]; then \
+                             echo \"Skipping protected PID $p\"; \
+                           else \
+                             kill -9 \"$p\" 2>/dev/null && KILLED=$((KILLED + 1)); \
+                           fi; \
+                         done; \
+                         echo \"Released port {port} by terminating $KILLED process(es)\""
+                    );
+                    run_shell_cmd(&cmd).await
+                }
             }
             RemediationAction::TtyOpen { .. }
             | RemediationAction::TtyInput { .. }
@@ -263,3 +304,61 @@ async fn run_shell_cmd(cmd: &str) -> (bool, Option<i32>, String, String) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_self_preservation_safeguards() {
+        let engine = RemediationEngine::new(None).unwrap();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        // 1. Test killing PID 1 is blocked
+        let res_pid1 = engine.execute(SignedAction {
+            action_id: "test-pid-1".to_string(),
+            node_id: "node-1".to_string(),
+            action: RemediationAction::KillProcess { pid: 1, signal: 9 },
+            timestamp: now,
+            nonce: "nonce-pid-1".to_string(),
+            public_key_hex: String::new(),
+            signature_hex: String::new(),
+        }).await;
+        assert_eq!(res_pid1.exit_code, Some(403));
+        assert!(!res_pid1.success);
+        assert!(res_pid1.stderr.contains("Refusing to kill protected PID"));
+
+        // 2. Test killing self PID is blocked
+        let my_pid = std::process::id();
+        let res_self = engine.execute(SignedAction {
+            action_id: "test-self-pid".to_string(),
+            node_id: "node-1".to_string(),
+            action: RemediationAction::KillProcess { pid: my_pid, signal: 9 },
+            timestamp: now,
+            nonce: "nonce-self-pid".to_string(),
+            public_key_hex: String::new(),
+            signature_hex: String::new(),
+        }).await;
+        assert_eq!(res_self.exit_code, Some(403));
+        assert!(!res_self.success);
+        assert!(res_self.stderr.contains("Refusing to kill protected PID"));
+
+        // 3. Test killing port 22 is blocked
+        let res_port22 = engine.execute(SignedAction {
+            action_id: "test-port-22".to_string(),
+            node_id: "node-1".to_string(),
+            action: RemediationAction::KillPortConflict { port: 22 },
+            timestamp: now,
+            nonce: "nonce-port-22".to_string(),
+            public_key_hex: String::new(),
+            signature_hex: String::new(),
+        }).await;
+        assert_eq!(res_port22.exit_code, Some(403));
+        assert!(!res_port22.success);
+        assert!(res_port22.stderr.contains("Port 22 is reserved for SSH"));
+    }
+}
+

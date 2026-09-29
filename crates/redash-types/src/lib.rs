@@ -1,5 +1,6 @@
 pub mod agent;
 pub mod batch;
+pub mod buffer;
 pub mod control_plane;
 pub mod formatters;
 pub mod host;
@@ -11,6 +12,7 @@ pub mod sftp;
 
 pub use agent::*;
 pub use batch::*;
+pub use buffer::*;
 pub use control_plane::*;
 pub use formatters::*;
 pub use host::*;
@@ -92,4 +94,70 @@ mod tests {
         let de: ClientTerminalMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(de, msg);
     }
+
+    #[test]
+    fn test_e2ee_envelope_and_handshake_serde() {
+        let env = EncryptedEnvelope::new("sess-1", 1, "001122", "aabbcc", "ddeeff");
+        let json = serde_json::to_string(&env).unwrap();
+        let de: EncryptedEnvelope = serde_json::from_str(&json).unwrap();
+        assert_eq!(de, env);
+
+        let init = E2eeHandshakeInit {
+            session_id: "sess-1".to_string(),
+            client_ephemeral_pubkey_hex: "010203".to_string(),
+            timestamp: 1700000000,
+            nonce: "nonce-1".to_string(),
+            signature_hex: "sig-1".to_string(),
+        };
+        let init_json = serde_json::to_string(&init).unwrap();
+        let de_init: E2eeHandshakeInit = serde_json::from_str(&init_json).unwrap();
+        assert_eq!(de_init, init);
+
+        let ack = E2eeHandshakeAck {
+            session_id: "sess-1".to_string(),
+            agent_ephemeral_pubkey_hex: "040506".to_string(),
+            success: true,
+            error_msg: None,
+        };
+        let ack_json = serde_json::to_string(&ack).unwrap();
+        let de_ack: E2eeHandshakeAck = serde_json::from_str(&ack_json).unwrap();
+        assert_eq!(de_ack, ack);
+
+        // Test LanBeacon
+        let beacon = LanBeacon {
+            node_id: "node-lan-1".to_string(),
+            hostname: "mac-studio.local".to_string(),
+            direct_port: 43210,
+            version: "0.1.1-beta".to_string(),
+            timestamp: 1700000000,
+        };
+        let beacon_json = serde_json::to_string(&beacon).unwrap();
+        let de_beacon: LanBeacon = serde_json::from_str(&beacon_json).unwrap();
+        assert_eq!(de_beacon, beacon);
+
+        // Test DevicePairingPayload URI roundtrip
+        let payload = DevicePairingPayload {
+            hub_url: "ws://192.168.1.10:8080".to_string(),
+            client_public_key: "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890".to_string(),
+            device_name: "MacBook Pro M3".to_string(),
+            auth_token: Some("secret-token-xyz".to_string()),
+            node_id: Some("node-prod-01".to_string()),
+            created_at: 1700000000,
+        };
+        let uri = payload.to_uri();
+        assert!(uri.starts_with("redash://pair?data="));
+        let decoded = DevicePairingPayload::from_uri(&uri).unwrap();
+        assert_eq!(decoded, payload);
+
+        // Test to_websocket_endpoint
+        assert_eq!(to_websocket_endpoint("http://127.0.0.1:8080/"), "ws://127.0.0.1:8080");
+        assert_eq!(to_websocket_endpoint("https://hub.example.com"), "wss://hub.example.com");
+        assert_eq!(to_websocket_endpoint("ws://custom:9000"), "ws://custom:9000");
+
+        // Test shell helpers
+        assert!(!default_system_shell().is_empty());
+        assert!(format_pty_resize_command(24, 80).contains("COLUMNS=80 LINES=24"));
+    }
 }
+
+

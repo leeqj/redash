@@ -43,14 +43,50 @@ impl AgentEnrollModal {
                 &self.auth_token_input,
                 self.public_key_hex.as_deref(),
             )
-        } else {
+        } else if self.active_tab == 1 {
             ClientSigner::format_docker_command(
                 &self.hub_url,
                 node_id,
                 &self.auth_token_input,
                 self.public_key_hex.as_deref(),
             )
+        } else {
+            let payload = redash_types::DevicePairingPayload {
+                hub_url: self.hub_url.clone(),
+                client_public_key: self.public_key_hex.clone().unwrap_or_default(),
+                device_name: format!("{} Desktop", std::env::consts::OS),
+                auth_token: Some(self.auth_token_input.clone()),
+                node_id: node_id.map(|s| s.to_string()),
+                created_at: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs(),
+            };
+            payload.to_uri()
         }
+    }
+
+    pub fn current_qr_ascii(&self) -> Option<String> {
+        if self.active_tab != 2 {
+            return None;
+        }
+        let node_id = if self.node_id_input.trim().is_empty() {
+            None
+        } else {
+            Some(self.node_id_input.trim())
+        };
+        let payload = redash_types::DevicePairingPayload {
+            hub_url: self.hub_url.clone(),
+            client_public_key: self.public_key_hex.clone().unwrap_or_default(),
+            device_name: format!("{} Desktop", std::env::consts::OS),
+            auth_token: Some(self.auth_token_input.clone()),
+            node_id: node_id.map(|s| s.to_string()),
+            created_at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+        };
+        redash_ui_core::generate_pairing_qr_ascii(&payload).ok()
     }
 }
 
@@ -58,6 +94,7 @@ impl Render for AgentEnrollModal {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let cmd = self.current_command();
         let cmd_clone = cmd.clone();
+        let qr_ascii = self.current_qr_ascii();
         let active_tab = self.active_tab;
         let copied = self.copied;
 
@@ -97,7 +134,7 @@ impl Render for AgentEnrollModal {
                                             .text_base()
                                             .font_weight(FontWeight::SEMIBOLD)
                                             .text_color(DarkTechTheme::text_primary())
-                                            .child("添加受控节点 (Zero-Trust Agent Onboarding)"),
+                                            .child("受控节点入网与移动端配对 (Zero-Trust)"),
                                     ),
                             )
                             .child(
@@ -123,7 +160,11 @@ impl Render for AgentEnrollModal {
                             .border_color(rgba(0x38bdf840))
                             .text_xs()
                             .text_color(DarkTechTheme::accent_cyan())
-                            .child("探针采用主动向外出站长连接（443 WSS），无论是大内网 NAS 还是海外多云 VPS，均无需公网 IP 与端口映射即可秒级入网。"),
+                            .child(if active_tab == 2 {
+                                "使用移动端扫描二维码，或复制配对链接在手机 App 中导入，即可直接对齐公钥实现端到端加密与节点漫游。"
+                            } else {
+                                "探针采用主动向外出站长连接（443 WSS），无论是大内网 NAS 还是海外多云 VPS，均无需公网 IP 与端口映射即可秒级入网。"
+                            }),
                     )
                     .child(
                         // Mode selection tabs
@@ -141,7 +182,7 @@ impl Render for AgentEnrollModal {
                                     .font_weight(FontWeight::MEDIUM)
                                     .bg(if active_tab == 0 { DarkTechTheme::accent_cyan() } else { DarkTechTheme::bg_input() })
                                     .text_color(if active_tab == 0 { DarkTechTheme::bg_root() } else { DarkTechTheme::text_secondary() })
-                                    .child("Shell 脚本一键安装 (推荐)")
+                                    .child("Shell 脚本安装")
                                     .on_click(cx.listener(|this, _, _, _| {
                                         this.active_tab = 0;
                                         this.copied = false;
@@ -158,28 +199,65 @@ impl Render for AgentEnrollModal {
                                     .font_weight(FontWeight::MEDIUM)
                                     .bg(if active_tab == 1 { DarkTechTheme::accent_cyan() } else { DarkTechTheme::bg_input() })
                                     .text_color(if active_tab == 1 { DarkTechTheme::bg_root() } else { DarkTechTheme::text_secondary() })
-                                    .child("Docker 容器化启动")
+                                    .child("Docker 启动")
                                     .on_click(cx.listener(|this, _, _, _| {
                                         this.active_tab = 1;
+                                        this.copied = false;
+                                    })),
+                            )
+                            .child(
+                                div()
+                                    .id("tab_mobile_pair")
+                                    .px_3()
+                                    .py_1()
+                                    .rounded_md()
+                                    .cursor_pointer()
+                                    .text_xs()
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .bg(if active_tab == 2 { DarkTechTheme::accent_cyan() } else { DarkTechTheme::bg_input() })
+                                    .text_color(if active_tab == 2 { DarkTechTheme::bg_root() } else { DarkTechTheme::text_secondary() })
+                                    .child("📱 移动端扫码配对")
+                                    .on_click(cx.listener(|this, _, _, _| {
+                                        this.active_tab = 2;
                                         this.copied = false;
                                     })),
                             ),
                     )
                     .child(
-                        // Command display box
+                        // Display box (QR code or command)
                         div()
                             .p_3()
                             .bg(DarkTechTheme::bg_root())
                             .border_1()
                             .border_color(DarkTechTheme::border_muted())
                             .rounded_md()
-                            .child(
+                            .child(if let Some(qr) = qr_ascii {
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .items_center()
+                                    .gap_2()
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .font_family("monospace")
+                                            .text_color(DarkTechTheme::accent_cyan())
+                                            .child(qr),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .font_family("monospace")
+                                            .text_color(DarkTechTheme::text_muted())
+                                            .child(cmd),
+                                    )
+                            } else {
                                 div()
                                     .text_xs()
                                     .font_family("monospace")
                                     .text_color(DarkTechTheme::accent_emerald())
-                                    .child(cmd),
-                            ),
+                                    .child(cmd)
+                            }),
                     )
                     .child(
                         // Footer with action buttons
@@ -197,7 +275,11 @@ impl Render for AgentEnrollModal {
                                         div()
                                             .text_xs()
                                             .text_color(DarkTechTheme::text_muted())
-                                            .child("在目标服务器粘贴并执行命令后，即可在控制台看到节点上线。"),
+                                            .child(if active_tab == 2 {
+                                                "扫码后移动端将对齐公钥，直连内网探针或经由 Hub 加密访问。"
+                                            } else {
+                                                "在目标服务器粘贴并执行命令后，即可在控制台看到节点上线。"
+                                            }),
                                     ),
                             )
                             .child(
@@ -211,7 +293,13 @@ impl Render for AgentEnrollModal {
                                     .font_weight(FontWeight::MEDIUM)
                                     .bg(if copied { DarkTechTheme::accent_emerald() } else { DarkTechTheme::accent_cyan() })
                                     .text_color(DarkTechTheme::bg_root())
-                                    .child(if copied { "✓ 已复制到剪贴板" } else { "📋 复制一键命令" })
+                                    .child(if copied {
+                                        "✓ 已复制到剪贴板"
+                                    } else if active_tab == 2 {
+                                        "📋 复制配对链接"
+                                    } else {
+                                        "📋 复制一键命令"
+                                    })
                                     .on_click(cx.listener(move |this, _, _, cx| {
                                         this.copied = true;
                                         cx.write_to_clipboard(ClipboardItem::new_string(cmd_clone.clone()));

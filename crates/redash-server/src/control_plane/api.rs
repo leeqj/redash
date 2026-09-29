@@ -78,23 +78,31 @@ async fn handle_client_tty(
     state: AppState,
 ) {
     let session_id = format!("tty-{}", uuid::Uuid::new_v4());
-    let (tty_tx, mut tty_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(128);
+    let (tty_tx, mut tty_rx) = tokio::sync::mpsc::channel::<crate::control_plane::registry::TtyDownstreamMsg>(128);
 
     state.control_plane.register_tty_subscriber(session_id.clone(), tty_tx);
     state.control_plane.open_node_tty(&node_id, &session_id, 24, 80).await;
 
     let (mut client_sink, mut client_stream) = socket.split();
 
-    // Task forwarding output from Agent -> Browser client
+    // Task forwarding output from Agent -> Browser client (plain binary or encrypted JSON envelope)
     let reader_task = tokio::spawn(async move {
-        while let Some(bytes) = tty_rx.recv().await {
-            if client_sink.send(WsMessage::Binary(bytes.into())).await.is_err() {
+        while let Some(msg) = tty_rx.recv().await {
+            let frame = match msg {
+                crate::control_plane::registry::TtyDownstreamMsg::Binary(bytes) => {
+                    WsMessage::Binary(bytes.into())
+                }
+                crate::control_plane::registry::TtyDownstreamMsg::Text(text) => {
+                    WsMessage::Text(text.into())
+                }
+            };
+            if client_sink.send(frame).await.is_err() {
                 break;
             }
         }
     });
 
-    // Inbound keystrokes from Browser client -> Agent
+    // Inbound frames from Browser client -> Agent (blind forwarding of encrypted envelopes or plain keystrokes)
     let reg_in = state.control_plane.clone();
     let nid_in = node_id.clone();
     let sid_in = session_id.clone();
@@ -102,18 +110,30 @@ async fn handle_client_tty(
     while let Some(msg_res) = client_stream.next().await {
         match msg_res {
             Ok(WsMessage::Text(text)) => {
-                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text)
-                    && v.get("type").and_then(|t| t.as_str()) == Some("resize")
-                {
-                    let cols = v.get("cols").and_then(|c| c.as_u64()).unwrap_or(80) as u16;
-                    let rows = v.get("rows").and_then(|r| r.as_u64()).unwrap_or(24) as u16;
-                    reg_in.resize_node_tty(&nid_in, &sid_in, rows, cols).await;
-                    continue;
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
+                    if v.get("type").and_then(|t| t.as_str()) == Some("resize") {
+                        let cols = v.get("cols").and_then(|c| c.as_u64()).unwrap_or(80) as u16;
+                        let rows = v.get("rows").and_then(|r| r.as_u64()).unwrap_or(24) as u16;
+                        reg_in.resize_node_tty(&nid_in, &sid_in, rows, cols).await;
+                        continue;
+                    }
+                    if let Ok(init) = serde_json::from_value::<redash_types::E2eeHandshakeInit>(v.clone()) {
+                        reg_in.send_e2ee_init_to_node(&nid_in, init).await;
+                        continue;
+                    }
+                    if let Ok(env) = serde_json::from_value::<redash_types::EncryptedEnvelope>(v) {
+                        reg_in.send_tty_encrypted_to_node(&nid_in, env).await;
+                        continue;
+                    }
                 }
                 reg_in.send_tty_input_to_node(&nid_in, &sid_in, text.as_bytes().to_vec()).await;
             }
             Ok(WsMessage::Binary(bytes)) => {
-                reg_in.send_tty_input_to_node(&nid_in, &sid_in, bytes.to_vec()).await;
+                if let Ok(env) = serde_json::from_slice::<redash_types::EncryptedEnvelope>(&bytes) {
+                    reg_in.send_tty_encrypted_to_node(&nid_in, env).await;
+                } else {
+                    reg_in.send_tty_input_to_node(&nid_in, &sid_in, bytes.to_vec()).await;
+                }
             }
             _ => break,
         }

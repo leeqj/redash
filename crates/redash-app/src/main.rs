@@ -24,6 +24,7 @@ use redash_core::probe::ProbeScheduler;
 use redash_core::session::SessionManager;
 
 use crate::components::agent_enroll_modal::{AgentEnrollModal, AgentEnrollModalAction};
+use crate::components::port_remediation_modal::{PortRemediationModal, PortRemediationModalAction};
 use crate::components::host_modal::{HostModal, HostModalAction};
 use redash_ui_core::control_plane::ClientSigner;
 use crate::components::icon::Icon;
@@ -124,6 +125,7 @@ struct ReDashApp {
     app_settings: Arc<tokio::sync::RwLock<AppSettings>>,
     active_modal: Option<Entity<HostModal>>,
     agent_enroll_modal: Option<Entity<AgentEnrollModal>>,
+    port_remediation_modal: Option<Entity<PortRemediationModal>>,
     client_keypair: Option<(String, String)>,
     #[allow(dead_code)]
     control_plane_nodes: Vec<redash_types::ManagedNodeDetail>,
@@ -189,6 +191,7 @@ impl ReDashApp {
             app_settings,
             active_modal: None,
             agent_enroll_modal: None,
+            port_remediation_modal: None,
             client_keypair: {
                 let key_path = HostStore::default_path().with_file_name("control_plane_key.json");
                 Some(ClientSigner::load_or_generate_keypair(&key_path))
@@ -201,6 +204,10 @@ impl ReDashApp {
             }],
             active_tab_index: 0,
         };
+
+        if let Some(pair) = &app.client_keypair {
+            app.session_mgr.set_client_keypair(pair.clone());
+        }
 
         // Wire FleetView actions
         app.bind_fleet_actions(fleet_view, cx);
@@ -287,6 +294,11 @@ impl ReDashApp {
                             FleetAction::TriggerAgentRemediation { node_id, action } => {
                                 app.update(cx, |app, cx| {
                                     app.trigger_agent_remediation(&node_id, action, cx);
+                                });
+                            }
+                            FleetAction::PromptPortRemediation { node_id } => {
+                                app.update(cx, |app, cx| {
+                                    app.open_port_remediation_modal(&node_id, window, cx);
                                 });
                             }
                             FleetAction::OpenAgentTty { node_id } => {
@@ -381,34 +393,21 @@ impl ReDashApp {
     fn open_agent_enroll_modal(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         let pub_key = self.client_keypair.as_ref().map(|(pk, _)| pk.clone());
         let http_base = self.session_mgr.hub_http_base();
-        let ws_base = if let Some(stripped) = http_base.strip_prefix("http://") {
-            format!("ws://{}", stripped)
-        } else if let Some(stripped) = http_base.strip_prefix("https://") {
-            format!("wss://{}", stripped)
-        } else {
-            http_base
-        };
-        let hub_url = format!("{}/v1/agent/ws", ws_base.trim_end_matches('/'));
+        let ws_base = redash_types::to_websocket_endpoint(&http_base);
+        let hub_url = format!("{}/v1/agent/ws", ws_base);
         let modal = cx.new(|_cx| AgentEnrollModal::new(hub_url, pub_key));
 
-        let app_entity = cx.entity().downgrade();
         cx.subscribe(
             &modal,
-            move |_subscriber, _emitter, event: &AgentEnrollModalAction, cx| {
-                if let Some(app) = app_entity.upgrade() {
-                    match event {
-                        AgentEnrollModalAction::Close => {
-                            app.update(cx, |app, cx| {
-                                app.agent_enroll_modal = None;
-                                cx.notify();
-                            });
-                        }
-                        AgentEnrollModalAction::CopyCommand(_cmd) => {
-                            app.update(cx, |app, cx| {
-                                app.error_msg = Some("📋 接入安装命令已复制到剪贴板，请在受控节点终端执行".to_string());
-                                cx.notify();
-                            });
-                        }
+            move |this, _emitter, event: &AgentEnrollModalAction, cx| {
+                match event {
+                    AgentEnrollModalAction::Close => {
+                        this.agent_enroll_modal = None;
+                        cx.notify();
+                    }
+                    AgentEnrollModalAction::CopyCommand(_cmd) => {
+                        this.error_msg = Some("📋 接入安装命令已复制到剪贴板，请在受控节点终端执行".to_string());
+                        cx.notify();
                     }
                 }
             },
@@ -416,6 +415,51 @@ impl ReDashApp {
         .detach();
 
         self.agent_enroll_modal = Some(modal);
+        cx.notify();
+    }
+
+    fn open_port_remediation_modal(
+        &mut self,
+        node_id: &str,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let modal = cx.new(|_cx| PortRemediationModal::new(node_id.to_string()));
+
+        cx.subscribe(
+            &modal,
+            move |this, _emitter, event: &PortRemediationModalAction, cx| {
+                match event {
+                    PortRemediationModalAction::Close => {
+                        this.port_remediation_modal = None;
+                        cx.notify();
+                    }
+                    PortRemediationModalAction::Diagnose { node_id, port } => {
+                        this.port_remediation_modal = None;
+                        let nid = node_id.clone();
+                        let p = *port;
+                        this.trigger_agent_remediation(
+                            &nid,
+                            redash_types::RemediationAction::DiagnosePort { port: p },
+                            cx,
+                        );
+                    }
+                    PortRemediationModalAction::KillConflict { node_id, port } => {
+                        this.port_remediation_modal = None;
+                        let nid = node_id.clone();
+                        let p = *port;
+                        this.trigger_agent_remediation(
+                            &nid,
+                            redash_types::RemediationAction::KillPortConflict { port: p },
+                            cx,
+                        );
+                    }
+                }
+            },
+        )
+        .detach();
+
+        self.port_remediation_modal = Some(modal);
         cx.notify();
     }
 
@@ -1735,6 +1779,7 @@ impl Render for ReDashApp {
             // 3. Modal Overlay if active
             .children(self.active_modal.clone())
             .children(self.agent_enroll_modal.clone())
+            .children(self.port_remediation_modal.clone())
     }
 }
 

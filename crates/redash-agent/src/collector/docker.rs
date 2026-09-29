@@ -183,15 +183,98 @@ fn extract_http_body(buffer: &[u8]) -> Result<Vec<u8>, String> {
         let body = &buffer[pos + 4..];
 
         let header_str = String::from_utf8_lossy(header_bytes);
-        if let Some(first_line) = header_str.lines().next() {
-            if first_line.contains("200") || first_line.contains("204") || first_line.contains("201") {
-                return Ok(body.to_vec());
-            } else {
-                return Err(format!("Docker API returned status: {}", first_line));
-            }
+        if let Some(first_line) = header_str.lines().next()
+            && !first_line.contains("200")
+            && !first_line.contains("204")
+            && !first_line.contains("201")
+        {
+            return Err(format!("Docker API returned status: {}", first_line));
         }
-        Ok(body.to_vec())
+
+        let is_chunked = header_str.lines().any(|line| {
+            let lower = line.to_ascii_lowercase();
+            lower.starts_with("transfer-encoding:") && lower.contains("chunked")
+        });
+
+        if is_chunked {
+            decode_chunked_body(body)
+        } else {
+            Ok(body.to_vec())
+        }
     } else {
         Err("Malformed HTTP response from docker socket".to_string())
     }
 }
+
+pub fn decode_chunked_body(mut body: &[u8]) -> Result<Vec<u8>, String> {
+    let mut decoded = Vec::new();
+    loop {
+        if body.is_empty() {
+            break;
+        }
+        let pos = body
+            .windows(2)
+            .position(|w| w == b"\r\n")
+            .ok_or_else(|| "Invalid chunked body: missing CRLF after chunk size".to_string())?;
+
+        let size_str = std::str::from_utf8(&body[..pos])
+            .map_err(|e| format!("Invalid utf8 in chunk size: {}", e))?
+            .trim();
+        let size_str = size_str.split(';').next().unwrap_or(size_str).trim();
+        let chunk_size = usize::from_str_radix(size_str, 16)
+            .map_err(|e| format!("Invalid hex chunk size '{}': {}", size_str, e))?;
+
+        if chunk_size == 0 {
+            break;
+        }
+
+        let data_start = pos + 2;
+        let data_end = data_start + chunk_size;
+        if body.len() < data_end {
+            return Err("Incomplete chunk data in HTTP body".to_string());
+        }
+
+        decoded.extend_from_slice(&body[data_start..data_end]);
+
+        if body.len() >= data_end + 2 && &body[data_end..data_end + 2] == b"\r\n" {
+            body = &body[data_end + 2..];
+        } else if body.len() > data_end && body[data_end] == b'\n' {
+            body = &body[data_end + 1..];
+        } else {
+            body = &body[data_end..];
+        }
+    }
+    Ok(decoded)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_decode_chunked_body() {
+        let chunked_raw = b"4\r\nWiki\r\n5\r\npedia\r\nf\r\n in \r\n\r\nchunks.\r\n0\r\n\r\n";
+        let decoded = decode_chunked_body(chunked_raw).unwrap();
+        assert_eq!(String::from_utf8(decoded).unwrap(), "Wikipedia in \r\n\r\nchunks.");
+    }
+
+    #[test]
+    fn test_extract_http_body_chunked() {
+        let payload = b"[{\"Id\":\"container-1\"}]";
+        let hex_len = format!("{:x}", payload.len());
+        let http_response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\n\r\n{}\r\n[{{\"Id\":\"container-1\"}}]\r\n0\r\n\r\n",
+            hex_len
+        );
+        let body = extract_http_body(http_response.as_bytes()).unwrap();
+        assert_eq!(String::from_utf8(body).unwrap(), "[{\"Id\":\"container-1\"}]");
+    }
+
+    #[test]
+    fn test_extract_http_body_plain() {
+        let http_response = b"HTTP/1.1 200 OK\r\nContent-Length: 13\r\n\r\nHello, World!";
+        let body = extract_http_body(http_response).unwrap();
+        assert_eq!(String::from_utf8(body).unwrap(), "Hello, World!");
+    }
+}
+

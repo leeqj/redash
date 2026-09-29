@@ -1,10 +1,12 @@
 pub mod client;
 pub mod collector;
+pub mod discovery;
 pub mod remediation;
 pub mod tty;
 
 pub use client::{calculate_adaptive_cadence, AgentClient, AgentConfig};
 pub use collector::TelemetryCollector;
+pub use discovery::LanDiscoveryAgent;
 pub use remediation::RemediationEngine;
 
 #[cfg(test)]

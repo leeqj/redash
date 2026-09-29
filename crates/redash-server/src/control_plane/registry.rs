@@ -20,11 +20,17 @@ pub struct ActiveAgentSession {
     pub pending_actions: Arc<Mutex<HashMap<String, oneshot::Sender<ActionResult>>>>,
 }
 
+#[derive(Debug, Clone)]
+pub enum TtyDownstreamMsg {
+    Binary(Vec<u8>),
+    Text(String),
+}
+
 #[derive(Clone)]
 pub struct ControlPlaneRegistry {
     agents: Arc<DashMap<String, ActiveAgentSession>>,
     telemetry_bus: broadcast::Sender<AgentTelemetry>,
-    tty_subscribers: Arc<DashMap<String, mpsc::Sender<Vec<u8>>>>,
+    tty_subscribers: Arc<DashMap<String, mpsc::Sender<TtyDownstreamMsg>>>,
 }
 
 impl Default for ControlPlaneRegistry {
@@ -222,7 +228,7 @@ impl ControlPlaneRegistry {
         newly_offline
     }
 
-    pub fn register_tty_subscriber(&self, session_id: String, tx: mpsc::Sender<Vec<u8>>) {
+    pub fn register_tty_subscriber(&self, session_id: String, tx: mpsc::Sender<TtyDownstreamMsg>) {
         self.tty_subscribers.insert(session_id, tx);
     }
 
@@ -232,7 +238,23 @@ impl ControlPlaneRegistry {
 
     pub fn forward_tty_output(&self, session_id: &str, data: Vec<u8>) {
         if let Some(subscriber) = self.tty_subscribers.get(session_id) {
-            let _ = subscriber.try_send(data);
+            let _ = subscriber.try_send(TtyDownstreamMsg::Binary(data));
+        }
+    }
+
+    pub fn forward_tty_encrypted(&self, envelope: redash_types::EncryptedEnvelope) {
+        if let Some(subscriber) = self.tty_subscribers.get(&envelope.session_id)
+            && let Ok(json) = serde_json::to_string(&envelope)
+        {
+            let _ = subscriber.try_send(TtyDownstreamMsg::Text(json));
+        }
+    }
+
+    pub fn forward_e2ee_ack(&self, ack: redash_types::E2eeHandshakeAck) {
+        if let Some(subscriber) = self.tty_subscribers.get(&ack.session_id)
+            && let Ok(json) = serde_json::to_string(&ack)
+        {
+            let _ = subscriber.try_send(TtyDownstreamMsg::Text(json));
         }
     }
 
@@ -244,6 +266,24 @@ impl ControlPlaneRegistry {
                     session_id: session_id.to_string(),
                     data,
                 })
+                .await;
+        }
+    }
+
+    pub async fn send_e2ee_init_to_node(&self, node_id: &str, init: redash_types::E2eeHandshakeInit) {
+        if let Some(session) = self.agents.get(node_id) {
+            let _ = session
+                .command_tx
+                .send(HubToAgentMessage::E2eeHandshakeInit(init))
+                .await;
+        }
+    }
+
+    pub async fn send_tty_encrypted_to_node(&self, node_id: &str, envelope: redash_types::EncryptedEnvelope) {
+        if let Some(session) = self.agents.get(node_id) {
+            let _ = session
+                .command_tx
+                .send(HubToAgentMessage::TtyEncrypted(envelope))
                 .await;
         }
     }

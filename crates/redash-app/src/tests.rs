@@ -31,6 +31,7 @@ fn test_app(store: HostStore, cx: &mut Context<ReDashApp>) -> ReDashApp {
         app_settings: Arc::new(tokio::sync::RwLock::new(AppSettings::default())),
         active_modal: None,
         agent_enroll_modal: None,
+        port_remediation_modal: None,
         client_keypair: None,
         control_plane_nodes: Vec::new(),
         tabs: vec![TabItem {

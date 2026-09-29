@@ -5,6 +5,7 @@ use redash_types::host::HostConfig;
 use redash_types::metrics::NodeMetrics;
 use redash_types::settings::AppSettings;
 use redash_types::sftp::RemoteFileItem;
+use redash_types::vec_push_limited;
 use std::collections::{HashMap, HashSet};
 
 pub use redash_types::metrics::{CardMetricType, ChartTimeRange};
@@ -434,25 +435,13 @@ impl AppStateMachine {
             }
             UserAction::UpdateMetrics { host_id, metrics } => {
                 let cpu_h = self.cpu_histories.entry(host_id.clone()).or_default();
-                cpu_h.push(metrics.cpu_percent());
-                if cpu_h.len() > 1800 {
-                    cpu_h.remove(0);
-                }
+                vec_push_limited(cpu_h, metrics.cpu_percent(), 1800);
                 let mem_h = self.mem_histories.entry(host_id.clone()).or_default();
-                mem_h.push(metrics.mem_percent());
-                if mem_h.len() > 1800 {
-                    mem_h.remove(0);
-                }
+                vec_push_limited(mem_h, metrics.mem_percent(), 1800);
                 let disk_h = self.disk_histories.entry(host_id.clone()).or_default();
-                disk_h.push(metrics.disk_percent());
-                if disk_h.len() > 1800 {
-                    disk_h.remove(0);
-                }
+                vec_push_limited(disk_h, metrics.disk_percent(), 1800);
                 let history = self.metrics_history.entry(host_id.clone()).or_default();
-                history.push(metrics.cpu_percent());
-                if history.len() > 1800 {
-                    history.remove(0);
-                }
+                vec_push_limited(history, metrics.cpu_percent(), 1800);
                 self.metrics.insert(host_id, metrics);
             }
             UserAction::SetLocale(locale_code) => {

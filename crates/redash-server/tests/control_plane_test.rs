@@ -182,3 +182,78 @@ async fn test_control_plane_action_dispatch_roundtrip() {
     assert_eq!(result.exit_code, Some(0));
     assert!(result.stdout.contains("Container restarted"));
 }
+
+#[tokio::test]
+async fn test_control_plane_tty_e2ee_blind_forwarding() {
+    let state = AppState::new();
+
+    // 1. Register agent
+    let (cmd_tx, mut cmd_rx) = mpsc::channel(16);
+    let pending_actions = Arc::new(Mutex::new(HashMap::new()));
+    let handshake = AgentHandshake {
+        node_id: "node-e2ee-box".to_string(),
+        hostname: "e2ee-host".to_string(),
+        os: "linux".to_string(),
+        arch: "arm64".to_string(),
+        version: "0.1.1-beta".to_string(),
+        auth_token: "secret".to_string(),
+        trusted_public_key: "trusted-pub".to_string(),
+    };
+
+    state.control_plane.register_agent(
+        handshake,
+        "10.0.0.99:50000".to_string(),
+        cmd_tx,
+        pending_actions,
+    );
+
+    // 2. Client registers TTY subscriber
+    let session_id = "session-e2ee-999".to_string();
+    let (downstream_tx, mut downstream_rx) = mpsc::channel(16);
+    state.control_plane.register_tty_subscriber(session_id.clone(), downstream_tx);
+
+    // 3. Agent sends EncryptedEnvelope to Hub
+    let agent_env = redash_types::EncryptedEnvelope::new(
+        &session_id,
+        1,
+        "0102030405060708090a0b0c",
+        "deadbeefcafebabe",
+        "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899",
+    );
+    state.control_plane.forward_tty_encrypted(agent_env.clone());
+
+    // 4. Client receives downstream Text frame with unaltered ciphertext
+    let received = downstream_rx.recv().await.expect("Must receive downstream message");
+    match received {
+        redash_server::control_plane::registry::TtyDownstreamMsg::Text(json) => {
+            let received_env: redash_types::EncryptedEnvelope = serde_json::from_str(&json).unwrap();
+            assert_eq!(received_env.session_id, session_id);
+            assert_eq!(received_env.seq_num, 1);
+            assert_eq!(received_env.ciphertext_hex, agent_env.ciphertext_hex);
+            assert_eq!(received_env.tag_hex, agent_env.tag_hex);
+        }
+        _ => panic!("Expected Text message containing encrypted envelope JSON"),
+    }
+
+    // 5. Client sends EncryptedEnvelope towards Agent through Hub
+    let client_env = redash_types::EncryptedEnvelope::new(
+        &session_id,
+        2,
+        "0c0b0a090807060504030201",
+        "1234567890abcdef",
+        "99887766554433221100ffeeddccbbaa99887766554433221100ffeeddccbbaa",
+    );
+    state.control_plane.send_tty_encrypted_to_node("node-e2ee-box", client_env.clone()).await;
+
+    // 6. Agent receives HubToAgentMessage::TtyEncrypted with exact envelope
+    let hub_msg = cmd_rx.recv().await.expect("Agent must receive forwarded frame");
+    match hub_msg {
+        HubToAgentMessage::TtyEncrypted(received_from_hub) => {
+            assert_eq!(received_from_hub.session_id, session_id);
+            assert_eq!(received_from_hub.seq_num, 2);
+            assert_eq!(received_from_hub.ciphertext_hex, client_env.ciphertext_hex);
+            assert_eq!(received_from_hub.tag_hex, client_env.tag_hex);
+        }
+        other => panic!("Expected TtyEncrypted, got {:?}", other),
+    }
+}

@@ -7,6 +7,7 @@ license.workspace = true
 
 [dependencies]
 redash-types = { workspace = true }
+redash-ui-core = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 log = { workspace = true }
@@ -20,7 +21,9 @@ keyring.workspace = true
 dirs.workspace = true
 sha2 = "0.10"
 futures = { workspace = true }
-tokio-tungstenite = "0.29"
+tokio-tungstenite = { version = "0.29", features = ["rustls-tls-webpki-roots"] }
+
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 [dev-dependencies]
 rand = "0.10"

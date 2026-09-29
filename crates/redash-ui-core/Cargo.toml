@@ -12,6 +12,12 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 unicode-width = { workspace = true }
 ed25519-dalek = { version = "3.0", default-features = false, features = ["alloc", "fast"] }
+curve25519-dalek = { version = "5.0", default-features = false }
+sha2 = "0.10"
+aes-gcm = "0.11"
+hkdf = "0.12"
+getrandom = { version = "0.2", features = ["js"] }
 hex = "0.4"
+qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 
 [dev-dependencies]

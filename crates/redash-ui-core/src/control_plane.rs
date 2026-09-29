@@ -39,19 +39,7 @@ impl ClientSigner {
     /// Generates an ED25519 keypair.
     pub fn generate_keypair() -> (String, String) {
         let mut seed = [0u8; 32];
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos();
-        let pid = std::process::id();
-        let now_bytes = now.to_le_bytes();
-        let pid_bytes = pid.to_le_bytes();
-        for i in 0..16 {
-            seed[i] = now_bytes[i % now_bytes.len()] ^ 0x5a ^ (i as u8);
-        }
-        for i in 16..32 {
-            seed[i] = pid_bytes[(i - 16) % pid_bytes.len()] ^ 0xa5 ^ (i as u8);
-        }
+        getrandom::getrandom(&mut seed).expect("OS cryptographic random source unavailable");
         Self::keypair_from_seed(&seed)
     }
 
@@ -85,7 +73,7 @@ impl ClientSigner {
         let verifying_key = signing_key.verifying_key();
         let pub_hex = hex::encode(verifying_key.as_bytes());
 
-        let action_id = format!("act-{}", &nonce[..8.min(nonce.len())]);
+        let action_id = format!("act-{}", crate::e2ee::random_hex());
 
         let signable_bytes = SignedAction::canonical_signable_bytes(
             &action_id,

@@ -1,4 +1,5 @@
 pub mod agent_enroll_modal;
+pub mod port_remediation_modal;
 pub mod chart;
 pub mod host_modal;
 pub mod icon;

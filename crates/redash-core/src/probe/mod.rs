@@ -14,7 +14,8 @@ pub use metrics::*;
 pub use network::*;
 pub use process::*;
 
-use std::collections::{HashMap, VecDeque};
+use redash_types::RingBuffer;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
@@ -24,23 +25,38 @@ use crate::session::SessionManager;
 
 const MAX_HISTORY_POINTS: usize = 60;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct HostHistory {
-    pub metrics_history: VecDeque<NodeMetrics>,
+    pub metrics_history: RingBuffer<NodeMetrics>,
     sampled_at: Option<std::time::Instant>,
     connection: Option<HostConfig>,
 }
 
-impl HostHistory {
-    pub fn push(&mut self, metrics: NodeMetrics) {
-        if self.metrics_history.len() >= MAX_HISTORY_POINTS {
-            self.metrics_history.pop_front();
+impl Default for HostHistory {
+    fn default() -> Self {
+        Self {
+            metrics_history: RingBuffer::new(MAX_HISTORY_POINTS),
+            sampled_at: None,
+            connection: None,
         }
-        self.metrics_history.push_back(metrics);
+    }
+}
+
+impl HostHistory {
+    pub fn new(capacity: usize) -> Self {
+        Self {
+            metrics_history: RingBuffer::new(capacity),
+            sampled_at: None,
+            connection: None,
+        }
+    }
+
+    pub fn push(&mut self, metrics: NodeMetrics) {
+        self.metrics_history.push(metrics);
     }
 
     pub fn latest(&self) -> Option<&NodeMetrics> {
-        self.metrics_history.back()
+        self.metrics_history.latest()
     }
 }
 
@@ -305,11 +321,9 @@ impl ProbeScheduler {
         }
         history.sampled_at = Some(now);
         history.connection = Some(host.clone());
-        history.metrics_history.push_back(metrics.clone());
         let limit = settings.history_points.clamp(1, 3600);
-        while history.metrics_history.len() > limit {
-            history.metrics_history.pop_front();
-        }
+        history.metrics_history.set_capacity(limit);
+        history.metrics_history.push(metrics.clone());
     }
 
     pub async fn forget_hosts(&self, ids: &[HostId]) {
@@ -326,8 +340,7 @@ impl ProbeScheduler {
 
     pub async fn get_history(&self, host_id: &HostId) -> Option<Vec<NodeMetrics>> {
         let map = self.histories.read().await;
-        map.get(host_id)
-            .map(|h| h.metrics_history.iter().cloned().collect())
+        map.get(host_id).map(|h| h.metrics_history.to_vec())
     }
 }
 
@@ -350,8 +363,8 @@ mod tests {
         }
 
         assert_eq!(history.metrics_history.len(), MAX_HISTORY_POINTS);
-        assert_eq!(history.metrics_history.front().unwrap().uptime_secs, 10);
-        assert_eq!(history.metrics_history.back().unwrap().uptime_secs, 69);
+        assert_eq!(history.metrics_history.oldest().unwrap().uptime_secs, 10);
+        assert_eq!(history.metrics_history.latest().unwrap().uptime_secs, 69);
         assert_eq!(history.latest().unwrap().uptime_secs, 69);
     }
 

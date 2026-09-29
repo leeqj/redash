@@ -58,6 +58,9 @@ pub enum FleetAction {
         node_id: String,
         action: RemediationAction,
     },
+    PromptPortRemediation {
+        node_id: String,
+    },
     OpenAgentTty {
         node_id: String,
     },
@@ -713,11 +716,8 @@ impl FleetView {
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 if let Some(cb) = &this.on_action {
                                     cb(
-                                        FleetAction::TriggerAgentRemediation {
+                                        FleetAction::PromptPortRemediation {
                                             node_id: node_id_for_port.clone(),
-                                            action: RemediationAction::KillPortConflict {
-                                                port: 8080,
-                                            },
                                         },
                                         window,
                                         cx,

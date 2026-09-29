@@ -113,6 +113,12 @@ async fn handle_agent_socket(
                     Ok(AgentToHubMessage::TtyOutput { session_id, data }) => {
                         reg_in.forward_tty_output(&session_id, data);
                     }
+                    Ok(AgentToHubMessage::TtyEncrypted(envelope)) => {
+                        reg_in.forward_tty_encrypted(envelope);
+                    }
+                    Ok(AgentToHubMessage::E2eeHandshakeAck(ack)) => {
+                        reg_in.forward_e2ee_ack(ack);
+                    }
                     other => {
                         debug!("Unhandled agent message from {}: {:?}", nid_in, other);
                     }

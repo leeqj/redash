@@ -23,6 +23,7 @@ pub struct SessionManager {
     connect_locks: Arc<tokio::sync::Mutex<HashMap<HostId, Arc<tokio::sync::Mutex<()>>>>>,
     host_resolver: Arc<std::sync::RwLock<Option<HostResolver>>>,
     hub_ws_base: Arc<std::sync::RwLock<Option<String>>>,
+    client_keypair: Arc<std::sync::RwLock<Option<(String, String)>>>,
 }
 
 impl Default for SessionManager {
@@ -38,6 +39,7 @@ impl SessionManager {
             connect_locks: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             host_resolver: Arc::new(std::sync::RwLock::new(None)),
             hub_ws_base: Arc::new(std::sync::RwLock::new(None)),
+            client_keypair: Arc::new(std::sync::RwLock::new(None)),
         }
     }
 
@@ -50,6 +52,14 @@ impl SessionManager {
         *self.hub_ws_base.write().unwrap() = Some(url.into());
     }
 
+    pub fn set_client_keypair(&self, keypair: (String, String)) {
+        *self.client_keypair.write().unwrap() = Some(keypair);
+    }
+
+    pub fn client_keypair(&self) -> Option<(String, String)> {
+        self.client_keypair.read().unwrap().clone()
+    }
+
     pub fn hub_http_base(&self) -> String {
         let base = self
             .hub_ws_base
@@ -57,14 +67,7 @@ impl SessionManager {
             .unwrap()
             .clone()
             .unwrap_or_else(|| "http://127.0.0.1:8080".to_string());
-        let base = base.trim_end_matches('/');
-        if let Some(stripped) = base.strip_prefix("ws://") {
-            format!("http://{}", stripped)
-        } else if let Some(stripped) = base.strip_prefix("wss://") {
-            format!("https://{}", stripped)
-        } else {
-            base.to_string()
-        }
+        redash_types::to_http_endpoint(&base)
     }
 
     pub fn with_host_resolver(self, resolver: HostResolver) -> Self {
@@ -411,16 +414,24 @@ impl SessionManager {
                 .unwrap()
                 .clone()
                 .unwrap_or_else(|| "ws://127.0.0.1:8080".to_string());
-            let base = base.trim_end_matches('/');
-            let ws_base = if let Some(stripped) = base.strip_prefix("http://") {
-                format!("ws://{}", stripped)
-            } else if let Some(stripped) = base.strip_prefix("https://") {
-                format!("wss://{}", stripped)
-            } else {
-                base.to_string()
-            };
+            let ws_base = redash_types::to_websocket_endpoint(&base);
             let ws_url = format!("{}/v1/control/tty/{}", ws_base, node_id);
-            return PtyChannel::new_reverse_ws(&ws_url, cols, rows, output_tx).await;
+            let lan_endpoint = crate::discovery::LanDiscoveryClient::global().find_direct_endpoint(node_id);
+            let client_priv_hex = self
+                .client_keypair
+                .read()
+                .unwrap()
+                .as_ref()
+                .map(|(_, priv_k)| priv_k.clone());
+            return PtyChannel::new_happy_eyeballs_ws(
+                lan_endpoint.as_deref(),
+                &ws_url,
+                cols,
+                rows,
+                output_tx,
+                client_priv_hex.as_deref(),
+            )
+            .await;
         }
 
         let handle = self.get_or_connect(host).await?;
