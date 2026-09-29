@@ -177,6 +177,7 @@ impl AgentClient {
         let hostname = gethostname::gethostname().to_string_lossy().into_owned();
 
         let handshake = AgentHandshake {
+            telemetry_interval_secs: self.config.telemetry_interval_secs.clamp(1, 300),
             node_id: self.config.node_id.clone(),
             hostname,
             os: std::env::consts::OS.to_string(),
@@ -197,34 +198,55 @@ impl AgentClient {
         let Message::Text(reply) = reply else {
             anyhow::bail!("Expected Hub authentication acknowledgement");
         };
-        anyhow::ensure!(
-            matches!(
-                serde_json::from_str::<HubToAgentMessage>(&reply)?,
-                HubToAgentMessage::HandshakeAck { success: true, .. }
-            ),
-            "Hub rejected enrollment credentials"
-        );
+        let heartbeat_secs = match serde_json::from_str::<HubToAgentMessage>(&reply)? {
+            HubToAgentMessage::HandshakeAck {
+                success: true,
+                heartbeat_interval_secs,
+                ..
+            } => heartbeat_interval_secs.clamp(1, 5),
+            _ => anyhow::bail!("Hub rejected enrollment credentials"),
+        };
 
-        // 2. Outbound message sink task
+        // Heartbeats have their own cadence and bypass the telemetry/terminal queue.
+        let (writer_done_tx, mut writer_done) = tokio::sync::oneshot::channel::<()>();
         let write_task = tokio::spawn(async move {
-            while let Some(msg) = outbound_rx.recv().await {
-                if let Ok(json) = serde_json::to_string(&msg) {
-                    let text_msg = Message::Text(json.into());
-                    if let Err(e) = write_half.send(text_msg).await {
-                        warn!("Failed to send frame to Hub: {}", e);
-                        break;
-                    }
+            let _done = writer_done_tx;
+            let mut heartbeat = tokio::time::interval(Duration::from_secs(heartbeat_secs));
+            heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            loop {
+                let msg = tokio::select! {
+                    biased;
+                    _ = heartbeat.tick() => AgentToHubMessage::Heartbeat,
+                    msg = outbound_rx.recv() => match msg { Some(msg) => msg, None => break },
+                };
+                let Ok(json) = serde_json::to_string(&msg) else {
+                    continue;
+                };
+                if !tokio::time::timeout(
+                    Duration::from_secs(5),
+                    write_half.send(Message::Text(json.into())),
+                )
+                .await
+                .is_ok_and(|r| r.is_ok())
+                {
+                    warn!("Hub writer disconnected or timed out");
+                    break;
                 }
             }
         });
 
         // 3. Telemetry reporting task with Adaptive Cadence
         let node_id = self.config.node_id.clone();
-        let interval_secs = self.config.telemetry_interval_secs.max(1);
+        let interval_secs = self.config.telemetry_interval_secs.clamp(1, 300);
         let tx_telemetry = outbound_tx.clone();
 
         let telemetry_task = tokio::spawn(async move {
-            let mut collector = TelemetryCollector::new(node_id);
+            let Ok(mut collector) =
+                tokio::task::spawn_blocking(move || TelemetryCollector::new(node_id)).await
+            else {
+                warn!("System collector initialization failed");
+                return;
+            };
             let mut last_cpu: Option<f32> = None;
             let mut last_mem_pct: Option<f32> = None;
             let mut last_containers: Option<Vec<(String, String)>> = None;
@@ -263,7 +285,13 @@ impl AgentClient {
         let _tasks = AbortTasks(vec![write_task, telemetry_task]);
         let route = format!("hub-{}", uuid::Uuid::new_v4());
         let _lease = crate::tty::RouteLease::new(self.tty_mgr.clone(), route.clone());
-        while let Some(msg_res) = read_half.next().await {
+        let route_failed = self.tty_mgr.route_failure(&route);
+        loop {
+            let msg_res = tokio::select! {
+                _ = &mut writer_done => break,
+                _ = route_failed.notified() => break,
+                msg = read_half.next() => match msg { Some(msg) => msg, None => break },
+            };
             match msg_res {
                 Ok(Message::Text(text)) => match serde_json::from_str::<HubToAgentMessage>(&text) {
                     Ok(HubToAgentMessage::ExecuteAction(action)) => {
@@ -344,5 +372,63 @@ impl Drop for AbortTasks {
         for task in &self.0 {
             task.abort();
         }
+    }
+}
+
+#[cfg(test)]
+mod heartbeat_tests {
+    use super::*;
+    #[tokio::test]
+    async fn negotiated_heartbeats_run_without_ping_or_frequent_telemetry() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let hub = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut ws = tokio_tungstenite::accept_async(socket).await.unwrap();
+            let _ = ws.next().await.unwrap().unwrap();
+            ws.send(Message::Text(
+                serde_json::to_string(&HubToAgentMessage::HandshakeAck {
+                    success: true,
+                    message: "ok".into(),
+                    heartbeat_interval_secs: 1,
+                })
+                .unwrap()
+                .into(),
+            ))
+            .await
+            .unwrap();
+            let mut heartbeats = 0;
+            tokio::time::timeout(Duration::from_secs(3), async {
+                while let Some(Ok(Message::Text(text))) = ws.next().await {
+                    if matches!(
+                        serde_json::from_str::<AgentToHubMessage>(&text).unwrap(),
+                        AgentToHubMessage::Heartbeat
+                    ) {
+                        heartbeats += 1;
+                        if heartbeats == 3 {
+                            break;
+                        }
+                    }
+                }
+            })
+            .await
+            .unwrap();
+            assert_eq!(heartbeats, 3);
+            ws.close(None).await.unwrap();
+        });
+        let agent = AgentClient::new(AgentConfig {
+            hub_url: format!("ws://{addr}"),
+            node_id: "heartbeat-test".into(),
+            auth_token: redash_ui_core::e2ee::random_hex(),
+            trusted_public_key: None,
+            identity_private_key: None,
+            telemetry_interval_secs: 60,
+        })
+        .unwrap();
+        tokio::time::timeout(Duration::from_secs(4), agent.connect_and_serve())
+            .await
+            .unwrap()
+            .unwrap();
+        hub.await.unwrap();
     }
 }

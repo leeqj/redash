@@ -131,7 +131,7 @@ mod tests {
             node_id: "node-lan-1".to_string(),
             hostname: "mac-studio.local".to_string(),
             direct_port: 43210,
-            version: "0.2.0-beta".to_string(),
+            version: "0.2.1-beta".to_string(),
             timestamp: 1700000000,
         };
         let beacon_json = serde_json::to_string(&beacon).unwrap();

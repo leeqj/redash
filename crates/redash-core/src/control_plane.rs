@@ -8,9 +8,7 @@ pub async fn dispatch_action(url: &str, action: &SignedAction) -> Result<ActionR
         .connect_timeout(Duration::from_secs(5))
         .timeout(Duration::from_secs(30))
         .build()?;
-    let response = client
-        .post(url)
-        .json(action)
+    let response = authenticate_request(client.post(url).json(action))
         .send()
         .await
         .context("Control-plane request failed")?;
@@ -60,4 +58,77 @@ pub fn agent_identity_path() -> std::path::PathBuf {
         .unwrap_or_else(|| {
             crate::config::HostStore::default_path().with_file_name("agent_keys.json")
         })
+}
+
+/// The management credential is never derived from an Agent's enrollment token.
+pub fn gateway_token() -> Option<String> {
+    std::env::var("REDASH_GATEWAY_TOKEN")
+        .ok()
+        .filter(|s| !s.is_empty())
+}
+fn authenticate_request(request: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+    match gateway_token() {
+        Some(token) => request.bearer_auth(token),
+        None => request,
+    }
+}
+pub async fn fetch_nodes(url: &str) -> Result<Vec<redash_types::ManagedNodeDetail>> {
+    fetch_nodes_using(url, gateway_token().as_deref()).await
+}
+async fn fetch_nodes_using(
+    url: &str,
+    token: Option<&str>,
+) -> Result<Vec<redash_types::ManagedNodeDetail>> {
+    let client = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(2))
+        .timeout(Duration::from_secs(5))
+        .redirect(reqwest::redirect::Policy::none())
+        .build()?;
+    let request = client.get(url);
+    let request = match token {
+        Some(token) => request.bearer_auth(token),
+        None => request,
+    };
+    request
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await
+        .context("Invalid Hub node response")
+}
+
+#[cfg(test)]
+mod gateway_tests {
+    use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    #[tokio::test]
+    async fn node_fetch_authenticates_and_bounds_stalled_response_body() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut data = [0; 4096];
+            let n = socket.read(&mut data).await.unwrap();
+            assert!(
+                String::from_utf8_lossy(&data[..n])
+                    .to_lowercase()
+                    .contains("authorization: bearer fixture-token")
+            );
+            socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 1000\r\nContent-Type: application/json\r\n\r\n[").await.unwrap();
+            std::future::pending::<()>().await;
+        });
+        let response = tokio::time::timeout(
+            Duration::from_secs(6),
+            fetch_nodes_using(&format!("http://{addr}"), Some("fixture-token")),
+        )
+        .await;
+        server.abort();
+        let _ = server.await;
+        assert!(
+            response
+                .expect("node request exceeded its total deadline")
+                .is_err()
+        );
+    }
 }

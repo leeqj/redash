@@ -4,22 +4,23 @@ use redash_types::{
 };
 use redash_ui_core::e2ee::{AgentE2eeSession, now_secs};
 use std::collections::HashMap;
-use std::io::{Read, Write};
+use std::io::Read;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, Instant};
-use tokio::sync::{Mutex, mpsc};
+use tokio::sync::{Mutex, Notify, mpsc};
 
 const MAX_SESSIONS: usize = 32;
 const IDLE_TIMEOUT: Duration = Duration::from_secs(600);
 
-type PtyWriter = Arc<StdMutex<Box<dyn Write + Send>>>;
 struct Pty {
     master: Box<dyn MasterPty + Send>,
-    writer: PtyWriter,
-    child: Box<dyn portable_pty::Child + Send + Sync>,
+    input: mpsc::Sender<Vec<u8>>,
+    cancelled: Arc<Notify>,
+    child: Option<Box<dyn portable_pty::Child + Send + Sync>>,
 }
 impl Drop for Pty {
     fn drop(&mut self) {
+        self.cancelled.notify_one();
         // Terminate foreground jobs as well as the session leader, then reap the shell.
         #[cfg(unix)]
         if let Some(fd) = self.master.as_raw_fd() {
@@ -31,17 +32,24 @@ impl Drop for Pty {
             }
         }
         #[cfg(unix)]
-        if let Some(pid) = self.child.process_id() {
+        if let Some(pid) = self.child.as_ref().and_then(|child| child.process_id()) {
             unsafe {
                 libc::kill(-(pid as i32), libc::SIGKILL);
             }
         }
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        if let Some(mut child) = self.child.take() {
+            let _ = child.kill();
+            // Reaping can wait in the kernel; never hold the async control loop on it.
+            tokio::task::spawn_blocking(move || {
+                let _ = child.wait();
+            });
+        }
     }
 }
 
 struct Session {
+    route_failed: Arc<Notify>,
+    id: String,
     generation: String,
     cipher: AgentE2eeSession,
     pty: Option<Pty>,
@@ -50,8 +58,41 @@ struct Session {
     active: Instant,
 }
 
+// Every terminal end path removes the Session exactly once. Keep the notification
+// independent of the shared Hub sender's lifetime and never await under the map lock.
+impl Drop for Session {
+    fn drop(&mut self) {
+        let output = self.output.clone();
+        let failed = self.route_failed.clone();
+        let session_id = self.id.clone();
+        tokio::spawn(async move {
+            if !tokio::time::timeout(
+                Duration::from_secs(5),
+                output.send(AgentToHubMessage::TtyClosed { session_id }),
+            )
+            .await
+            .is_ok_and(|r| r.is_ok())
+            {
+                log::debug!("Terminal close notification transport unavailable");
+                failed.notify_one();
+            }
+        });
+    }
+}
+
+async fn remove_generation(map: &Mutex<HashMap<String, Session>>, sid: &str, generation: &str) {
+    let mut sessions = map.lock().await;
+    if sessions
+        .get(sid)
+        .is_some_and(|s| s.generation == generation)
+    {
+        sessions.remove(sid);
+    }
+}
+
 #[derive(Default)]
 pub struct TtyManager {
+    routes: StdMutex<HashMap<String, Arc<Notify>>>,
     sessions: Arc<Mutex<HashMap<String, Session>>>,
     seen: Mutex<HashMap<String, u64>>,
 }
@@ -59,6 +100,15 @@ pub struct TtyManager {
 impl TtyManager {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn route_failure(&self, route: &str) -> Arc<Notify> {
+        self.routes
+            .lock()
+            .unwrap()
+            .entry(route.into())
+            .or_default()
+            .clone()
     }
 
     /// Authenticate before allocating a session. No process is created until encrypted Open.
@@ -93,6 +143,8 @@ impl TtyManager {
         sessions.insert(
             init.session_id.clone(),
             Session {
+                route_failed: self.route_failure(route),
+                id: init.session_id.clone(),
                 generation: init.nonce.clone(),
                 cipher,
                 pty: None,
@@ -128,16 +180,45 @@ impl TtyManager {
                 command.arg("-i");
                 command.env("TERM", "xterm-256color");
                 let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
-                let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
+                let mut writer = pair.master.take_writer().map_err(|e| e.to_string())?;
                 let child = pair
                     .slave
                     .spawn_command(command)
                     .map_err(|e| e.to_string())?;
                 drop(pair.slave);
+                let (input, mut input_rx) = mpsc::channel::<Vec<u8>>(8);
+                let cancelled = Arc::new(Notify::new());
                 session.pty = Some(Pty {
                     master: pair.master,
-                    writer: Arc::new(StdMutex::new(writer)),
-                    child,
+                    input,
+                    cancelled: cancelled.clone(),
+                    child: Some(child),
+                });
+                let map = self.sessions.clone();
+                let sid = envelope.session_id.clone();
+                let generation = session.generation.clone();
+                tokio::spawn(async move {
+                    while let Some(data) = tokio::select! {
+                        biased;
+                        _ = cancelled.notified() => None,
+                        data = input_rx.recv() => data,
+                    } {
+                        let write = tokio::task::spawn_blocking(move || {
+                            let result = writer.write_all(&data).and_then(|_| writer.flush());
+                            (writer, result)
+                        });
+                        let result = tokio::select! {
+                            biased;
+                            _ = cancelled.notified() => break,
+                            result = tokio::time::timeout(Duration::from_secs(5), write) => result,
+                        };
+                        match result {
+                            Ok(Ok((returned, Ok(())))) => writer = returned,
+                            _ => break,
+                        }
+                    }
+                    // Killing the slave also releases any blocked OS write after timeout.
+                    remove_generation(&map, &sid, &generation).await;
                 });
                 let (tx, mut rx) = mpsc::channel::<Vec<u8>>(64);
                 tokio::task::spawn_blocking(move || {
@@ -161,6 +242,7 @@ impl TtyManager {
                             if s.generation != generation {
                                 break;
                             }
+                            s.active = Instant::now();
                             match s.cipher.seal(&bytes) {
                                 Ok(env) => (s.output.clone(), AgentToHubMessage::TtyEncrypted(env)),
                                 Err(_) => break,
@@ -176,40 +258,20 @@ impl TtyManager {
                             break;
                         }
                     }
-                    let output = {
-                        let mut map = map.lock().await;
-                        if map.get(&sid).is_some_and(|s| s.generation == generation) {
-                            map.remove(&sid).map(|s| s.output.clone())
-                        } else {
-                            None
-                        }
-                    };
-                    if let Some(output) = output {
-                        let _ = output
-                            .send(AgentToHubMessage::TtyClosed { session_id: sid })
-                            .await;
-                    }
+                    remove_generation(&map, &sid, &generation).await;
                 });
             }
             TtyClientFrame::Input { data } => {
                 if data.len() > 1024 * 1024 {
                     return Err("Input too large".into());
                 }
-                let writer = session
+                session
                     .pty
                     .as_ref()
                     .ok_or("Terminal not open")?
-                    .writer
-                    .clone();
-                drop(sessions);
-                tokio::task::spawn_blocking(move || {
-                    let mut w = writer.lock().map_err(|e| e.to_string())?;
-                    w.write_all(&data)
-                        .and_then(|_| w.flush())
-                        .map_err(|e| e.to_string())
-                })
-                .await
-                .map_err(|e| e.to_string())??;
+                    .input
+                    .try_send(data)
+                    .map_err(|_| "Terminal input queue full or closed".to_string())?;
             }
             TtyClientFrame::Resize { rows, cols } => {
                 session
@@ -232,13 +294,12 @@ impl TtyManager {
         if sessions.get(sid).is_some_and(|s| s.route == route)
             && let Some(s) = sessions.remove(sid)
         {
-            let _ = s.output.try_send(AgentToHubMessage::TtyClosed {
-                session_id: sid.into(),
-            });
+            drop(s);
         }
     }
     pub async fn close_route(&self, route: &str) {
         self.sessions.lock().await.retain(|_, s| s.route != route);
+        self.routes.lock().unwrap().remove(route);
     }
     pub async fn expire_sessions(&self) {
         self.sessions.lock().await.retain(|_, s| {
@@ -292,13 +353,34 @@ mod tests {
     use super::*;
     use redash_ui_core::{control_plane::ClientSigner, e2ee::ClientE2eeSession};
     #[tokio::test]
+    async fn undeliverable_close_aborts_transport_instead_of_losing_eof() {
+        let manager = TtyManager::new();
+        let (cp, cs) = ClientSigner::generate_keypair();
+        let (ap, identity) = ClientSigner::generate_keypair();
+        let (_, init) = ClientE2eeSession::initiate("notify", "node", &cs, &ap).unwrap();
+        let (tx, _rx) = mpsc::channel(1);
+        tx.try_send(AgentToHubMessage::Heartbeat).unwrap();
+        let failed = manager.route_failure("hub");
+        manager
+            .accept_handshake(&init, &cp, &identity, "node", "hub", tx)
+            .await
+            .unwrap();
+        manager.close_session("notify", "hub").await;
+        tokio::time::timeout(Duration::from_secs(6), failed.notified())
+            .await
+            .unwrap();
+        assert_eq!(manager.session_count().await, 0);
+    }
+
+    #[tokio::test]
     async fn authenticated_open_only_and_expiry_reaps_child() {
         let manager = TtyManager::new();
         let (cp, cs) = ClientSigner::generate_keypair();
         let (ap, ass) = ClientSigner::generate_keypair();
         let (mut client, init) =
             ClientE2eeSession::initiate("lifecycle", "node", &cs, &ap).unwrap();
-        let (tx, _rx) = mpsc::channel(128);
+        let (tx, mut rx) = mpsc::channel(128);
+        let _hub_sender = tx.clone();
         let ack = manager
             .accept_handshake(&init, &cp, &ass, "node", "test", tx)
             .await
@@ -313,14 +395,33 @@ mod tests {
             let mut sessions = manager.sessions.lock().await;
             let s = sessions.get_mut("lifecycle").unwrap();
             s.active = Instant::now() - IDLE_TIMEOUT - Duration::from_secs(1);
-            s.pty.as_ref().unwrap().child.process_id().unwrap()
+            s.pty
+                .as_ref()
+                .unwrap()
+                .child
+                .as_ref()
+                .unwrap()
+                .process_id()
+                .unwrap()
         };
         manager.expire_sessions().await;
         assert_eq!(manager.session_count().await, 0);
-        assert_eq!(
-            unsafe { libc::kill(pid as i32, 0) },
-            -1,
-            "shell was not reaped"
-        );
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while let Some(message) = rx.recv().await {
+                if matches!(message, AgentToHubMessage::TtyClosed { .. }) {
+                    return;
+                }
+            }
+            panic!("missing terminal close event");
+        })
+        .await
+        .unwrap();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while unsafe { libc::kill(pid as i32, 0) } != -1 {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("shell was not reaped");
     }
 }

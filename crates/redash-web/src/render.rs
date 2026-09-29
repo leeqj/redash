@@ -2,6 +2,7 @@
 //! Renders the entire ReDash UI directly to the HTML5 Canvas in 100% Rust WASM.
 
 use crate::app::{ActiveView, AppState, ProcessSortField, SettingsCategory, WorkbenchTab};
+use crate::fleet_layout::{FleetLayout, filtered_hosts};
 use crate::theme::ThemeColors;
 use redash_types::formatters::{format_bytes, format_bytes_rate};
 use redash_types::metrics::{ListeningPort, NodeMetrics, ProcessItem};
@@ -187,7 +188,7 @@ fn render_topbar(
     let _ = ctx.fill_text(badge_text, x + 115.0, 22.0);
 
     // Right Status Indicator
-    let status_x = width - 180.0;
+    let status_x = width - 235.0;
     // Green LED dot
     ctx.set_fill_style_str(theme.status_online);
     ctx.begin_path();
@@ -196,7 +197,15 @@ fn render_topbar(
 
     ctx.set_fill_style_str(theme.text_secondary);
     ctx.set_font("11px -apple-system, sans-serif");
-    let _ = ctx.fill_text("Gateway Online", status_x + 8.0, 21.0);
+    let _ = ctx.fill_text(
+        if state.gateway_error.is_some() {
+            "Gateway 错误"
+        } else {
+            "Gateway"
+        },
+        status_x + 8.0,
+        21.0,
+    );
 
     // Add Host Button
     let (btn_x, btn_y, btn_w, btn_h) = get_topbar_add_btn_rect(width);
@@ -229,8 +238,10 @@ fn render_fleet_view(
     h: f64,
 ) {
     let padding = 24.0;
-    let card_w = ((w - padding * 3.0) / 2.0).max(340.0);
-    let card_h = 196.0;
+    let hosts = filtered_hosts(state);
+    let layout = FleetLayout::new(x + w, y + h, hosts.len(), state.fleet_scroll);
+    let card_w = layout.card_width;
+    let card_h = layout.card_height;
 
     // Header Summary with shared i18n (scaled down 40%)
     ctx.set_fill_style_str(theme.text_primary);
@@ -269,36 +280,21 @@ fn render_fleet_view(
         let _ = ctx.fill_text(&display, sb_x + 8.0, sb_y + 15.0);
     }
 
-    let start_y = y + 36.0;
-
     if state.hosts.is_empty() {
         ctx.set_fill_style_str(theme.text_muted);
         ctx.set_font("14px sans-serif");
         ctx.set_text_align("center");
-        let empty_msg = format!(
-            "暂无主机节点，请点击上方 '+ {}' 添加服务器",
-            state.t("host.add_title")
-        );
+        let empty_msg = state.gateway_error.clone().unwrap_or_else(|| {
+            format!(
+                "暂无主机节点，请点击上方 '+ {}' 添加服务器",
+                state.t("host.add_title")
+            )
+        });
         let _ = ctx.fill_text(&empty_msg, x + w / 2.0, y + 120.0);
         return;
     }
 
-    let q = state.filter_query.trim().to_lowercase();
-    let filtered_hosts: Vec<&crate::models::HostConfig> = state
-        .hosts
-        .iter()
-        .filter(|h| {
-            if q.is_empty() {
-                true
-            } else {
-                h.name.to_lowercase().contains(&q)
-                    || h.hostname.to_lowercase().contains(&q)
-                    || h.user.to_lowercase().contains(&q)
-                    || h.tags.iter().any(|t| t.to_lowercase().contains(&q))
-            }
-        })
-        .collect();
-
+    let filtered_hosts = hosts;
     if filtered_hosts.is_empty() {
         ctx.set_fill_style_str(theme.text_muted);
         ctx.set_font("14px sans-serif");
@@ -307,15 +303,15 @@ fn render_fleet_view(
         return;
     }
 
+    ctx.save();
+    ctx.begin_path();
+    ctx.rect(x, layout.top, w, layout.bottom - layout.top);
+    ctx.clip();
     let mut pending_tooltip = None;
     for (idx, host) in filtered_hosts.iter().enumerate() {
-        let col = idx % 2;
-        let row = idx / 2;
-        let card_x = x + padding + (col as f64) * (card_w + padding);
-        let card_y = start_y + (row as f64) * (card_h + padding);
-
-        if card_y + card_h > y + h {
-            break;
+        let (card_x, card_y) = layout.card(idx);
+        if !layout.visible(card_y) {
+            continue;
         }
 
         if let Some(tt) = render_host_card(ctx, state, theme, host, card_x, card_y, card_w, card_h)
@@ -327,15 +323,26 @@ fn render_fleet_view(
     if let Some((tt_text, tt_x, tt_y)) = pending_tooltip {
         render_tooltip(ctx, theme, &tt_text, tt_x, tt_y);
     }
+    if layout.max_scroll > 0.0 {
+        let viewport = layout.bottom - layout.top;
+        let thumb = (viewport * viewport / (viewport + layout.max_scroll)).max(24.0);
+        ctx.set_fill_style_str(theme.text_muted);
+        ctx.fill_rect(
+            x + w - 8.0,
+            layout.top + layout.scroll / layout.max_scroll * (viewport - thumb),
+            4.0,
+            thumb,
+        );
+    }
+    ctx.restore();
 }
 
 pub fn get_fleet_search_bar_rect(x: f64, y: f64, w: f64) -> (f64, f64, f64, f64) {
-    let padding = 24.0;
-    let sb_x = x + padding + 190.0;
-    let sb_y = y + 7.0;
-    let sb_w = (w - padding * 2.0 - 210.0).clamp(180.0, 320.0);
-    let sb_h = 22.0;
-    (sb_x, sb_y, sb_w, sb_h)
+    if w < 650.0 {
+        (x + 24.0, y + 36.0, (w - 48.0).max(1.0), 22.0)
+    } else {
+        (x + 214.0, y + 7.0, (w - 258.0).clamp(180.0, 320.0), 22.0)
+    }
 }
 
 pub fn get_fleet_host_delete_btn_rect(cx: f64, cy: f64, cw: f64) -> (f64, f64, f64, f64) {
@@ -403,11 +410,11 @@ pub fn get_fleet_host_range_pill_rect(
 }
 
 pub fn get_fleet_host_action_term_btn_rect(cx: f64, cy: f64) -> (f64, f64, f64, f64) {
-    (cx + 16.0, cy + 158.0, 72.0, 24.0)
+    (cx + 16.0, cy + 158.0, 112.0, 24.0)
 }
 
 pub fn get_fleet_host_action_sftp_btn_rect(cx: f64, cy: f64) -> (f64, f64, f64, f64) {
-    (cx + 96.0, cy + 158.0, 56.0, 24.0)
+    (cx + 136.0, cy + 158.0, 112.0, 24.0)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -481,15 +488,36 @@ fn render_host_card(
     ctx.set_fill_style_str(theme.text_primary);
     ctx.set_font("bold 13px sans-serif");
     ctx.set_text_align("left");
-    let _ = ctx.fill_text(&host.name, name_x, cy + 25.0);
+    let max_name_width = (cw - 215.0).max(45.0);
+    let mut display_name = host.name.clone();
+    while ctx
+        .measure_text(&display_name)
+        .map(|m| m.width())
+        .unwrap_or(0.0)
+        > max_name_width
+        && display_name.chars().count() > 2
+    {
+        display_name.pop();
+    }
+    if display_name != host.name {
+        display_name.pop();
+        display_name.push('…');
+    }
+    let name_w = ctx
+        .measure_text(&display_name)
+        .map(|m| m.width())
+        .unwrap_or(max_name_width);
+    let _ = ctx.fill_text(&display_name, name_x, cy + 25.0);
 
     // Tooltip trigger on host name: displays user@hostname:port
-    let name_w = (host.name.chars().count() as f64) * 8.5;
     let is_name_hovered = state.hover_pos.is_some_and(|(hx, hy)| {
         hx >= name_x && hx <= name_x + name_w.max(32.0) && hy >= cy + 10.0 && hy <= cy + 30.0
     });
     let tooltip = if is_name_hovered {
-        let endpoint = format!("{}@{}:{}", host.user, host.hostname, host.port);
+        let endpoint = format!(
+            "{} · {}@{}:{}",
+            host.name, host.user, host.hostname, host.port
+        );
         Some((endpoint, name_x + name_w / 2.0, cy + 34.0))
     } else {
         None
@@ -772,12 +800,21 @@ fn render_host_card(
     let _ = ctx.fill_text(&full_readout, hud_x + hud_w - 6.0, hud_y + 16.5);
 
     // Sparkline Canvas Area
-    if total_samples < 2 {
+    if total_samples < 2 || metrics.is_none() {
         ctx.set_fill_style_str(theme.text_muted);
         ctx.set_font("10px sans-serif");
         ctx.set_text_align("center");
         let _ = ctx.fill_text(
-            "等待采集数据 (Waiting for metrics)...",
+            &state
+                .metrics_errors
+                .get(&host.id.0)
+                .map(|error| {
+                    truncate_text(
+                        &format!("指标不可用 · {error}"),
+                        (chart_w / 7.0).max(10.0) as usize,
+                    )
+                })
+                .unwrap_or_else(|| "等待采集数据 (Waiting for metrics)...".into()),
             chart_x + chart_w / 2.0,
             chart_y + chart_h / 2.0 + 4.0,
         );
@@ -1020,12 +1057,10 @@ pub fn get_workbench_tab_at_pos(x: f64, y: f64, base_x: f64, base_y: f64) -> Opt
 }
 
 pub fn get_active_host_metrics(state: &AppState) -> Option<&NodeMetrics> {
-    state
-        .selected_host_id
-        .as_ref()
-        .and_then(|id| state.metrics.get(id))
-        .or_else(|| state.hosts.first().and_then(|h| state.metrics.get(&h.id.0)))
-        .or_else(|| state.metrics.values().next())
+    match &state.selected_host_id {
+        Some(id) => state.metrics.get(id),
+        None => state.hosts.first().and_then(|h| state.metrics.get(&h.id.0)),
+    }
 }
 
 pub const SNIPPET_CATEGORIES: &[&str] = &["全部", "System", "Docker", "Network", "Maintenance"];
@@ -1510,11 +1545,20 @@ fn render_terminal_panel(
         let cells = state.terminal_grid.line_cells(line_idx);
         let mut char_x = x + 16.0;
         for cell in cells {
+            if cell.c == '\0' {
+                char_x += char_width;
+                continue;
+            }
             // Draw background if not default
             let bg_color = cell.bg.to_css_color(false);
             if bg_color != "transparent" {
                 ctx.set_fill_style_str(bg_color);
-                ctx.fill_rect(char_x, line_y - 14.0, char_width, line_height);
+                ctx.fill_rect(
+                    char_x,
+                    line_y - 14.0,
+                    char_width * cell.display_width() as f64,
+                    line_height,
+                );
             }
 
             // Draw character with foreground color
@@ -5321,17 +5365,16 @@ pub fn is_interactive_element(
             if (sb_x..=sb_x + sb_w).contains(&x) && (sb_y..=sb_y + sb_h).contains(&y) {
                 return (true, "text");
             }
-            let padding = 24.0;
-            let card_w = ((content_w - padding * 3.0) / 2.0).max(340.0);
-            let card_h = 196.0;
-            let start_y = content_y + 36.0;
-            for idx in 0..state.hosts.len() {
-                let col = idx % 2;
-                let row = idx / 2;
-                let cx = content_x + padding + (col as f64) * (card_w + padding);
-                let cy = start_y + (row as f64) * (card_h + padding);
-                if (cx..=cx + card_w).contains(&x) && (cy..=cy + card_h).contains(&y) {
-                    return (true, "pointer");
+            let hosts = filtered_hosts(state);
+            let layout = FleetLayout::new(width, height, hosts.len(), state.fleet_scroll);
+            if layout.contains_y(y) {
+                for idx in 0..hosts.len() {
+                    let (cx, cy) = layout.card(idx);
+                    if (cx..=cx + layout.card_width).contains(&x)
+                        && (cy..=cy + layout.card_height).contains(&y)
+                    {
+                        return (true, "pointer");
+                    }
                 }
             }
         }
@@ -5670,5 +5713,17 @@ mod tests {
             is_interactive_element(width - 50.0, height - 50.0, width, height, &state);
         assert!(!inter);
         assert_eq!(cursor, "default");
+    }
+    #[test]
+    fn selected_host_without_data_never_displays_another_hosts_metrics() {
+        let mut state = AppState::new();
+        let first = crate::models::HostConfig::new("first", "localhost", "test");
+        let second = crate::models::HostConfig::new("second", "localhost", "test");
+        state
+            .metrics
+            .insert(first.id.0.clone(), NodeMetrics::default());
+        state.selected_host_id = Some(second.id.0.clone());
+        state.hosts = vec![first, second];
+        assert!(get_active_host_metrics(&state).is_none());
     }
 }

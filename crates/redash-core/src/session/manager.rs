@@ -416,8 +416,6 @@ impl SessionManager {
                 .unwrap_or_else(|| "ws://127.0.0.1:8080".to_string());
             let ws_base = redash_types::to_websocket_endpoint(&base);
             let ws_url = format!("{}/v1/control/tty/{}", ws_base, node_id);
-            let lan_endpoint =
-                crate::discovery::LanDiscoveryClient::global().find_direct_endpoint(node_id);
             let client_priv_hex = self
                 .client_keypair
                 .read()
@@ -437,6 +435,7 @@ impl SessionManager {
                     )
                 })?)?;
             let identity = super::pty::TerminalIdentity {
+                gateway_token: crate::control_plane::gateway_token(),
                 node_id: node_id.to_string(),
                 client_private_key: client_priv_hex
                     .context("Client signing identity is missing")?,
@@ -445,15 +444,7 @@ impl SessionManager {
                     .with_context(|| format!("No trusted Agent identity for {node_id}"))?
                     .clone(),
             };
-            return PtyChannel::new_happy_eyeballs_ws(
-                lan_endpoint.as_deref(),
-                &ws_url,
-                cols,
-                rows,
-                output_tx,
-                Some(&identity),
-            )
-            .await;
+            return PtyChannel::new_discovering_ws(&ws_url, cols, rows, output_tx, &identity).await;
         }
 
         let handle = self.get_or_connect(host).await?;

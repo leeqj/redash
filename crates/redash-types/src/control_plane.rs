@@ -198,6 +198,8 @@ pub struct ActionResult {
 /// Initial handshake data sent by the agent upon connecting to the hub.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentHandshake {
+    #[serde(default = "default_telemetry_interval")]
+    pub telemetry_interval_secs: u64,
     pub node_id: String,
     pub hostname: String,
     pub os: String,
@@ -205,6 +207,14 @@ pub struct AgentHandshake {
     pub version: String,
     pub auth_token: String,
     pub trusted_public_key: String,
+}
+
+pub fn default_telemetry_interval() -> u64 {
+    3
+}
+
+pub fn telemetry_max_age(interval_secs: u64) -> u64 {
+    interval_secs.clamp(1, 300).saturating_mul(3).max(15)
 }
 
 /// Encrypted data envelope for end-to-end encrypted (E2EE) blind relay.
@@ -342,6 +352,9 @@ pub enum HubToAgentMessage {
 /// Aggregated node details exposed to UI and API.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ManagedNodeDetail {
+    /// Hub receive-time deadline; independent of the heartbeat deadline.
+    #[serde(default)]
+    pub telemetry_expires_at: u64,
     pub node_id: String,
     pub hostname: String,
     pub os: String,
@@ -352,6 +365,26 @@ pub struct ManagedNodeDetail {
     pub connected_at: u64,
     pub last_heartbeat_at: u64,
     pub latest_telemetry: Option<AgentTelemetry>,
+}
+
+impl ManagedNodeDetail {
+    pub fn telemetry_is_stale(&self, now: u64) -> bool {
+        let deadline = if self.telemetry_expires_at != 0 {
+            self.telemetry_expires_at
+        } else {
+            self.latest_telemetry
+                .as_ref()
+                .map(|sample| sample.timestamp.saturating_add(15))
+                .unwrap_or(self.connected_at.saturating_add(15))
+        };
+        now > deadline
+    }
+
+    pub fn expire_telemetry(&mut self, now: u64) {
+        if self.status == NodeOnlineStatus::Offline || self.telemetry_is_stale(now) {
+            self.latest_telemetry = None;
+        }
+    }
 }
 
 /// Standard LAN discovery multicast group address.

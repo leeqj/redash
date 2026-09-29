@@ -46,9 +46,17 @@ where
     let mut max_disk = 0.0f32;
     let mut worst_culprit: Option<(String, String)> = None; // (NodeName, Reason)
 
-    // Evaluate Control-Plane agent nodes
+    // Health includes telemetry freshness independently of transport liveness.
+    let now = crate::e2ee::now_secs();
     for node in control_plane_nodes {
+        let telemetry_stale = node.telemetry_is_stale(now);
         match node.status {
+            NodeOnlineStatus::Online if telemetry_stale => {
+                stale_nodes += 1;
+                if worst_culprit.is_none() {
+                    worst_culprit = Some((node.hostname.clone(), "指标采集已过期".into()));
+                }
+            }
             NodeOnlineStatus::Online => online_nodes += 1,
             NodeOnlineStatus::Stale => {
                 stale_nodes += 1;
@@ -62,7 +70,11 @@ where
             }
         }
 
-        if let Some(t) = &node.latest_telemetry {
+        if let Some(t) = node
+            .latest_telemetry
+            .as_ref()
+            .filter(|_| !telemetry_stale && node.status != NodeOnlineStatus::Offline)
+        {
             if t.validity.cpu && t.cpu_usage_pct > max_cpu {
                 max_cpu = t.cpu_usage_pct;
                 if t.cpu_usage_pct >= 90.0 {
@@ -215,7 +227,7 @@ mod tests {
             hostname: "nas".to_string(),
             os: "linux".to_string(),
             arch: "x86_64".to_string(),
-            timestamp: 1710000000,
+            timestamp: crate::e2ee::now_secs(),
             uptime_secs: 1000,
             cpu_usage_pct: 15.0,
             cpu_cores: 4,
@@ -231,11 +243,12 @@ mod tests {
         state
             .control_plane_nodes
             .push(redash_types::ManagedNodeDetail {
+                telemetry_expires_at: crate::e2ee::now_secs() + 30,
                 node_id: "n-1".to_string(),
                 hostname: "nas".to_string(),
                 os: "linux".to_string(),
                 arch: "x86_64".to_string(),
-                version: "0.2.0-beta".to_string(),
+                version: "0.2.1-beta".to_string(),
                 remote_ip: "192.168.1.1".to_string(),
                 status: NodeOnlineStatus::Online,
                 connected_at: 1710000000,
@@ -251,11 +264,34 @@ mod tests {
     }
 
     #[test]
+    fn online_but_expired_collector_is_warning_even_after_sample_is_hidden() {
+        let node = ManagedNodeDetail {
+            telemetry_expires_at: crate::e2ee::now_secs() - 1,
+            node_id: "stale".into(),
+            hostname: "collector".into(),
+            os: "test".into(),
+            arch: "test".into(),
+            version: "2".into(),
+            remote_ip: "local".into(),
+            status: NodeOnlineStatus::Online,
+            connected_at: 1,
+            last_heartbeat_at: crate::e2ee::now_secs(),
+            latest_telemetry: None,
+        };
+        let summary = evaluate_fleet_ambient_summary(&[node], &[], std::iter::empty());
+        assert!(!summary.is_healthy());
+        assert_eq!(summary.overall_level, MeterLevel::Warning);
+        assert_eq!(summary.stale_nodes, 1);
+        assert!(summary.summary_label.contains("指标采集已过期"));
+    }
+
+    #[test]
     fn test_ambient_fleet_summary_offline_alert() {
         let mut state = crate::state::AppStateMachine::new();
         state
             .control_plane_nodes
             .push(redash_types::ManagedNodeDetail {
+                telemetry_expires_at: 0,
                 node_id: "n-vps".to_string(),
                 hostname: "vps-frankfurt".to_string(),
                 os: "linux".to_string(),

@@ -3,12 +3,13 @@ pub mod sys;
 
 use docker::DockerClient;
 use redash_types::AgentTelemetry;
+use std::sync::{Arc, Mutex};
 use sys::SystemCollector;
 
 pub struct TelemetryCollector {
     node_id: String,
     hostname: String,
-    sys_collector: SystemCollector,
+    sys_collector: Arc<Mutex<SystemCollector>>,
     docker_client: DockerClient,
 }
 
@@ -19,13 +20,16 @@ impl TelemetryCollector {
         Self {
             node_id,
             hostname,
-            sys_collector: SystemCollector::new(),
+            sys_collector: Arc::new(Mutex::new(SystemCollector::new())),
             docker_client: DockerClient::new(),
         }
     }
 
     pub async fn collect(&mut self) -> AgentTelemetry {
-        let sys_snapshot = self.sys_collector.sample();
+        let system = self.sys_collector.clone();
+        let sys_snapshot = tokio::task::spawn_blocking(move || system.lock().unwrap().sample())
+            .await
+            .expect("system collector worker failed");
         let containers = self.docker_client.list_containers().await;
 
         AgentTelemetry {

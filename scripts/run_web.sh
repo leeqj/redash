@@ -1,22 +1,15 @@
 #!/usr/bin/env bash
 set -e
 
+: "${REDASH_GATEWAY_TOKEN:?Set a random management token (at least 32 characters) before starting the Gateway}"
+
 PORT=${1:-8080}
 HOST=${2:-"127.0.0.1"}
 
 export PATH="$HOME/.cargo/bin:$PATH"
 
 echo "=== Building ReDash GPUI Web Client (WebAssembly) ==="
-cargo build --target wasm32-unknown-unknown -p redash-web --release
-
-if command -v wasm-bindgen >/dev/null 2>&1; then
-    wasm-bindgen target/wasm32-unknown-unknown/release/redash_web.wasm \
-        --out-dir crates/redash-server/web/pkg \
-        --target web \
-        --no-typescript
-else
-    echo "Note: wasm-bindgen not in PATH, using pre-bundled artifacts in crates/redash-server/web/pkg"
-fi
+bash "$(dirname "$0")/build_web.sh"
 
 echo "=== Building ReDash Web Gateway Server ==="
 cargo build --bin redash-server

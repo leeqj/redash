@@ -65,18 +65,29 @@
 # 进入工程根目录
 cd redash
 
-# 编译高性能 release 二进制
-cargo build --release -p redash-server
+# 首次构建安装目标及与 Cargo.lock 匹配的绑定生成器
+rustup target add wasm32-unknown-unknown
+cargo install wasm-bindgen-cli --version 0.2.128 --locked
+
+# Gateway 在编译时嵌入资源，必须先生成当前源码的 Web 资源
+bash scripts/build_web.sh
+cargo build --locked --release -p redash-server
+cargo test --locked -p redash-server embedded_web_manifest_matches_binary
 
 # 可执行文件输出路径：target/release/redash-server
 ```
 
+`/pkg/build.json` 返回嵌入 WASM 的 SHA-256 和构建 revision，可与部署产物对照。Release 的 Server job 下载同次工作流生成的 Web 资源后再编译；Docker 也执行相同构建脚本。缺少匹配的 wasm-bindgen 时构建失败，不复用旧资源。
+
 ### 2. 本地直接运行
 ```bash
+# 创建独立的管理凭据，保存在安全位置；桌面也配置同一个值
+export REDASH_GATEWAY_TOKEN="$(openssl rand -hex 32)"
+
 # 默认监听 127.0.0.1:8080
 ./target/release/redash-server
 
-# 监听全网卡 0.0.0.0，指定 8080 端口
+# 仅在已有 TLS 反向代理和访问控制的部署环境中监听全网卡
 ./target/release/redash-server --host 0.0.0.0 --port 8080
 ```
 
@@ -84,6 +95,8 @@ cargo build --release -p redash-server
 | 变量名 | 说明 | 默认值 |
 |---|---|---|
 | `REDASH_CONFIG_DIR` | 自定义持久化配置路径（存储 `hosts.json`, `settings.json`） | `~/.local/share/redash/` |
+| `REDASH_GATEWAY_TOKEN` | 管理 HTTP、SSH WebSocket、控制面客户端的独立随机 token，至少 32 字符；必填 | 无，未配置拒绝启动 |
+| `REDASH_ALLOWED_ORIGINS` | 可选，以逗号分隔的完整浏览器 Origin；默认只接受与 Host 相同的 Origin | 同源 |
 | `RUST_LOG` | 日志级别 (`info`, `debug`, `warn`, `error`) | `info` |
 
 ### 4. Systemd 守护进程部署 (生产推荐)
@@ -97,7 +110,8 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=/var/lib/redash
-ExecStart=/usr/local/bin/redash-server --host 0.0.0.0 --port 8080
+EnvironmentFile=/etc/redash-hub.env
+ExecStart=/usr/local/bin/redash-server --host 127.0.0.1 --port 8080
 Restart=always
 RestartSec=5s
 Environment="RUST_LOG=info"
@@ -107,6 +121,10 @@ LimitNOFILE=65535
 [Install]
 WantedBy=multi-user.target
 ```
+先创建仅服务管理员可读的 `/etc/redash-hub.env`（权限 600），设置独立的随机 `REDASH_GATEWAY_TOKEN`；使用公网浏览器时设置 `REDASH_ALLOWED_ORIGINS=https://hub.example.com`，反向代理保留公开 Host 并提供 HTTPS。不要把每节点 enrollment token 当作管理 token。该服务默认只监听 loopback，由 TLS 代理转发。
+
+浏览器打开 Hub 后输入管理 token 登录，服务设置 HttpOnly、SameSite=Strict 的会话 cookie；HTTPS 下附加 Secure。非 localhost 的浏览器登录必须使用 HTTPS，会话 12 小时过期，重启 Hub 也会清除会话。桌面进程通过环境变量 `REDASH_GATEWAY_TOKEN` 携带 Bearer 认证；该凭据只发往配置的 Hub，不随 LAN 发现广播或直连竞速发送。直接 API 调用使用 `Authorization: Bearer <管理 token>`。
+
 启动并配置开机自启：
 ```bash
 sudo mkdir -p /var/lib/redash

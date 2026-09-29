@@ -14,7 +14,7 @@ pub struct AgentEnrollModal {
     pub auth_token_input: String,
     pub public_key_hex: Option<String>,
     pub agent_identity: (String, String),
-    pub active_tab: usize, // 0 = Bash, 1 = Docker
+    pub active_tab: usize, // 0 = Shell, 1 = Docker, 2 = Hub registration
     pub copied: bool,
 }
 
@@ -71,7 +71,6 @@ impl Render for AgentEnrollModal {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let cmd = self.current_command();
         let cmd_clone = cmd.clone();
-        let qr_ascii: Option<String> = None;
         let active_tab = self.active_tab;
         let copied = self.copied;
 
@@ -111,7 +110,7 @@ impl Render for AgentEnrollModal {
                                             .text_base()
                                             .font_weight(FontWeight::SEMIBOLD)
                                             .text_color(DarkTechTheme::text_primary())
-                                            .child("受控节点入网与移动端配对 (Zero-Trust)"),
+                                            .child("接入受控节点"),
                                     ),
                             )
                             .child(
@@ -138,9 +137,9 @@ impl Render for AgentEnrollModal {
                             .text_xs()
                             .text_color(DarkTechTheme::accent_cyan())
                             .child(if active_tab == 2 {
-                                "使用移动端扫描二维码，或复制配对链接在手机 App 中导入，即可直接对齐公钥实现端到端加密与节点漫游。"
+                                "复制以下 JSON，将本节点条目合并到 Hub 的 agent_enrollments.json。保留其他节点配置，保存后重启 Hub，再执行安装命令。"
                             } else {
-                                "探针采用主动向外出站长连接（443 WSS），无论是大内网 NAS 还是海外多云 VPS，均无需公网 IP 与端口映射即可秒级入网。"
+                                "先完成 Hub 注册配置，再在目标服务器执行安装命令。Agent 主动连接配置的 Hub，远程部署请使用 WSS 地址。"
                             }),
                     )
                     .child(
@@ -160,9 +159,10 @@ impl Render for AgentEnrollModal {
                                     .bg(if active_tab == 0 { DarkTechTheme::accent_cyan() } else { DarkTechTheme::bg_input() })
                                     .text_color(if active_tab == 0 { DarkTechTheme::bg_root() } else { DarkTechTheme::text_secondary() })
                                     .child("Shell 脚本安装")
-                                    .on_click(cx.listener(|this, _, _, _| {
+                                    .on_click(cx.listener(|this, _, _, cx| {
                                         this.active_tab = 0;
                                         this.copied = false;
+                                        cx.notify();
                                     })),
                             )
                             .child(
@@ -177,14 +177,15 @@ impl Render for AgentEnrollModal {
                                     .bg(if active_tab == 1 { DarkTechTheme::accent_cyan() } else { DarkTechTheme::bg_input() })
                                     .text_color(if active_tab == 1 { DarkTechTheme::bg_root() } else { DarkTechTheme::text_secondary() })
                                     .child("Docker 启动")
-                                    .on_click(cx.listener(|this, _, _, _| {
+                                    .on_click(cx.listener(|this, _, _, cx| {
                                         this.active_tab = 1;
                                         this.copied = false;
+                                        cx.notify();
                                     })),
                             )
                             .child(
                                 div()
-                                    .id("tab_mobile_pair")
+                                    .id("tab_hub_registration")
                                     .px_3()
                                     .py_1()
                                     .rounded_md()
@@ -194,9 +195,10 @@ impl Render for AgentEnrollModal {
                                     .bg(if active_tab == 2 { DarkTechTheme::accent_cyan() } else { DarkTechTheme::bg_input() })
                                     .text_color(if active_tab == 2 { DarkTechTheme::bg_root() } else { DarkTechTheme::text_secondary() })
                                     .child("Hub 注册配置")
-                                    .on_click(cx.listener(|this, _, _, _| {
+                                    .on_click(cx.listener(|this, _, _, cx| {
                                         this.active_tab = 2;
                                         this.copied = false;
+                                        cx.notify();
                                     })),
                             ),
                     )
@@ -208,33 +210,7 @@ impl Render for AgentEnrollModal {
                             .border_1()
                             .border_color(DarkTechTheme::border_muted())
                             .rounded_md()
-                            .child(if let Some(qr) = qr_ascii {
-                                div()
-                                    .flex()
-                                    .flex_col()
-                                    .items_center()
-                                    .gap_2()
-                                    .child(
-                                        div()
-                                            .text_xs()
-                                            .font_family("monospace")
-                                            .text_color(DarkTechTheme::accent_cyan())
-                                            .child(qr),
-                                    )
-                                    .child(
-                                        div()
-                                            .text_xs()
-                                            .font_family("monospace")
-                                            .text_color(DarkTechTheme::text_muted())
-                                            .child(cmd),
-                                    )
-                            } else {
-                                div()
-                                    .text_xs()
-                                    .font_family("monospace")
-                                    .text_color(DarkTechTheme::accent_emerald())
-                                    .child(cmd)
-                            }),
+                            .child(div().text_xs().font_family("monospace").text_color(DarkTechTheme::accent_emerald()).child(cmd)),
                     )
                     .child(div().text_xs().text_color(DarkTechTheme::text_secondary()).child(
                         format!("先将“Hub 注册配置”合并到 Hub 的 agent_enrollments.json（权限 600）并重启 Hub，再执行安装命令。节点 {} 的 Agent 公钥会在复制安装命令时固定到本机；请勿公开安装命令中的凭据。", self.node_id_input)
@@ -256,7 +232,7 @@ impl Render for AgentEnrollModal {
                                             .text_xs()
                                             .text_color(DarkTechTheme::text_muted())
                                             .child(if active_tab == 2 {
-                                                "扫码后移动端将对齐公钥，直连内网探针或经由 Hub 加密访问。"
+                                                "注册配置包含节点凭据，请仅保存到受信任的 Hub。"
                                             } else {
                                                 "在目标服务器粘贴并执行命令后，即可在控制台看到节点上线。"
                                             }),
@@ -276,7 +252,7 @@ impl Render for AgentEnrollModal {
                                     .child(if copied {
                                         "✓ 已复制到剪贴板"
                                     } else if active_tab == 2 {
-                                        "📋 复制配对链接"
+                                        "📋 复制注册 JSON"
                                     } else {
                                         "📋 复制一键命令"
                                     })

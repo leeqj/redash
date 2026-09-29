@@ -8,13 +8,22 @@ use tower::ServiceExt;
 
 #[tokio::test]
 async fn test_web_assets_serving() {
-    let state = AppState::new();
+    let state = test_state();
     let app = build_router(state);
 
     // Test GET /
     let res = app
         .clone()
-        .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
+        .oneshot(
+            Request::builder()
+                .header(
+                    "Authorization",
+                    "Bearer test-management-token-at-least-32-characters",
+                )
+                .uri("/")
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
 
@@ -29,6 +38,10 @@ async fn test_web_assets_serving() {
         .clone()
         .oneshot(
             Request::builder()
+                .header(
+                    "Authorization",
+                    "Bearer test-management-token-at-least-32-characters",
+                )
                 .uri("/pkg/redash_web.js")
                 .body(Body::empty())
                 .unwrap(),
@@ -46,6 +59,10 @@ async fn test_web_assets_serving() {
         .clone()
         .oneshot(
             Request::builder()
+                .header(
+                    "Authorization",
+                    "Bearer test-management-token-at-least-32-characters",
+                )
                 .uri("/pkg/redash_web_bg.wasm")
                 .body(Body::empty())
                 .unwrap(),
@@ -61,6 +78,10 @@ async fn test_web_assets_serving() {
     let res = app
         .oneshot(
             Request::builder()
+                .header(
+                    "Authorization",
+                    "Bearer test-management-token-at-least-32-characters",
+                )
                 .uri("/random_404_url")
                 .body(Body::empty())
                 .unwrap(),
@@ -80,7 +101,7 @@ async fn test_hosts_api_crud() {
         std::env::set_var("REDASH_CONFIG_DIR", &test_dir);
     }
 
-    let state = AppState::new();
+    let state = test_state();
 
     // Insert a test host into state directly
     let mut test_host = HostConfig::new("Web Unit Test Host", "127.0.0.1", "testuser");
@@ -88,7 +109,7 @@ async fn test_hosts_api_crud() {
     test_host.tags = vec!["web".to_string(), "testing".to_string()];
 
     {
-        let mut store = state.host_store.write().await;
+        let mut store = state.host_store.write().unwrap();
         store.hosts.push(test_host.clone());
     }
 
@@ -99,6 +120,10 @@ async fn test_hosts_api_crud() {
         .clone()
         .oneshot(
             Request::builder()
+                .header(
+                    "Authorization",
+                    "Bearer test-management-token-at-least-32-characters",
+                )
                 .uri("/api/hosts")
                 .body(Body::empty())
                 .unwrap(),
@@ -117,6 +142,10 @@ async fn test_hosts_api_crud() {
         .clone()
         .oneshot(
             Request::builder()
+                .header(
+                    "Authorization",
+                    "Bearer test-management-token-at-least-32-characters",
+                )
                 .uri("/api/hosts/test_host_123")
                 .body(Body::empty())
                 .unwrap(),
@@ -138,6 +167,10 @@ async fn test_hosts_api_crud() {
         .clone()
         .oneshot(
             Request::builder()
+                .header(
+                    "Authorization",
+                    "Bearer test-management-token-at-least-32-characters",
+                )
                 .method("POST")
                 .uri("/api/hosts")
                 .header("content-type", "application/json")
@@ -158,6 +191,10 @@ async fn test_hosts_api_crud() {
         .clone()
         .oneshot(
             Request::builder()
+                .header(
+                    "Authorization",
+                    "Bearer test-management-token-at-least-32-characters",
+                )
                 .method("DELETE")
                 .uri(format!("/api/hosts/{}", created_id))
                 .body(Body::empty())
@@ -178,7 +215,7 @@ async fn test_settings_api() {
         std::env::set_var("REDASH_CONFIG_DIR", &test_dir);
     }
 
-    let state = AppState::new();
+    let state = test_state();
     let app = build_router(state);
 
     // 1. GET /api/settings
@@ -186,6 +223,10 @@ async fn test_settings_api() {
         .clone()
         .oneshot(
             Request::builder()
+                .header(
+                    "Authorization",
+                    "Bearer test-management-token-at-least-32-characters",
+                )
                 .uri("/api/settings")
                 .body(Body::empty())
                 .unwrap(),
@@ -209,6 +250,10 @@ async fn test_settings_api() {
     let res = app
         .oneshot(
             Request::builder()
+                .header(
+                    "Authorization",
+                    "Bearer test-management-token-at-least-32-characters",
+                )
                 .method("PUT")
                 .uri("/api/settings")
                 .header("content-type", "application/json")
@@ -223,7 +268,7 @@ async fn test_settings_api() {
 
 #[tokio::test]
 async fn test_batch_exec_api() {
-    let state = AppState::new();
+    let state = test_state();
     let app = build_router(state);
 
     let batch_req = redash_types::batch::BatchRunRequest {
@@ -234,6 +279,10 @@ async fn test_batch_exec_api() {
     let res = app
         .oneshot(
             Request::builder()
+                .header(
+                    "Authorization",
+                    "Bearer test-management-token-at-least-32-characters",
+                )
                 .method("POST")
                 .uri("/api/batch/exec")
                 .header("content-type", "application/json")
@@ -253,7 +302,7 @@ async fn test_batch_exec_api() {
 
 #[tokio::test]
 async fn test_webhook_test_api() {
-    let state = AppState::new();
+    let state = test_state();
     state.app_settings.write().await.alert_webhook_url = None;
     let app = build_router(state);
 
@@ -265,6 +314,10 @@ async fn test_webhook_test_api() {
         .clone()
         .oneshot(
             Request::builder()
+                .header(
+                    "Authorization",
+                    "Bearer test-management-token-at-least-32-characters",
+                )
                 .method("POST")
                 .uri("/api/settings/test-webhook")
                 .header("content-type", "application/json")
@@ -287,6 +340,10 @@ async fn test_webhook_test_api() {
     let res2 = app
         .oneshot(
             Request::builder()
+                .header(
+                    "Authorization",
+                    "Bearer test-management-token-at-least-32-characters",
+                )
                 .method("POST")
                 .uri("/api/settings/test-webhook")
                 .header("content-type", "application/json")
@@ -305,7 +362,7 @@ async fn test_webhook_test_api() {
 
 #[tokio::test]
 async fn test_hosts_test_connection_api() {
-    let state = AppState::new();
+    let state = test_state();
     let app = build_router(state);
 
     // 1. POST /api/hosts/test with empty hostname -> 400 Bad Request
@@ -318,6 +375,10 @@ async fn test_hosts_test_connection_api() {
         .clone()
         .oneshot(
             Request::builder()
+                .header(
+                    "Authorization",
+                    "Bearer test-management-token-at-least-32-characters",
+                )
                 .method("POST")
                 .uri("/api/hosts/test")
                 .header("content-type", "application/json")
@@ -343,6 +404,10 @@ async fn test_hosts_test_connection_api() {
     let res2 = app
         .oneshot(
             Request::builder()
+                .header(
+                    "Authorization",
+                    "Bearer test-management-token-at-least-32-characters",
+                )
                 .method("POST")
                 .uri("/api/hosts/test")
                 .header("content-type", "application/json")
@@ -362,4 +427,14 @@ async fn test_hosts_test_connection_api() {
             .unwrap()
             .contains("SSH connection failed")
     );
+}
+
+fn test_state() -> AppState {
+    let mut state = AppState::new();
+    state.gateway_auth = redash_server::auth::GatewayAuth::new(
+        "test-management-token-at-least-32-characters",
+        vec![],
+    )
+    .unwrap();
+    state
 }

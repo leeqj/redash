@@ -7,6 +7,10 @@ async fn main() -> anyhow::Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     let state = AppState::new();
+    anyhow::ensure!(
+        state.gateway_auth.configured(),
+        "Set REDASH_GATEWAY_TOKEN to a random management token (at least 32 characters) before starting the Gateway"
+    );
     redash_server::alert_monitor::start_alert_monitor(state.clone());
     redash_server::control_plane::health_sentinel::start_health_sentinel(
         state.clone(),

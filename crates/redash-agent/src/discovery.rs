@@ -147,6 +147,7 @@ pub async fn handle_direct_connection(
     let init: redash_types::E2eeHandshakeInit = serde_json::from_str(&text)?;
     let route = format!("lan-{}", uuid::Uuid::new_v4());
     let _lease = crate::tty::RouteLease::new(tty_mgr.clone(), route.clone());
+    let route_failed = tty_mgr.route_failure(&route);
     let (tx, mut rx) = mpsc::channel(128);
     let ack = tty_mgr
         .accept_handshake(
@@ -160,12 +161,13 @@ pub async fn handle_direct_connection(
         .await
         .map_err(anyhow::Error::msg)?;
     let result = async {
-        ws.send(Message::Text(serde_json::to_string(&ack)?.into())).await?;
+        tokio::time::timeout(Duration::from_secs(5), ws.send(Message::Text(serde_json::to_string(&ack)?.into()))).await??;
         loop {
             tokio::select! {
+                _ = route_failed.notified() => break,
                 outgoing = rx.recv() => {
                     let Some(redash_types::AgentToHubMessage::TtyEncrypted(env)) = outgoing else { break; };
-                    ws.send(Message::Text(serde_json::to_string(&env)?.into())).await?;
+                    tokio::time::timeout(Duration::from_secs(5), ws.send(Message::Text(serde_json::to_string(&env)?.into()))).await??;
                 }
                 incoming = ws.next() => {
                     match incoming {
@@ -174,7 +176,7 @@ pub async fn handle_direct_connection(
                             anyhow::ensure!(env.session_id == init.session_id, "Wrong session");
                             tty_mgr.receive(&env, &route).await.map_err(anyhow::Error::msg)?;
                         }
-                        Some(Ok(Message::Ping(data))) => { ws.send(Message::Pong(data)).await?; }
+                        Some(Ok(Message::Ping(data))) => { tokio::time::timeout(Duration::from_secs(5), ws.send(Message::Pong(data))).await??; }
                         _ => break,
                     }
                 }

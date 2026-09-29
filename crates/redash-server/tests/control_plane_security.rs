@@ -15,6 +15,8 @@ use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
 use tokio::{net::TcpListener, sync::mpsc};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
+const GATEWAY_TOKEN: &str = "test-management-token-at-least-32-characters";
+
 const NODE: &str = "security-test-node";
 
 async fn output_until(rx: &mut mpsc::Receiver<Vec<u8>>, needle: &str) -> String {
@@ -62,8 +64,49 @@ async fn exercise_pty(url: &str, identity: &TerminalIdentity) {
     .unwrap();
 }
 
+async fn exercise_backpressure_isolation(url: &str, identity: &TerminalIdentity) {
+    let (tx, mut rx) = mpsc::channel(128);
+    let blocked = PtyChannel::new_reverse_ws_with_auth(url, 80, 24, tx, Some(identity))
+        .await
+        .unwrap();
+    let (tx, mut second_rx) = mpsc::channel(128);
+    let other = PtyChannel::new_reverse_ws_with_auth(url, 80, 24, tx, Some(identity))
+        .await
+        .unwrap();
+    blocked
+        .send_data(b"stty raw -echo; printf 'BLOCK_%s\\n' READY; sleep 30\n")
+        .await
+        .unwrap();
+    output_until(&mut rx, "BLOCK_READY").await;
+    blocked.send_data(&vec![b'x'; 64 * 1024]).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(250)).await;
+    other
+        .send_data(b"printf 'OTHER_%s\\n' RESPONSIVE\n")
+        .await
+        .unwrap();
+    output_until(&mut second_rx, "OTHER_RESPONSIVE").await;
+    blocked.close().await.unwrap();
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while rx.recv().await.is_some() {}
+    })
+    .await
+    .unwrap();
+    other
+        .send_data(b"printf 'AFTER_CLOSE_%s\\n' OK\n")
+        .await
+        .unwrap();
+    output_until(&mut second_rx, "AFTER_CLOSE_OK").await;
+    other.close().await.unwrap();
+}
+
 async fn reject_plaintext(url: &str) {
-    let (mut ws, _) = connect_async(url).await.unwrap();
+    use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+    let mut request = url.into_client_request().unwrap();
+    request.headers_mut().insert(
+        "Authorization",
+        format!("Bearer {GATEWAY_TOKEN}").parse().unwrap(),
+    );
+    let (mut ws, _) = connect_async(request).await.unwrap();
     ws.send(Message::Text("printf 'UNAUTHORISED_EXECUTION\\n'\n".into()))
         .await
         .unwrap();
@@ -81,7 +124,8 @@ async fn real_client_hub_agent_pty_and_anonymous_rejection() {
     let (client_public, client_private) = ClientSigner::generate_keypair();
     let (agent_public, agent_private) = ClientSigner::generate_keypair();
     let token = random_hex();
-    let mut state = AppState::new();
+    let mut state = AppState::with_host_store(redash_core::config::HostStore::new());
+    state.gateway_auth = redash_server::auth::GatewayAuth::new(GATEWAY_TOKEN, vec![]).unwrap();
     state.control_plane = ControlPlaneRegistry::with_enrollments(HashMap::from([(
         NODE.into(),
         Enrollment {
@@ -131,6 +175,7 @@ async fn real_client_hub_agent_pty_and_anonymous_rejection() {
             .await
             .unwrap();
         let hs = AgentToHubMessage::Handshake(AgentHandshake {
+            telemetry_interval_secs: 3,
             node_id: id.into(),
             hostname: "impostor".into(),
             os: "test".into(),
@@ -158,11 +203,13 @@ async fn real_client_hub_agent_pty_and_anonymous_rejection() {
     let url = format!("ws://{addr}/v1/control/tty/{NODE}");
     reject_plaintext(&url).await;
     let identity = TerminalIdentity {
+        gateway_token: Some(GATEWAY_TOKEN.into()),
         node_id: NODE.into(),
         client_private_key: client_private.clone(),
         agent_public_key: agent_public,
     };
     exercise_pty(&url, &identity).await;
+    exercise_backpressure_isolation(&url, &identity).await;
 
     // Legacy unsigned open must be rejected even though the node has a trusted key.
     let result = state
@@ -257,6 +304,7 @@ async fn direct_pty_rejects_bad_identity_replay_and_cross_session_frames() {
     reject_plaintext(&url).await;
     assert_eq!(manager.session_count().await, 0);
     let identity = TerminalIdentity {
+        gateway_token: Some(GATEWAY_TOKEN.into()),
         node_id: NODE.into(),
         client_private_key: cs.clone(),
         agent_public_key: ap.clone(),
@@ -324,6 +372,7 @@ async fn registration_identity_disconnect_and_reconnect_are_bound() {
     )]));
     let (tx, _rx) = mpsc::channel(10);
     let mut hs = AgentHandshake {
+        telemetry_interval_secs: 3,
         node_id: NODE.into(),
         hostname: "test".into(),
         os: "test".into(),
@@ -406,6 +455,7 @@ async fn telemetry_and_terminal_output_cannot_cross_connection_identity() {
     )]));
     let (tx, _rx) = mpsc::channel(10);
     let hs = AgentHandshake {
+        telemetry_interval_secs: 3,
         node_id: NODE.into(),
         hostname: NODE.into(),
         os: "linux".into(),
@@ -437,8 +487,7 @@ async fn telemetry_and_terminal_output_cannot_cross_connection_identity() {
 
 #[tokio::test]
 async fn agent_only_samples_dispatch_real_webhooks_with_validity_cooldown_and_recovery() {
-    use redash_core::config::{HostStore, alert::AlertEvent};
-    use tokio::sync::RwLock;
+    use redash_core::config::alert::AlertEvent;
     let (events, mut received) = mpsc::channel::<AlertEvent>(32);
     let router = axum::Router::new().route(
         "/alert",
@@ -456,8 +505,8 @@ async fn agent_only_samples_dispatch_real_webhooks_with_validity_cooldown_and_re
         axum::serve(listener, router).await.unwrap();
     });
     let token = random_hex();
-    let mut state = AppState::new();
-    state.host_store = Arc::new(RwLock::new(HostStore::new()));
+    let mut state = AppState::with_host_store(redash_core::config::HostStore::new());
+    state.gateway_auth = redash_server::auth::GatewayAuth::new(GATEWAY_TOKEN, vec![]).unwrap();
     state.control_plane = ControlPlaneRegistry::with_enrollments(HashMap::from([(
         NODE.into(),
         Enrollment {
@@ -477,6 +526,7 @@ async fn agent_only_samples_dispatch_real_webhooks_with_validity_cooldown_and_re
         .control_plane
         .register_agent(
             AgentHandshake {
+                telemetry_interval_secs: 3,
                 node_id: NODE.into(),
                 hostname: NODE.into(),
                 os: "test".into(),
@@ -642,4 +692,72 @@ async fn http_executor_distinguishes_http_and_business_failures() {
     assert_eq!(result.exit_code, Some(17));
     assert_eq!(result.stderr, "actual command error");
     server.abort();
+}
+
+#[tokio::test]
+async fn cold_terminal_attempt_uses_a_later_lan_beacon_when_hub_is_unavailable() {
+    let node = "late-lan-beacon";
+    let (client_public, client_private) = ClientSigner::generate_keypair();
+    let (agent_public, agent_private) = ClientSigner::generate_keypair();
+    let manager = Arc::new(redash_agent::tty::TtyManager::new());
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let manager_server = manager.clone();
+    let server = tokio::spawn(async move {
+        let (stream, addr) = listener.accept().await.unwrap();
+        redash_agent::discovery::handle_direct_connection(
+            stream,
+            addr,
+            manager_server,
+            client_public,
+            agent_private,
+            node.into(),
+        )
+        .await
+        .unwrap();
+    });
+    assert!(
+        redash_core::discovery::LanDiscoveryClient::global()
+            .find_direct_endpoint(node)
+            .is_none()
+    );
+    let beacon = tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(250)).await;
+        let sender = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let bytes = serde_json::to_vec(&redash_types::LanBeacon {
+            timestamp: now_secs(),
+            version: "test".into(),
+            node_id: node.into(),
+            hostname: "late-node".into(),
+            direct_port: port,
+        })
+        .unwrap();
+        sender.send_to(&bytes, "127.0.0.1:8765").await.unwrap();
+    });
+    let identity = TerminalIdentity {
+        gateway_token: None,
+        node_id: node.into(),
+        client_private_key: client_private,
+        agent_public_key: agent_public,
+    };
+    let (tx, mut rx) = mpsc::channel(128);
+    let channel = tokio::time::timeout(
+        Duration::from_secs(6),
+        PtyChannel::new_discovering_ws("ws://127.0.0.1:1", 80, 24, tx, &identity),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    beacon.await.unwrap();
+    channel
+        .send_data(b"stty -echo; test -t 0 && printf 'LATE_%s\\n' LAN\n")
+        .await
+        .unwrap();
+    output_until(&mut rx, "LATE_LAN").await;
+    channel.close().await.unwrap();
+    tokio::time::timeout(Duration::from_secs(3), server)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(manager.session_count().await, 0);
 }

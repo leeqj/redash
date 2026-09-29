@@ -4,7 +4,9 @@ FROM rust:1.96-slim AS builder
 WORKDIR /usr/src/redash
 COPY . .
 
-RUN cargo build --release --bin redash-server
+RUN rustup target add wasm32-unknown-unknown \
+    && cargo install wasm-bindgen-cli --version 0.2.128 --locked
+RUN bash scripts/build_web.sh && cargo build --locked --release --bin redash-server
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y ca-certificates openssh-client && rm -rf /var/lib/apt/lists/*

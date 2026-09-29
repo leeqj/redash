@@ -5619,7 +5619,7 @@ checksum = "03251193000f4bd3b042892be858ee50e8b3719f2b08e5833ac4353724632430"
 
 [[package]]
 name = "redash-agent"
-version = "0.2.0-beta"
+version = "0.2.1-beta"
 dependencies = [
  "anyhow",
  "curve25519-dalek",
@@ -5646,7 +5646,7 @@ dependencies = [
 
 [[package]]
 name = "redash-app"
-version = "0.2.0-beta"
+version = "0.2.1-beta"
 dependencies = [
  "alacritty_terminal",
  "anyhow",
@@ -5670,7 +5670,7 @@ dependencies = [
 
 [[package]]
 name = "redash-core"
-version = "0.2.0-beta"
+version = "0.2.1-beta"
 dependencies = [
  "anyhow",
  "dirs 6.0.0",
@@ -5695,7 +5695,7 @@ dependencies = [
 
 [[package]]
 name = "redash-server"
-version = "0.2.0-beta"
+version = "0.2.1-beta"
 dependencies = [
  "anyhow",
  "axum",
@@ -5725,7 +5725,7 @@ dependencies = [
 
 [[package]]
 name = "redash-types"
-version = "0.2.0-beta"
+version = "0.2.1-beta"
 dependencies = [
  "serde",
  "serde_json",
@@ -5735,7 +5735,7 @@ dependencies = [
 
 [[package]]
 name = "redash-ui-core"
-version = "0.2.0-beta"
+version = "0.2.1-beta"
 dependencies = [
  "aes-gcm",
  "curve25519-dalek",
@@ -5754,7 +5754,7 @@ dependencies = [
 
 [[package]]
 name = "redash-web"
-version = "0.2.0-beta"
+version = "0.2.1-beta"
 dependencies = [
  "anyhow",
  "console_error_panic_hook",

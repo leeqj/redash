@@ -1,4 +1,5 @@
 use crate::app::{ActiveView, AppState, ProcessSortField, SettingsCategory, WorkbenchTab};
+use crate::fleet_layout::{FleetLayout, filtered_hosts};
 use crate::render::LAYOUT;
 
 #[allow(clippy::large_enum_variant)]
@@ -94,7 +95,6 @@ pub fn handle_mouse_click(
                 return None;
             }
             if (mx + mw - 100.0..=mx + mw - 20.0).contains(&x) {
-                state.close_add_modal();
                 return Some(UiAction::SaveNewHost);
             }
         }
@@ -185,13 +185,8 @@ pub fn handle_mouse_click(
 
     // 5. Check Fleet View Card button clicks and search bar
     if state.active_view == ActiveView::Fleet {
-        let padding = 24.0;
         let content_x = LAYOUT.sidebar_width;
         let content_w = width - LAYOUT.sidebar_width;
-        let card_w = ((content_w - padding * 3.0) / 2.0).max(340.0);
-        let card_h = 196.0;
-        let start_y = LAYOUT.topbar_height + 36.0;
-
         // Check Fleet Search Bar
         let (sb_x, sb_y, sb_w, sb_h) =
             crate::render::get_fleet_search_bar_rect(content_x, LAYOUT.topbar_height, content_w);
@@ -202,30 +197,21 @@ pub fn handle_mouse_click(
             state.set_filter_focused(false);
         }
 
-        let q = state.filter_query.trim().to_lowercase();
-        let filtered_ids: Vec<String> = state
-            .hosts
+        let filtered_ids: Vec<_> = filtered_hosts(state)
             .iter()
-            .filter_map(|h| {
-                if q.is_empty()
-                    || h.name.to_lowercase().contains(&q)
-                    || h.hostname.to_lowercase().contains(&q)
-                    || h.user.to_lowercase().contains(&q)
-                    || h.tags.iter().any(|t| t.to_lowercase().contains(&q))
-                {
-                    Some(h.id.0.clone())
-                } else {
-                    None
-                }
-            })
+            .map(|h| h.id.0.clone())
             .collect();
-
+        let layout = FleetLayout::new(width, height, filtered_ids.len(), state.fleet_scroll);
+        if !layout.contains_y(y) {
+            return None;
+        }
+        let card_w = layout.card_width;
+        let card_h = layout.card_height;
         for (grid_idx, host_id) in filtered_ids.into_iter().enumerate() {
-            let col = grid_idx % 2;
-            let row = grid_idx / 2;
-            let card_x = content_x + padding + (col as f64) * (card_w + padding);
-            let card_y = start_y + (row as f64) * (card_h + padding);
-
+            let (card_x, card_y) = layout.card(grid_idx);
+            if !layout.visible(card_y) {
+                continue;
+            }
             // 1. Delete button [ ✕ ]
             let (del_x, del_y, del_w, del_h) =
                 crate::render::get_fleet_host_delete_btn_rect(card_x, card_y, card_w);
@@ -990,7 +976,7 @@ pub fn handle_key_down(state: &mut AppState, key: &str, is_ctrl: bool) -> Option
             return None;
         }
 
-        if key.len() == 1 && !is_ctrl {
+        if key.chars().count() == 1 && !is_ctrl {
             if let Some((_, ref mut content)) = state.sftp_editor {
                 content.push_str(key);
                 state.sftp_editor_modified = true;
@@ -1018,7 +1004,7 @@ pub fn handle_key_down(state: &mut AppState, key: &str, is_ctrl: bool) -> Option
                 state.set_filter_focused(false);
                 return None;
             }
-            c if c.len() == 1 && !is_ctrl => {
+            c if c.chars().count() == 1 && !is_ctrl => {
                 let mut q = state.filter_query.clone();
                 q.push_str(c);
                 state.filter_query = q;
@@ -1052,7 +1038,6 @@ pub fn handle_key_down(state: &mut AppState, key: &str, is_ctrl: bool) -> Option
                 return None;
             }
             "Enter" => {
-                state.close_add_modal();
                 return Some(UiAction::SaveNewHost);
             }
             "Backspace" => {
@@ -1065,7 +1050,7 @@ pub fn handle_key_down(state: &mut AppState, key: &str, is_ctrl: bool) -> Option
                 target.pop();
                 return None;
             }
-            c if c.len() == 1 => {
+            c if c.chars().count() == 1 && !is_ctrl => {
                 let target = match state.modal_field_idx {
                     0 => &mut state.modal_name,
                     1 => &mut state.modal_hostname,
@@ -1102,7 +1087,7 @@ pub fn handle_key_down(state: &mut AppState, key: &str, is_ctrl: bool) -> Option
                 "Enter" => {
                     return None;
                 }
-                c if c.len() == 1 && !is_ctrl => {
+                c if c.chars().count() == 1 && !is_ctrl => {
                     let mut q = state.terminal_search_query.clone();
                     q.push_str(c);
                     state.set_terminal_search_query(q);
@@ -1115,7 +1100,20 @@ pub fn handle_key_down(state: &mut AppState, key: &str, is_ctrl: bool) -> Option
         match key {
             "Enter" => Some(UiAction::SendTerminalInput("\r".to_string())),
             "Backspace" => Some(UiAction::SendTerminalInput("\x08".to_string())),
-            c if c.len() == 1 => Some(UiAction::SendTerminalInput(c.to_string())),
+            "Tab" => Some(UiAction::SendTerminalInput("\t".into())),
+            "Escape" => Some(UiAction::SendTerminalInput("\x1b".into())),
+            "ArrowUp" => Some(UiAction::SendTerminalInput("\x1b[A".into())),
+            "ArrowDown" => Some(UiAction::SendTerminalInput("\x1b[B".into())),
+            "ArrowRight" => Some(UiAction::SendTerminalInput("\x1b[C".into())),
+            "ArrowLeft" => Some(UiAction::SendTerminalInput("\x1b[D".into())),
+            c if c.len() == 1 && is_ctrl && c.as_bytes()[0].is_ascii_alphabetic() => {
+                Some(UiAction::SendTerminalInput(
+                    ((c.as_bytes()[0].to_ascii_uppercase() - b'@') as char).to_string(),
+                ))
+            }
+            c if c.chars().count() == 1 && !is_ctrl => {
+                Some(UiAction::SendTerminalInput(c.to_string()))
+            }
             _ => None,
         }
     } else if state.active_view == ActiveView::Batch {
@@ -1146,7 +1144,7 @@ pub fn handle_key_down(state: &mut AppState, key: &str, is_ctrl: bool) -> Option
                 state.set_batch_command(cmd);
                 None
             }
-            c if c.len() == 1 && !is_ctrl => {
+            c if c.chars().count() == 1 && !is_ctrl => {
                 let mut cmd = state.batch_command.clone();
                 cmd.push_str(c);
                 state.set_batch_command(cmd);

@@ -110,9 +110,16 @@ async fn handle_agent_socket(
     let reg_in = registry.clone();
     let actions_in = pending_actions.clone();
 
-    while let Ok(Some(msg_res)) =
-        tokio::time::timeout(std::time::Duration::from_secs(35), ws_stream.next()).await
-    {
+    let shutdown = registry
+        .connection_shutdown(&node_id, &connection_id)
+        .unwrap();
+    loop {
+        let msg_res = tokio::select! {
+            _ = shutdown.notified() => break,
+            msg = tokio::time::timeout(std::time::Duration::from_secs(35), ws_stream.next()) => {
+                match msg { Ok(Some(msg)) => msg, _ => break }
+            }
+        };
         match msg_res {
             Ok(Message::Text(text)) => match serde_json::from_str::<AgentToHubMessage>(&text) {
                 Ok(AgentToHubMessage::Telemetry(telemetry)) => {

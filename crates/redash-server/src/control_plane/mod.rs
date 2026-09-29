@@ -9,9 +9,6 @@ use axum::routing::{get, post};
 
 pub fn control_plane_router() -> Router<AppState> {
     Router::new()
-        // Agent Inbound WebSocket (primary & alias)
-        .route("/v1/agent/ws", get(ws_agent::agent_ws_handler))
-        .route("/v1/control/ws-agent", get(ws_agent::agent_ws_handler))
         // Control Plane Client REST & SSE
         .route("/v1/control/nodes", get(api::list_nodes))
         .route("/v1/control/nodes/{id}", get(api::get_node))
@@ -20,4 +17,10 @@ pub fn control_plane_router() -> Router<AppState> {
         .route("/v1/control/telemetry/sse", get(api::telemetry_sse))
         // Reverse WebTTY Bridge
         .route("/v1/control/tty/{node_id}", get(api::client_tty_handler))
+}
+
+pub fn agent_router() -> Router<AppState> {
+    Router::new()
+        .route("/v1/agent/ws", get(ws_agent::agent_ws_handler))
+        .route("/v1/control/ws-agent", get(ws_agent::agent_ws_handler))
 }

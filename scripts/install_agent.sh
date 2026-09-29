@@ -10,7 +10,7 @@ NODE_ID="$(hostname)"
 AUTH_TOKEN=""
 IDENTITY_KEY=""
 TRUSTED_KEY=""
-VERSION="v0.2.0-beta"
+VERSION="v0.2.1-beta"
 REPO="reways/redash"
 
 while [ $# -gt 0 ]; do

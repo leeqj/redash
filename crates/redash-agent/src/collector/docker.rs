@@ -62,7 +62,13 @@ impl DockerClient {
             return Vec::new();
         }
 
-        match self.raw_http_get("/containers/json?all=1").await {
+        let response = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            self.raw_http_get("/containers/json?all=1"),
+        )
+        .await
+        .unwrap_or_else(|_| Err("Docker collection timed out after 2s".into()));
+        match response {
             Ok(body) => match serde_json::from_slice::<Vec<DockerContainerRaw>>(&body) {
                 Ok(raw_list) => raw_list
                     .into_iter()
@@ -256,6 +262,26 @@ pub fn decode_chunked_body(mut body: &[u8]) -> Result<Vec<u8>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn stalled_docker_daemon_does_not_stall_telemetry() {
+        let path = std::path::PathBuf::from("/tmp")
+            .join(format!("redash-docker-{}.sock", uuid::Uuid::new_v4()));
+        let listener = tokio::net::UnixListener::bind(&path).unwrap();
+        let daemon = tokio::spawn(async move {
+            let (_socket, _) = listener.accept().await.unwrap();
+            std::future::pending::<()>().await;
+        });
+        let client = DockerClient {
+            socket_path: path.to_string_lossy().into_owned(),
+        };
+        let result =
+            tokio::time::timeout(std::time::Duration::from_secs(3), client.list_containers()).await;
+        daemon.abort();
+        let _ = daemon.await;
+        std::fs::remove_file(path).unwrap();
+        assert!(result.unwrap().is_empty());
+    }
 
     #[test]
     fn test_decode_chunked_body() {

@@ -4,7 +4,7 @@
 
 ## 身份与配置
 
-三种凭据承担不同职责，不能互换：
+以下三种节点/E2EE 凭据承担不同职责，不能互换；Gateway 管理客户端还需独立的管理 token，见本文末尾：
 
 1. **客户端 Ed25519 身份**：桌面保存 `control_plane_key.json`，新文件为 `version: 2`，由系统安全随机源生成，Unix 权限为 600。Agent 的 `REDASH_TRUSTED_KEY` 是它的公钥，用于验证治理动作和终端握手。
 2. **每节点 enrollment token**：由桌面接入弹窗生成 32 字节随机 token，分别配置在 Agent 和 Hub。它只授予该节点连接身份，不能授权 shell。
@@ -86,3 +86,25 @@ Linux 安装器将这些值写到 `/etc/redash-agent.env`（600），systemd uni
 | 18：nonce/动作 ID 冲突 | 随机 nonce 和包含完整 nonce 的 action ID；签名成功后才记 nonce，Hub 拒绝覆盖 pending action |
 
 验收命令：`cargo test --workspace --locked`、`cargo fmt --all -- --check`、原生及 wasm32 的严格 Clippy。网络回归使用真正的本地监听、Hub、Agent、PtyChannel 和 webhook 接收器；不能监听时测试失败，不跳过。运行结果应以本次实际日志为准。
+
+
+## 整体复审修复（2026-09-29）
+
+- **Gateway 管理认证**：启动前必须设置独立随机 `REDASH_GATEWAY_TOKEN`（至少 32 字符）。`/api/*`、`/ws/*` 和控制面客户端 REST/SSE/TTY 都要求 Bearer 或有效浏览器会话；Agent 两个注册入口继续验证 enrollment。没有默认凭据，也不再启用宽松 CORS。浏览器使用同源登录页，`REDASH_ALLOWED_ORIGINS` 可进一步限定允许的完整 Origin；远程浏览器必须使用 HTTPS。桌面使用相同管理 token，仅发送给配置的 Hub，不发送到发现的 LAN 地址。
+- **终端写入隔离**：每会话有 8 帧有界输入队列，单帧最多 1 MiB；输入队列满、写入失败或单次写入 5 秒未完成时关闭对应会话并回收进程。Hub 控制循环不等待阻塞 PTY 写入。
+- **独立心跳**：Agent 按 Hub 约定的 1–5 秒间隔发送心跳，优先于遥测和终端输出。系统采集在 blocking pool 中执行，Docker 查询有 2 秒截止时间，Socket 写入超过 5 秒则断开重连。
+- **终端结束**：过期、主动关闭、EOF、I/O 失败统一删除 Session 并发送一次 TtyClosed，通知最多等待 5 秒，失败时中止原传输以确保客户端收到断线。Hub 输出拥塞时保留原连接的关闭通道；关闭无法在 5 秒内投递则断开该 Agent 传输，由 Agent route lease 清理 PTY。旧订阅的清理不能关闭新连接/新订阅。
+- **治理截止时间**：入队与结果等待共享一个截止时间；满队列超时不会迟发动作，取消请求会移除 pending response。已经投递到 Agent 的治理动作不承诺因 HTTP 客户端取消而撤销。
+- **桌面数据时效**：节点查询有 2 秒连接/5 秒总超时。失败或缓存过期后显示 Hub 不可达/数据失效，保留节点身份但暂停显示旧指标，将原 Online 状态显示为 Stale；成功同步后恢复。
+
+回归覆盖见 `gateway_auth.rs`、`control_plane_security.rs`、registry/tty 生命周期测试、Agent 心跳和 Docker 超时测试、GatewaySnapshot 状态测试。
+
+
+### 架构与交互复查后的行为
+
+- Agent 注册声明采集间隔（1–300 秒）。Hub 以收到有效遥测的时间计算 `max(15 秒, 3 × 采集间隔)` 的有效期，心跳不会延长该期限。过期指标停止展示；心跳在线但无新指标产生 `telemetry_stale` 告警，沿用离线通知开关与投递冷却机制。新指标到达后解除过期状态。
+- 桌面启动时监听 LAN 广播；冷启动终端最多等待 3.5 秒发现直连地址，与延迟 75 毫秒启动的 Hub 连接竞速。身份验证仍是每条路径的前置条件，获胜路径才打开 PTY。单次连接/握手超时另外计算，发现或连接失败会返回错误。
+- Gateway 主机配置加载失败会让主机列表返回 503，保留原文件并拒绝后续写入。保存、删除使用事务写盘，失败不更新内存。ProxyJump 从同一份已提交的 HostStore 解析路由。
+- 浏览器对每台 SSH 主机分别订阅指标，删除时关闭订阅，连接断开或 45 秒未收到响应时重连。HTTPS 页面使用 WSS。终端握手、探测和存储错误在对应页面展示。
+- Web 表单、搜索、文件编辑、批量命令及终端输入使用原生文本控件承接选区、粘贴与 IME。Fleet 使用统一布局计算绘制、滚动与点击位置，窄窗口切为单列。
+- 桌面接入向导的第三页为 Hub 注册 JSON，需合并到 `agent_enrollments.json` 并重启 Hub。该页不提供移动配对功能。

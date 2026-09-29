@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use unicode_width::UnicodeWidthChar;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AnsiNamedColor {
@@ -96,6 +97,16 @@ pub struct TerminalCell {
     pub dim: bool,
     pub underline: bool,
     pub inverse: bool,
+}
+
+impl TerminalCell {
+    pub fn display_width(&self) -> usize {
+        if self.c == '\0' {
+            0
+        } else {
+            self.c.width().unwrap_or(1).max(1)
+        }
+    }
 }
 
 impl Default for TerminalCell {
@@ -203,6 +214,10 @@ impl TerminalGrid {
                     if let Some(line) = self.lines.last_mut()
                         && self.cursor_col < line.len()
                     {
+                        if line[self.cursor_col].c == '\0' && self.cursor_col > 0 {
+                            line.remove(self.cursor_col);
+                            self.cursor_col -= 1;
+                        }
                         line.remove(self.cursor_col);
                     }
                 }
@@ -219,7 +234,11 @@ impl TerminalGrid {
     }
 
     fn push_char(&mut self, ch: char) {
-        if self.cursor_col >= self.cols {
+        if ch == '\0' {
+            return;
+        }
+        let width = ch.width().unwrap_or(1).max(1);
+        if self.cursor_col + width > self.cols {
             self.cursor_col = 0;
             self.lines.push(Vec::new());
             if self.lines.len() > self.max_scrollback {
@@ -244,15 +263,25 @@ impl TerminalGrid {
             return;
         };
 
-        if self.cursor_col < line.len() {
-            line[self.cursor_col] = cell;
-        } else {
-            while line.len() < self.cursor_col {
-                line.push(TerminalCell::default());
-            }
-            line.push(cell);
+        // A zero character reserves the continuation column of a wide glyph.
+        if line.get(self.cursor_col).is_some_and(|c| c.c == '\0') && self.cursor_col > 0 {
+            line[self.cursor_col - 1] = TerminalCell::default();
         }
-        self.cursor_col += 1;
+        if line
+            .get(self.cursor_col + width)
+            .is_some_and(|c| c.c == '\0')
+        {
+            line[self.cursor_col + width] = TerminalCell::default();
+        }
+        line.resize(
+            line.len().max(self.cursor_col + width),
+            TerminalCell::default(),
+        );
+        line[self.cursor_col] = cell;
+        if width == 2 {
+            line[self.cursor_col + 1] = TerminalCell { c: '\0', ..cell };
+        }
+        self.cursor_col += width;
     }
 
     fn parse_csi_sequence(&mut self, seq: &str) {
@@ -348,5 +377,29 @@ impl TerminalGrid {
         } else {
             &[]
         }
+    }
+}
+
+#[cfg(test)]
+mod unicode_tests {
+    use super::*;
+    #[test]
+    fn wide_terminal_text_reserves_columns_wraps_and_overwrites_cleanly() {
+        let mut grid = TerminalGrid::new(4, 5);
+        grid.write_stream("ab中Z");
+        assert_eq!(
+            grid.line_cells(0).iter().map(|c| c.c).collect::<Vec<_>>(),
+            vec!['a', 'b', '中', '\0']
+        );
+        assert_eq!(grid.line_cells(1)[0].c, 'Z');
+        assert_eq!(grid.cursor_col, 1);
+        grid.clear();
+        grid.write_stream("中文\rA");
+        assert_eq!(grid.line_cells(0)[0].c, 'A');
+        assert_eq!(grid.line_cells(0)[1].c, ' ');
+        grid.clear();
+        grid.write_stream("中\x08A");
+        assert_eq!(grid.cursor_col, 1);
+        assert_eq!(grid.line_cells(0).len(), 1);
     }
 }

@@ -43,7 +43,7 @@ pub fn start_alert_monitor(state: AppState) -> tokio::task::JoinHandle<()> {
 
             // 2. Fetch all configured hosts
             let hosts = {
-                let store = state.host_store.read().await;
+                let store = state.host_store.read().unwrap();
                 store.hosts.clone()
             };
 

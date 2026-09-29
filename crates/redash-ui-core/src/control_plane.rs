@@ -302,3 +302,110 @@ mod identity_storage_tests {
         assert_ne!(first.action_id, second.action_id);
     }
 }
+
+/// Keeps cached identity information while making unavailable metrics explicit.
+#[derive(Default)]
+pub struct GatewaySnapshot {
+    nodes: Vec<redash_types::ManagedNodeDetail>,
+    pub last_success: Option<u64>,
+    error: Option<String>,
+}
+impl GatewaySnapshot {
+    pub fn update(
+        &mut self,
+        result: Result<Vec<redash_types::ManagedNodeDetail>, String>,
+        now: u64,
+    ) {
+        match result {
+            Ok(nodes) => {
+                self.nodes = nodes;
+                self.last_success = Some(now);
+                self.error = None;
+            }
+            Err(error) => self.error = Some(error),
+        }
+    }
+    pub fn error(&self, now: u64) -> Option<String> {
+        self.error.clone().or_else(|| {
+            if self
+                .last_success
+                .is_none_or(|last| now.saturating_sub(last) > 10)
+            {
+                Some("Hub 数据已过期".into())
+            } else {
+                None
+            }
+        })
+    }
+    pub fn nodes(&self, now: u64) -> Vec<redash_types::ManagedNodeDetail> {
+        let mut nodes = self.nodes.clone();
+        for node in &mut nodes {
+            node.expire_telemetry(now);
+        }
+        if self.error(now).is_some() {
+            for node in &mut nodes {
+                if node.status != redash_types::NodeOnlineStatus::Offline {
+                    node.status = redash_types::NodeOnlineStatus::Stale;
+                }
+                node.latest_telemetry = None;
+            }
+        }
+        nodes
+    }
+}
+
+#[cfg(test)]
+mod gateway_snapshot_tests {
+    use super::*;
+    #[test]
+    fn failed_expired_and_recovered_syncs_project_correct_status() {
+        use redash_types::{ManagedNodeDetail, NodeOnlineStatus};
+        let node = ManagedNodeDetail {
+            telemetry_expires_at: 0,
+            node_id: "node".into(),
+            hostname: "node".into(),
+            os: "test".into(),
+            arch: "test".into(),
+            version: "2".into(),
+            remote_ip: "local".into(),
+            status: NodeOnlineStatus::Online,
+            connected_at: 1,
+            last_heartbeat_at: 100,
+            latest_telemetry: Some(redash_types::AgentTelemetry {
+                timestamp: 100,
+                cpu_usage_pct: 80.0,
+                ..Default::default()
+            }),
+        };
+        let mut snapshot = GatewaySnapshot::default();
+        snapshot.update(Ok(vec![node.clone()]), 100);
+        assert!(snapshot.error(100).is_none());
+        assert_eq!(
+            snapshot.nodes(100)[0]
+                .latest_telemetry
+                .as_ref()
+                .unwrap()
+                .cpu_usage_pct,
+            80.0
+        );
+        assert_eq!(snapshot.nodes(100)[0].status, NodeOnlineStatus::Online);
+        assert_eq!(snapshot.nodes(111)[0].status, NodeOnlineStatus::Stale);
+        snapshot.update(Err("HTTP 503".into()), 101);
+        assert_eq!(snapshot.last_success, Some(100));
+        assert!(snapshot.error(101).is_some());
+        assert_eq!(snapshot.nodes(101)[0].status, NodeOnlineStatus::Stale);
+        assert!(snapshot.nodes(101)[0].latest_telemetry.is_none());
+        snapshot.update(Ok(vec![node]), 102);
+        assert!(snapshot.error(102).is_none());
+        assert_eq!(snapshot.nodes(102)[0].status, NodeOnlineStatus::Online);
+        let mut old = snapshot.nodes(102)[0].clone();
+        old.telemetry_expires_at = 115;
+        snapshot.update(Ok(vec![old]), 120);
+        assert!(snapshot.error(120).is_none());
+        assert_eq!(snapshot.nodes(120)[0].status, NodeOnlineStatus::Online);
+        assert!(
+            snapshot.nodes(120)[0].latest_telemetry.is_none(),
+            "A fresh HTTP response must not revive an expired sample"
+        );
+    }
+}

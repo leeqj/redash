@@ -18,6 +18,7 @@ pub struct DiscoveredNode {
 
 pub struct LanDiscoveryClient {
     nodes: Arc<RwLock<HashMap<String, DiscoveredNode>>>,
+    changed: tokio::sync::watch::Sender<()>,
 }
 
 static GLOBAL_DISCOVERY: OnceLock<LanDiscoveryClient> = OnceLock::new();
@@ -32,12 +33,17 @@ impl LanDiscoveryClient {
     pub fn new() -> Self {
         let nodes = Arc::new(RwLock::new(HashMap::new()));
         let nodes_clone = nodes.clone();
+        let (changed, _) = tokio::sync::watch::channel(());
+        let updates = changed.clone();
 
         tokio::spawn(async move {
-            run_listener(nodes_clone).await;
+            loop {
+                run_listener(nodes_clone.clone(), updates.clone()).await;
+                tokio::time::sleep(Duration::from_secs(5)).await;
+            }
         });
 
-        Self { nodes }
+        Self { nodes, changed }
     }
 
     pub fn global() -> &'static Self {
@@ -54,6 +60,22 @@ impl LanDiscoveryClient {
             .map(|node| format!("ws://{}:{}/v1/agent/direct", node.ip, node.direct_port))
     }
 
+    /// A cold connection can discover its LAN route while the Hub is being dialed.
+    pub async fn wait_for_endpoint(&self, node_id: &str, timeout: Duration) -> Option<String> {
+        let mut changes = self.changed.subscribe();
+        tokio::time::timeout(timeout, async {
+            loop {
+                if let Some(endpoint) = self.find_direct_endpoint(node_id) {
+                    return Some(endpoint);
+                }
+                changes.changed().await.ok()?;
+            }
+        })
+        .await
+        .ok()
+        .flatten()
+    }
+
     /// Manually register or test a discovered node.
     pub fn register_discovered(&self, node_id: &str, ip: &str, direct_port: u16, hostname: &str) {
         let mut map = self.nodes.write().unwrap();
@@ -67,10 +89,14 @@ impl LanDiscoveryClient {
                 last_seen: Instant::now(),
             },
         );
+        self.changed.send_replace(());
     }
 }
 
-async fn run_listener(nodes: Arc<RwLock<HashMap<String, DiscoveredNode>>>) {
+async fn run_listener(
+    nodes: Arc<RwLock<HashMap<String, DiscoveredNode>>>,
+    changed: tokio::sync::watch::Sender<()>,
+) {
     let socket = match UdpSocket::bind("0.0.0.0:8765").await {
         Ok(s) => s,
         Err(e) => {
@@ -119,6 +145,7 @@ async fn run_listener(nodes: Arc<RwLock<HashMap<String, DiscoveredNode>>>) {
                             last_seen: Instant::now(),
                         },
                     );
+                    changed.send_replace(());
                 }
             }
             Err(e) => {
@@ -137,6 +164,7 @@ mod tests {
     fn test_lan_discovery_cache_and_expiration() {
         let client = LanDiscoveryClient {
             nodes: Arc::new(RwLock::new(HashMap::new())),
+            changed: tokio::sync::watch::channel(()).0,
         };
 
         client.register_discovered("node-lan-test", "192.168.1.120", 43210, "homelab");

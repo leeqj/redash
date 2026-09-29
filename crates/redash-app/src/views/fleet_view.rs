@@ -146,6 +146,7 @@ pub fn slice_history_for_range(history: &[f32], range: ChartTimeRange) -> Vec<f3
 }
 
 pub struct FleetView {
+    pub control_plane_error: Option<String>,
     pub control_plane_nodes: Vec<ManagedNodeDetail>,
     pub probe_errors: HashMap<HostId, ProbeFailure>,
     pub history_limit: usize,
@@ -168,6 +169,7 @@ impl FleetView {
     pub fn new(hosts: Vec<HostConfig>) -> Self {
         Self {
             control_plane_nodes: Vec::new(),
+            control_plane_error: None,
             hosts,
             probe_errors: HashMap::new(),
             history_limit: 1800,
@@ -226,7 +228,8 @@ impl FleetView {
             NodeOnlineStatus::Offline => rgba(0xef444433),
         };
 
-        let telemetry = node.latest_telemetry.as_ref();
+        let telemetry_stale = node.telemetry_is_stale(redash_ui_core::e2ee::now_secs());
+        let telemetry = node.latest_telemetry.as_ref().filter(|_| !telemetry_stale);
         let valid = telemetry.map(|t| t.validity).unwrap_or_default();
         let (cpu_pct, mem_pct, disk_pct, net_rx, net_tx, uptime_str, containers) =
             if let Some(t) = telemetry {
@@ -321,7 +324,7 @@ impl FleetView {
                                             .text_size(px(9.0))
                                             .font_weight(FontWeight::BOLD)
                                             .text_color(DarkTechTheme::accent_cyan())
-                                            .child("⚡ AGENT"),
+                                            .child(if telemetry_stale { "⚠ 指标已过期" } else { "⚡ AGENT" }),
                                     )
                                     .child(
                                         div()
@@ -1010,6 +1013,10 @@ impl Render for FleetView {
             .pt_2p5()
             .pb_4()
             .gap_2p5()
+            .children(self.control_plane_error.as_ref().map(|error| {
+                div().text_xs().text_color(DarkTechTheme::status_warn())
+                    .child(format!("Hub 不可达或数据已失效：{error}。Agent 指标暂停显示，正在重试。"))
+            }))
             // 1. Top Header Bar (reduced 40% from 40px to 24px)
             .child(
                 div()
@@ -2727,6 +2734,7 @@ mod tests {
         assert_eq!(fleet.control_plane_nodes.len(), 0);
 
         let node = ManagedNodeDetail {
+            telemetry_expires_at: 0,
             node_id: "node-vps-1".to_string(),
             hostname: "vps-prod-tokyo".to_string(),
             os: "linux".to_string(),

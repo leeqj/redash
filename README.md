@@ -152,15 +152,18 @@ open target/release/ReDash.app
 ### 3. Cloud-Native Web Engine (WebAssembly & Axum)
 
 ```bash
-# One-click build and launch (compiles WASM, starts gateway on http://127.0.0.1:8080)
+# Generate and securely retain a management token; use it to sign in
+export REDASH_GATEWAY_TOKEN="$(openssl rand -hex 32)"
+
+# Build and launch (compiles WASM, starts gateway on http://127.0.0.1:8080)
 ./scripts/run_web.sh
 
 # Or run the pre-built Docker container
 docker build -t redash .
-docker run -d -p 8080:8080 --name redash redash
+docker run -d -p 127.0.0.1:8080:8080 -e REDASH_GATEWAY_TOKEN --name redash redash
 ```
 
-Then navigate to `http://127.0.0.1:8080` in your browser.
+Then navigate to `http://127.0.0.1:8080` in your browser and sign in with the management token. Remote browser access requires HTTPS; see [deployment and authentication](docs/DEPLOYMENT_AND_STARTUP_GUIDE.md). Native desktop clients use the same `REDASH_GATEWAY_TOKEN` to reach the Hub.
 
 ---
 

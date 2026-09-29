@@ -2,7 +2,7 @@ use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use redash_core::config::{HostConfig, HostStore};
+use redash_core::config::HostConfig;
 use serde::Serialize;
 
 use crate::state::AppState;
@@ -17,12 +17,24 @@ pub struct ApiResponse<T> {
 }
 
 pub async fn list_hosts(State(state): State<AppState>) -> impl IntoResponse {
-    let store = state.host_store.read().await;
+    let store = state.host_store.read().unwrap();
+    if let Some(error) = &store.load_error {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(ApiResponse::<()> {
+                success: false,
+                data: None,
+                message: Some(error.clone()),
+            }),
+        )
+            .into_response();
+    }
     Json(ApiResponse {
         success: true,
         data: Some(store.hosts.clone()),
         message: None,
     })
+    .into_response()
 }
 
 pub async fn get_host(
@@ -61,11 +73,19 @@ pub async fn save_host(
         ));
     }
 
-    let mut store = state.host_store.write().await;
     let host_clone = host.clone();
-    store.add_or_update(host);
-
-    if let Err(e) = store.save_to_file(&HostStore::default_path()) {
+    let store = state.host_store.clone();
+    let saved = tokio::task::spawn_blocking(move || {
+        store
+            .write()
+            .unwrap()
+            .save_host(host)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())
+    .and_then(|r| r);
+    if let Err(e) = saved {
         return Err((
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ApiResponse {
@@ -88,10 +108,20 @@ pub async fn delete_host(
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ApiResponse<()>>)> {
     let host_id = redash_core::config::HostId(id);
-    let mut store = state.host_store.write().await;
-    match store.delete_host(&host_id) {
+    let store = state.host_store.clone();
+    let id = host_id.clone();
+    let deleted = tokio::task::spawn_blocking(move || {
+        store
+            .write()
+            .unwrap()
+            .delete_host(&id)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())
+    .and_then(|r| r);
+    match deleted {
         Ok(Some(_)) => {
-            let _ = store.save_to_file(&HostStore::default_path());
             state.session_mgr.disconnect(&host_id).await;
             state.metrics_cache.write().await.remove(&host_id);
             Ok(Json(ApiResponse {
@@ -100,12 +130,20 @@ pub async fn delete_host(
                 message: Some("Host deleted successfully".to_string()),
             }))
         }
-        _ => Err((
+        Ok(None) => Err((
             StatusCode::NOT_FOUND,
             Json(ApiResponse {
                 success: false,
                 data: None,
                 message: Some("Host not found".to_string()),
+            }),
+        )),
+        Err(error) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiResponse {
+                success: false,
+                data: None,
+                message: Some(error),
             }),
         )),
     }

@@ -4,11 +4,13 @@
 //! to the browser without rewriting UI components in JavaScript.
 
 pub mod app;
+pub mod fleet_layout;
 pub mod gateway;
 pub mod input;
 pub use redash_types as models;
 pub mod notifications;
 pub mod render;
+mod text_input;
 pub mod theme;
 
 use app::{ActiveView, AppState, UiEffect, WorkbenchTab};
@@ -41,6 +43,12 @@ pub fn start_web_app(canvas_id: &str) -> Result<(), JsValue> {
     let app_state = Rc::new(RefCell::new(AppState::new()));
     let gateway = Rc::new(RefCell::new(GatewayClient::new()));
 
+    let text_inputs = Rc::new(text_input::TextInputs::new(
+        app_state.clone(),
+        gateway.clone(),
+        canvas.clone(),
+    )?);
+
     // Auto-resize canvas to fill browser window
     let resize_canvas = {
         let canvas = canvas.clone();
@@ -71,102 +79,123 @@ pub fn start_web_app(canvas_id: &str) -> Result<(), JsValue> {
     window.set_onresize(Some(on_resize.as_ref().unchecked_ref()));
     on_resize.forget();
 
-    // Async Fetch Hosts from Server
     {
-        let app_state_clone = app_state.clone();
-        let gateway_clone = gateway.clone();
-        let on_loaded = Rc::new(RefCell::new(move |hosts: Vec<models::HostConfig>| {
-            console::log_1(&format!("Loaded {} hosts from gateway", hosts.len()).into());
-            let first_host_id = hosts.first().map(|h| h.id.0.clone());
-            app_state_clone.borrow_mut().hosts = hosts;
-
-            // Connect live metrics for first host
-            if let Some(host_id) = first_host_id {
-                let app_state_metrics = app_state_clone.clone();
-                let hid = host_id.clone();
-                let alert_cooldowns: Rc<RefCell<std::collections::HashMap<String, f64>>> =
-                    Rc::new(RefCell::new(std::collections::HashMap::new()));
-                let cds = alert_cooldowns.clone();
-                let _ = gateway_clone.borrow_mut().connect_metrics(
-                    &host_id,
-                    Rc::new(move |metrics| {
-                        let mut sm = app_state_metrics.borrow_mut();
-                        let now = js_sys::Date::now();
-                        let host_name = sm
-                            .hosts
-                            .iter()
-                            .find(|h| h.id.0 == hid)
-                            .map(|h| h.name.clone())
-                            .unwrap_or_else(|| hid.clone());
-
-                        // 1. CPU Threshold Check
-                        if sm.settings.alert_cpu_threshold > 0.0
-                            && metrics.cpu.usage_percent >= sm.settings.alert_cpu_threshold
-                        {
-                            let key = format!("{hid}:cpu");
-                            let mut map = cds.borrow_mut();
-                            let last = map.get(&key).copied().unwrap_or(0.0);
-                            if now - last > 300_000.0 {
-                                map.insert(key, now);
-                                let _ = notifications::show_browser_notification(
-                                    &format!("⚠️ CPU 过载告警: {host_name}"),
-                                    &format!(
-                                        "主机 {host_name} CPU 利用率已达 {:.1}% (设定阈值: {:.0}%)",
-                                        metrics.cpu.usage_percent, sm.settings.alert_cpu_threshold
-                                    ),
-                                );
-                            }
-                        }
-
-                        // 2. Memory Threshold Check
-                        if sm.settings.alert_mem_threshold > 0.0
-                            && metrics.mem.usage_percent >= sm.settings.alert_mem_threshold
-                        {
-                            let key = format!("{hid}:mem");
-                            let mut map = cds.borrow_mut();
-                            let last = map.get(&key).copied().unwrap_or(0.0);
-                            if now - last > 300_000.0 {
-                                map.insert(key, now);
-                                let _ = notifications::show_browser_notification(
-                                    &format!("⚠️ 内存过载告警: {host_name}"),
-                                    &format!(
-                                        "主机 {host_name} 内存利用率已达 {:.1}% (设定阈值: {:.0}%)",
-                                        metrics.mem.usage_percent, sm.settings.alert_mem_threshold
-                                    ),
-                                );
-                            }
-                        }
-
-                        // 3. Disk Threshold Check
-                        let max_disk_usage = metrics
-                            .disks
-                            .iter()
-                            .map(|d| d.usage_percent)
-                            .fold(0.0f32, f32::max);
-                        if sm.settings.alert_disk_threshold > 0.0
-                            && max_disk_usage >= sm.settings.alert_disk_threshold
-                        {
-                            let key = format!("{hid}:disk");
-                            let mut map = cds.borrow_mut();
-                            let last = map.get(&key).copied().unwrap_or(0.0);
-                            if now - last > 300_000.0 {
-                                map.insert(key, now);
-                                let _ = notifications::show_browser_notification(
-                                    &format!("⚠️ 磁盘空间告警: {host_name}"),
-                                    &format!(
-                                        "主机 {host_name} 磁盘空间已使用 {:.1}% (设定阈值: {:.0}%)",
-                                        max_disk_usage, sm.settings.alert_disk_threshold
-                                    ),
-                                );
-                            }
-                        }
-
-                        sm.update_metrics(hid.clone(), metrics);
-                    }),
-                );
+        let state = app_state.clone();
+        gateway::async_load_hosts(Rc::new(RefCell::new(move |result| {
+            let mut state = state.borrow_mut();
+            match result {
+                Ok(hosts) => {
+                    state.hosts = hosts;
+                    state.gateway_error = None;
+                }
+                Err(error) => state.gateway_error = Some(error),
             }
-        }));
-        gateway::async_load_hosts(on_loaded);
+        })));
+    }
+
+    // Reconcile the entire fleet and retry disconnected subscriptions. Callbacks
+    // own their host ID so a late sample cannot be attributed to the selected host.
+    {
+        let app_state_metrics = app_state.clone();
+        let cooldowns = RefCell::new(std::collections::HashMap::<String, f64>::new());
+        let on_metrics = Rc::new(move |hid: String, metrics: models::NodeMetrics| {
+            let mut sm = app_state_metrics.borrow_mut();
+            let now = js_sys::Date::now();
+            let host_name = sm
+                .hosts
+                .iter()
+                .find(|h| h.id.0 == hid)
+                .map(|h| h.name.clone())
+                .unwrap_or_else(|| hid.clone());
+            // 1. CPU Threshold Check
+            if sm.settings.alert_cpu_threshold > 0.0
+                && metrics.cpu.usage_percent >= sm.settings.alert_cpu_threshold
+            {
+                let key = format!("{hid}:cpu");
+                let mut map = cooldowns.borrow_mut();
+                let last = map.get(&key).copied().unwrap_or(0.0);
+                if now - last > 300_000.0 {
+                    map.insert(key, now);
+                    let _ = notifications::show_browser_notification(
+                        &format!("⚠️ CPU 过载告警: {host_name}"),
+                        &format!(
+                            "主机 {host_name} CPU 利用率已达 {:.1}% (设定阈值: {:.0}%)",
+                            metrics.cpu.usage_percent, sm.settings.alert_cpu_threshold
+                        ),
+                    );
+                }
+            }
+
+            // 2. Memory Threshold Check
+            if sm.settings.alert_mem_threshold > 0.0
+                && metrics.mem.usage_percent >= sm.settings.alert_mem_threshold
+            {
+                let key = format!("{hid}:mem");
+                let mut map = cooldowns.borrow_mut();
+                let last = map.get(&key).copied().unwrap_or(0.0);
+                if now - last > 300_000.0 {
+                    map.insert(key, now);
+                    let _ = notifications::show_browser_notification(
+                        &format!("⚠️ 内存过载告警: {host_name}"),
+                        &format!(
+                            "主机 {host_name} 内存利用率已达 {:.1}% (设定阈值: {:.0}%)",
+                            metrics.mem.usage_percent, sm.settings.alert_mem_threshold
+                        ),
+                    );
+                }
+            }
+
+            // 3. Disk Threshold Check
+            let max_disk_usage = metrics
+                .disks
+                .iter()
+                .map(|d| d.usage_percent)
+                .fold(0.0f32, f32::max);
+            if sm.settings.alert_disk_threshold > 0.0
+                && max_disk_usage >= sm.settings.alert_disk_threshold
+            {
+                let key = format!("{hid}:disk");
+                let mut map = cooldowns.borrow_mut();
+                let last = map.get(&key).copied().unwrap_or(0.0);
+                if now - last > 300_000.0 {
+                    map.insert(key, now);
+                    let _ = notifications::show_browser_notification(
+                        &format!("⚠️ 磁盘空间告警: {host_name}"),
+                        &format!(
+                            "主机 {host_name} 磁盘空间已使用 {:.1}% (设定阈值: {:.0}%)",
+                            max_disk_usage, sm.settings.alert_disk_threshold
+                        ),
+                    );
+                }
+            }
+
+            sm.metrics_errors.remove(&hid);
+            sm.update_metrics(hid, metrics);
+        });
+        let errors_state = app_state.clone();
+        let on_error = Rc::new(move |id: String, error: String| {
+            let mut sm = errors_state.borrow_mut();
+            sm.metrics.remove(&id);
+            sm.metrics_errors.insert(id, error);
+        });
+        let metrics_state = app_state.clone();
+        let metrics_gateway = gateway.clone();
+        let tick = Closure::<dyn FnMut()>::new(move || {
+            let ids: Vec<_> = metrics_state
+                .borrow()
+                .hosts
+                .iter()
+                .map(|h| h.id.0.clone())
+                .collect();
+            metrics_gateway
+                .borrow_mut()
+                .sync_metrics(&ids, on_metrics.clone(), on_error.clone());
+        });
+        window.set_interval_with_callback_and_timeout_and_arguments_0(
+            tick.as_ref().unchecked_ref(),
+            3000,
+        )?;
+        tick.forget();
     }
 
     // Async Fetch Settings from Server on Boot
@@ -205,6 +234,7 @@ pub fn start_web_app(canvas_id: &str) -> Result<(), JsValue> {
         let canvas_clone = canvas.clone();
         let window = window.clone();
 
+        let text_inputs = text_inputs.clone();
         let on_mousedown = Closure::<dyn FnMut(_)>::new(move |e: MouseEvent| {
             let rect = canvas_clone.get_bounding_client_rect();
             let x = e.client_x() as f64 - rect.left();
@@ -215,365 +245,11 @@ pub fn start_web_app(canvas_id: &str) -> Result<(), JsValue> {
             let html_el: &web_sys::HtmlElement = canvas_clone.unchecked_ref();
             let _ = html_el.focus();
 
-            let mut state = app_state_clone.borrow_mut();
-            if let Some(action) = handle_mouse_click(&mut state, x, y, width, height) {
-                match action {
-                    UiAction::OpenTerminal(host_id) => {
-                        let app_state_term = app_state_clone.clone();
-                        let app_state_agent = app_state_clone.clone();
-                        let (cols, rows) = {
-                            let sm = app_state_clone.borrow();
-                            (sm.terminal_grid.cols as u32, sm.terminal_grid.rows as u32)
-                        };
-                        let _ = gateway_clone.borrow_mut().connect_terminal(
-                            &host_id,
-                            cols,
-                            rows,
-                            Rc::new(move |data| {
-                                app_state_term.borrow_mut().append_terminal_output(&data);
-                            }),
-                            Rc::new(move |agent| {
-                                app_state_agent.borrow_mut().agent = Some(agent);
-                            }),
-                        );
-                    }
-                    UiAction::OpenSftp(host_id) => {
-                        let app_state_sftp = app_state_clone.clone();
-                        let path = app_state_sftp.borrow().sftp_current_path.clone();
-                        app_state_sftp.borrow_mut().set_sftp_loading(true);
-                        let on_done = Rc::new(RefCell::new(
-                            move |res: Result<Vec<redash_types::sftp::RemoteFileItem>, String>| {
-                                let mut sm = app_state_sftp.borrow_mut();
-                                match res {
-                                    Ok(files) => sm.set_sftp_files(files),
-                                    Err(err) => sm.set_sftp_error(Some(err)),
-                                }
-                            },
-                        ));
-                        gateway::async_fetch_sftp_list(host_id, path, on_done);
-                    }
-                    UiAction::FetchSftpList { host_id, path } => {
-                        let app_state_sftp = app_state_clone.clone();
-                        let on_done = Rc::new(RefCell::new(
-                            move |res: Result<Vec<redash_types::sftp::RemoteFileItem>, String>| {
-                                let mut sm = app_state_sftp.borrow_mut();
-                                match res {
-                                    Ok(files) => sm.set_sftp_files(files),
-                                    Err(err) => sm.set_sftp_error(Some(err)),
-                                }
-                            },
-                        ));
-                        gateway::async_fetch_sftp_list(host_id, path, on_done);
-                    }
-                    UiAction::ReadSftpFile { host_id, path } => {
-                        let app_state_sftp = app_state_clone.clone();
-                        let read_path = path.clone();
-                        let on_done = Rc::new(RefCell::new(move |res: Result<String, String>| {
-                            let mut sm = app_state_sftp.borrow_mut();
-                            match res {
-                                Ok(content) => sm.open_sftp_editor(read_path.clone(), content),
-                                Err(err) => sm.set_sftp_error(Some(err)),
-                            }
-                        }));
-                        gateway::async_read_sftp_file(host_id, path, on_done);
-                    }
-                    UiAction::SaveSftpFile {
-                        host_id,
-                        path,
-                        content,
-                    } => {
-                        let app_state_sftp = app_state_clone.clone();
-                        let on_done = Rc::new(RefCell::new(move |res: Result<(), String>| {
-                            let mut sm = app_state_sftp.borrow_mut();
-                            match res {
-                                Ok(()) => {
-                                    sm.sftp_editor_modified = false;
-                                    sm.set_sftp_loading(false);
-                                }
-                                Err(err) => sm.set_sftp_error(Some(err)),
-                            }
-                        }));
-                        gateway::async_write_sftp_file(host_id, path, content, on_done);
-                    }
-                    UiAction::SaveSettings => {
-                        let app_state_save = app_state_clone.clone();
-                        let settings = app_state_save.borrow().settings.clone();
-                        let on_done = Rc::new(RefCell::new(move |res: Result<(), String>| {
-                            let mut sm = app_state_save.borrow_mut();
-                            match res {
-                                Ok(()) => {
-                                    sm.settings_save_status =
-                                        Some(("设置已成功保存到云端服务器".to_string(), true));
-                                }
-                                Err(err) => {
-                                    sm.settings_save_status =
-                                        Some((format!("设置保存失败: {}", err), false));
-                                }
-                            }
-                        }));
-                        gateway::async_save_settings(settings, on_done);
-                    }
-                    UiAction::ExportSettingsJson => {
-                        let json =
-                            serde_json::to_string_pretty(&state.settings).unwrap_or_default();
-                        console::log_1(&format!("Exported Settings JSON:\n{}", json).into());
-                        if let Some(window) = web_sys::window()
-                            && let Some(document) = window.document()
-                            && let Ok(element) = document.create_element("a")
-                        {
-                            let href = format!(
-                                "data:application/json;charset=utf-8,{}",
-                                js_sys::encode_uri_component(&json)
-                                    .as_string()
-                                    .unwrap_or_default()
-                            );
-                            let _ = element.set_attribute("href", &href);
-                            let _ = element.set_attribute("download", "redash-settings.json");
-                            let html_el: web_sys::HtmlElement = element.unchecked_into();
-                            html_el.click();
-                        }
-                        state.settings_save_status =
-                            Some(("已成功导出设置 JSON 文件".to_string(), true));
-                    }
-                    UiAction::PromptPingTarget => {
-                        if let Some(window) = web_sys::window() {
-                            let current = &state.ping_target;
-                            if let Ok(Some(val)) = window.prompt_with_message_and_default(
-                                "请输入网络探测 Ping 目标地址 (IP 或域名):",
-                                current,
-                            ) {
-                                let trimmed = val.trim();
-                                if !trimmed.is_empty() {
-                                    state.set_ping_target(trimmed.to_string());
-                                    state.settings_save_status =
-                                        Some((format!("探测节点已更新为 {}", trimmed), true));
-                                }
-                            }
-                        }
-                    }
-                    UiAction::PromptWebhookUrl => {
-                        if let Some(window) = web_sys::window() {
-                            let current = state.settings.alert_webhook_url.as_deref().unwrap_or("");
-                            if let Ok(Some(val)) = window.prompt_with_message_and_default(
-                                "请输入 Webhook 机器人告警推送地址 (钉钉 / 企微 / 飞书):",
-                                current,
-                            ) {
-                                let trimmed = val.trim();
-                                if trimmed.is_empty() {
-                                    state.set_webhook_url(None);
-                                    state.settings_save_status =
-                                        Some(("已清除 Webhook 推送地址".to_string(), true));
-                                } else {
-                                    state.set_webhook_url(Some(trimmed.to_string()));
-                                    state.settings_save_status =
-                                        Some(("已更新 Webhook 推送地址".to_string(), true));
-                                }
-                                let settings = state.settings.clone();
-                                let app_state_save = app_state_clone.clone();
-                                let on_done = Rc::new(RefCell::new(move |_| {
-                                    app_state_save.borrow_mut().settings_save_status =
-                                        Some(("Webhook 地址已成功保存".to_string(), true));
-                                }));
-                                gateway::async_save_settings(settings, on_done);
-                            }
-                        }
-                    }
-                    UiAction::TestWebhookAlert => {
-                        let webhook_url = state.settings.alert_webhook_url.clone();
-                        let app_state_test = app_state_clone.clone();
-                        state.settings_save_status =
-                            Some(("正在向 Webhook/飞书 发送测试消息...".to_string(), true));
-                        let on_done =
-                            Rc::new(RefCell::new(move |res: Result<String, String>| match res {
-                                Ok(msg) => {
-                                    app_state_test.borrow_mut().settings_save_status =
-                                        Some((msg, true));
-                                }
-                                Err(err) => {
-                                    app_state_test.borrow_mut().settings_save_status =
-                                        Some((format!("推送失败: {err}"), false));
-                                }
-                            }));
-                        gateway::async_test_webhook(webhook_url, on_done);
-                    }
-                    UiAction::TestBrowserNotification => {
-                        match notifications::show_browser_notification(
-                            "ReDash 告警测试",
-                            "这是一条来自 ReDash Web 运维工作台的自动化测试通知，指标监控系统运转正常。",
-                        ) {
-                            Ok(()) => {
-                                state.settings_save_status =
-                                    Some(("已发送浏览器桌面测试通知！".to_string(), true));
-                            }
-                            Err(msg) => {
-                                state.settings_save_status = Some((msg, false));
-                            }
-                        }
-                    }
-                    UiAction::ImportSettingsJson => {
-                        if let Some(window) = web_sys::window()
-                            && let Some(document) = window.document()
-                            && let Ok(element) = document.create_element("input")
-                            && let Ok(input_el) = element.dyn_into::<web_sys::HtmlInputElement>()
-                        {
-                            input_el.set_type("file");
-                            let _ = input_el.set_attribute("accept", ".json");
-                            let app_state_import = app_state_clone.clone();
-                            let input_clone = input_el.clone();
-                            let on_change = Closure::<dyn FnMut()>::new(move || {
-                                if let Some(files) = input_clone.files()
-                                    && let Some(file) = files.get(0)
-                                    && let Ok(reader) = web_sys::FileReader::new()
-                                {
-                                    let reader_clone = reader.clone();
-                                    let app_state_reader = app_state_import.clone();
-                                    let on_load = Closure::<dyn FnMut()>::new(move || {
-                                        if let Ok(val) = reader_clone.result()
-                                            && let Some(json_text) = val.as_string()
-                                        {
-                                            match serde_json::from_str::<
-                                                redash_types::settings::AppSettings,
-                                            >(
-                                                &json_text
-                                            ) {
-                                                Ok(imported) => {
-                                                    let mut sm = app_state_reader.borrow_mut();
-                                                    sm.settings = imported.clone();
-                                                    sm.settings_save_status = Some((
-                                                        "已成功导入设置配置！".to_string(),
-                                                        true,
-                                                    ));
-                                                    let on_done =
-                                                        Rc::new(RefCell::new(move |_| {}));
-                                                    gateway::async_save_settings(imported, on_done);
-                                                }
-                                                Err(e) => {
-                                                    app_state_reader
-                                                        .borrow_mut()
-                                                        .settings_save_status = Some((
-                                                        format!("JSON 格式解析失败: {}", e),
-                                                        false,
-                                                    ));
-                                                }
-                                            }
-                                        }
-                                    });
-                                    reader.set_onload(Some(on_load.as_ref().unchecked_ref()));
-                                    on_load.forget();
-                                    let _ = reader.read_as_text(&file);
-                                }
-                            });
-                            input_el.set_onchange(Some(on_change.as_ref().unchecked_ref()));
-                            on_change.forget();
-                            input_el.click();
-                        }
-                    }
-                    UiAction::SaveNewHost => {
-                        if let Some(new_host) = state.build_new_host() {
-                            state.hosts.push(new_host.clone());
-                            let on_done = Rc::new(RefCell::new(
-                                move |res: Result<models::HostConfig, String>| match res {
-                                    Ok(saved) => {
-                                        console::log_1(
-                                            &format!("Saved host to backend: {}", saved.name)
-                                                .into(),
-                                        );
-                                    }
-                                    Err(err) => {
-                                        console::log_1(
-                                            &format!("Failed to persist host: {}", err).into(),
-                                        );
-                                    }
-                                },
-                            ));
-                            gateway::async_save_host(new_host, on_done);
-                        }
-                    }
-                    UiAction::DeleteHost(host_id) => {
-                        state.hosts.retain(|h| h.id.0 != host_id);
-                        if state.selected_host_id.as_deref() == Some(&host_id) {
-                            state.selected_host_id = state.hosts.first().map(|h| h.id.0.clone());
-                        }
-                        let on_done =
-                            Rc::new(RefCell::new(move |res: Result<(), String>| match res {
-                                Ok(()) => {
-                                    console::log_1(&"Host deleted from backend".into());
-                                }
-                                Err(err) => {
-                                    console::log_1(
-                                        &format!("Failed to delete host from backend: {}", err)
-                                            .into(),
-                                    );
-                                }
-                            }));
-                        gateway::async_delete_host(host_id, on_done);
-                    }
-                    UiAction::RunBatch { host_ids, command } => {
-                        let app_state_batch = app_state_clone.clone();
-                        let on_done = Rc::new(RefCell::new(
-                            move |res: Result<redash_types::batch::BatchJobResult, String>| {
-                                let mut sm = app_state_batch.borrow_mut();
-                                sm.set_batch_running(false);
-                                match res {
-                                    Ok(results) => {
-                                        sm.set_batch_results(results);
-                                    }
-                                    Err(err) => {
-                                        console::log_1(
-                                            &format!("Batch execution error: {}", err).into(),
-                                        );
-                                    }
-                                }
-                            },
-                        ));
-                        gateway::async_run_batch(host_ids, command, on_done);
-                    }
-                    UiAction::ApplyAgentSuggestion => {
-                        gateway_clone.borrow().send_terminal_input("\r");
-                        if let Some(ref mut agent) = state.agent {
-                            agent.status = redash_types::agent::AgentStatus::Done;
-                        }
-                    }
-                    UiAction::AbortAgentTask => {
-                        gateway_clone.borrow().send_terminal_input("\x03");
-                        state.agent = None;
-                    }
-                    UiAction::TestDraftHost => {
-                        let hostname = state.modal_hostname.trim().to_string();
-                        let port: u16 = state.modal_port.trim().parse().unwrap_or(22);
-                        let user = if state.modal_user.trim().is_empty() {
-                            "root".to_string()
-                        } else {
-                            state.modal_user.trim().to_string()
-                        };
-
-                        if hostname.is_empty() {
-                            state.set_modal_test_status(Some((
-                                "主机名/IP不能为空".to_string(),
-                                false,
-                            )));
-                        } else {
-                            state.set_modal_is_testing(true);
-                            let app_state_clone2 = app_state_clone.clone();
-                            let on_done =
-                                Rc::new(RefCell::new(move |res: Result<String, String>| {
-                                    let mut sm = app_state_clone2.borrow_mut();
-                                    sm.set_modal_is_testing(false);
-                                    match res {
-                                        Ok(msg) => {
-                                            sm.set_modal_test_status(Some((msg, true)));
-                                        }
-                                        Err(err) => {
-                                            sm.set_modal_test_status(Some((err, false)));
-                                        }
-                                    }
-                                }));
-                            gateway::async_test_draft_host(hostname, port, user, None, on_done);
-                        }
-                    }
-                    _ => {}
-                }
+            let action = handle_mouse_click(&mut app_state_clone.borrow_mut(), x, y, width, height);
+            if let Some(action) = action {
+                execute_ui_action(action, &app_state_clone, &gateway_clone);
             }
+            text_inputs.sync(&app_state_clone, width, height);
         });
 
         canvas.set_onmousedown(Some(on_mousedown.as_ref().unchecked_ref()));
@@ -625,6 +301,9 @@ pub fn start_web_app(canvas_id: &str) -> Result<(), JsValue> {
         let gateway_clone = gateway.clone();
 
         let on_keydown = Closure::<dyn FnMut(_)>::new(move |e: KeyboardEvent| {
+            if e.is_composing() || e.key_code() == 229 {
+                return;
+            }
             let key = e.key();
             let is_ctrl = e.ctrl_key() || e.meta_key();
 
@@ -649,164 +328,40 @@ pub fn start_web_app(canvas_id: &str) -> Result<(), JsValue> {
                 e.prevent_default();
             }
 
-            if let Some(action) = handle_key_down(&mut state, &key, is_ctrl) {
-                match action {
-                    UiAction::SendTerminalInput(input) => {
-                        gateway_clone.borrow().send_terminal_input(&input);
-                    }
-                    UiAction::SaveSftpFile {
-                        host_id,
-                        path,
-                        content,
-                    } => {
-                        let app_state_sftp = app_state_clone.clone();
-                        let on_done = Rc::new(RefCell::new(move |res: Result<(), String>| {
-                            let mut sm = app_state_sftp.borrow_mut();
-                            match res {
-                                Ok(()) => {
-                                    sm.sftp_editor_modified = false;
-                                    sm.set_sftp_loading(false);
-                                }
-                                Err(err) => sm.set_sftp_error(Some(err)),
-                            }
-                        }));
-                        gateway::async_write_sftp_file(host_id, path, content, on_done);
-                    }
-                    UiAction::SaveSettings => {
-                        let app_state_save = app_state_clone.clone();
-                        let settings = app_state_save.borrow().settings.clone();
-                        let on_done = Rc::new(RefCell::new(move |res: Result<(), String>| {
-                            let mut sm = app_state_save.borrow_mut();
-                            match res {
-                                Ok(()) => {
-                                    sm.settings_save_status =
-                                        Some(("设置已成功保存到云端服务器".to_string(), true));
-                                }
-                                Err(err) => {
-                                    sm.settings_save_status =
-                                        Some((format!("设置保存失败: {}", err), false));
-                                }
-                            }
-                        }));
-                        gateway::async_save_settings(settings, on_done);
-                    }
-                    UiAction::ExportSettingsJson => {
-                        let json =
-                            serde_json::to_string_pretty(&state.settings).unwrap_or_default();
-                        console::log_1(&format!("Exported Settings JSON:\n{}", json).into());
-                        state.settings_save_status =
-                            Some(("已成功导出设置 JSON 文件".to_string(), true));
-                    }
-                    UiAction::SaveNewHost => {
-                        if let Some(new_host) = state.build_new_host() {
-                            state.hosts.push(new_host.clone());
-                            let on_done = Rc::new(RefCell::new(
-                                move |res: Result<models::HostConfig, String>| match res {
-                                    Ok(saved) => {
-                                        console::log_1(
-                                            &format!("Saved host to backend: {}", saved.name)
-                                                .into(),
-                                        );
-                                    }
-                                    Err(err) => {
-                                        console::log_1(
-                                            &format!("Failed to persist host: {}", err).into(),
-                                        );
-                                    }
-                                },
-                            ));
-                            gateway::async_save_host(new_host, on_done);
-                        }
-                    }
-                    UiAction::DeleteHost(host_id) => {
-                        state.hosts.retain(|h| h.id.0 != host_id);
-                        if state.selected_host_id.as_deref() == Some(&host_id) {
-                            state.selected_host_id = state.hosts.first().map(|h| h.id.0.clone());
-                        }
-                        let on_done =
-                            Rc::new(RefCell::new(move |res: Result<(), String>| match res {
-                                Ok(()) => {
-                                    console::log_1(&"Host deleted from backend".into());
-                                }
-                                Err(err) => {
-                                    console::log_1(
-                                        &format!("Failed to delete host from backend: {}", err)
-                                            .into(),
-                                    );
-                                }
-                            }));
-                        gateway::async_delete_host(host_id, on_done);
-                    }
-                    UiAction::RunBatch { host_ids, command } => {
-                        let app_state_batch = app_state_clone.clone();
-                        let on_done = Rc::new(RefCell::new(
-                            move |res: Result<redash_types::batch::BatchJobResult, String>| {
-                                let mut sm = app_state_batch.borrow_mut();
-                                sm.set_batch_running(false);
-                                match res {
-                                    Ok(results) => {
-                                        sm.set_batch_results(results);
-                                    }
-                                    Err(err) => {
-                                        console::log_1(
-                                            &format!("Batch execution error: {}", err).into(),
-                                        );
-                                    }
-                                }
-                            },
-                        ));
-                        gateway::async_run_batch(host_ids, command, on_done);
-                    }
-                    UiAction::ApplyAgentSuggestion => {
-                        gateway_clone.borrow().send_terminal_input("\r");
-                        if let Some(ref mut agent) = state.agent {
-                            agent.status = redash_types::agent::AgentStatus::Done;
-                        }
-                    }
-                    UiAction::AbortAgentTask => {
-                        gateway_clone.borrow().send_terminal_input("\x03");
-                        state.agent = None;
-                    }
-                    UiAction::TestDraftHost => {
-                        let hostname = state.modal_hostname.trim().to_string();
-                        let port: u16 = state.modal_port.trim().parse().unwrap_or(22);
-                        let user = if state.modal_user.trim().is_empty() {
-                            "root".to_string()
-                        } else {
-                            state.modal_user.trim().to_string()
-                        };
-
-                        if hostname.is_empty() {
-                            state.set_modal_test_status(Some((
-                                "主机名/IP不能为空".to_string(),
-                                false,
-                            )));
-                        } else {
-                            state.set_modal_is_testing(true);
-                            let app_state_clone2 = app_state_clone.clone();
-                            let on_done =
-                                Rc::new(RefCell::new(move |res: Result<String, String>| {
-                                    let mut sm = app_state_clone2.borrow_mut();
-                                    sm.set_modal_is_testing(false);
-                                    match res {
-                                        Ok(msg) => {
-                                            sm.set_modal_test_status(Some((msg, true)));
-                                        }
-                                        Err(err) => {
-                                            sm.set_modal_test_status(Some((err, false)));
-                                        }
-                                    }
-                                }));
-                            gateway::async_test_draft_host(hostname, port, user, None, on_done);
-                        }
-                    }
-                    _ => {}
-                }
+            let action = handle_key_down(&mut state, &key, is_ctrl);
+            drop(state);
+            if let Some(action) = action {
+                execute_ui_action(action, &app_state_clone, &gateway_clone);
             }
         });
 
         canvas.set_onkeydown(Some(on_keydown.as_ref().unchecked_ref()));
         on_keydown.forget();
+    }
+
+    {
+        let state = app_state.clone();
+        let window = window.clone();
+        let wheel = Closure::<dyn FnMut(_)>::new(move |event: web_sys::WheelEvent| {
+            let mut sm = state.borrow_mut();
+            if sm.active_view != ActiveView::Fleet || sm.show_add_modal {
+                return;
+            }
+            let width = window.inner_width().unwrap().as_f64().unwrap();
+            let height = window.inner_height().unwrap().as_f64().unwrap();
+            let count = fleet_layout::filtered_hosts(&sm).len();
+            let delta = match event.delta_mode() {
+                1 => event.delta_y() * 20.0,
+                2 => event.delta_y() * height,
+                _ => event.delta_y(),
+            };
+            sm.fleet_scroll =
+                fleet_layout::FleetLayout::new(width, height, count, sm.fleet_scroll + delta)
+                    .scroll;
+            event.prevent_default();
+        });
+        canvas.set_onwheel(Some(wheel.as_ref().unchecked_ref()));
+        wheel.forget();
     }
 
     // High Performance 120 FPS Render Loop via requestAnimationFrame
@@ -817,6 +372,7 @@ pub fn start_web_app(canvas_id: &str) -> Result<(), JsValue> {
         let app_state_render = app_state.clone();
         let gateway_render = gateway.clone();
         let window_render = window.clone();
+        let text_inputs = text_inputs.clone();
 
         *g.borrow_mut() = Some(Closure::<dyn FnMut()>::new(move || {
             let width = window_render.inner_width().unwrap().as_f64().unwrap();
@@ -843,6 +399,7 @@ pub fn start_web_app(canvas_id: &str) -> Result<(), JsValue> {
                 }
             }
 
+            text_inputs.sync(&app_state_render, width, height);
             ctx.save();
             ctx.scale(dpr, dpr).unwrap();
 
@@ -859,6 +416,359 @@ pub fn start_web_app(canvas_id: &str) -> Result<(), JsValue> {
 
     console::log_1(&"✨ ReDash GPUI Web Running Successfully on Canvas!".into());
     Ok(())
+}
+
+fn execute_ui_action(
+    action: UiAction,
+    app_state_clone: &Rc<RefCell<AppState>>,
+    gateway_clone: &Rc<RefCell<GatewayClient>>,
+) {
+    let mut state = app_state_clone.borrow_mut();
+    match action {
+        UiAction::OpenTerminal(host_id) => {
+            let app_state_term = app_state_clone.clone();
+            let app_state_agent = app_state_clone.clone();
+            let (cols, rows) = {
+                (
+                    state.terminal_grid.cols as u32,
+                    state.terminal_grid.rows as u32,
+                )
+            };
+            let connection = gateway_clone.borrow_mut().connect_terminal(
+                &host_id,
+                cols,
+                rows,
+                Rc::new(move |data| {
+                    app_state_term.borrow_mut().append_terminal_output(&data);
+                }),
+                Rc::new(move |agent| {
+                    app_state_agent.borrow_mut().agent = Some(agent);
+                }),
+            );
+            if let Err(error) = connection {
+                state.append_terminal_output(&format!("\r\n[连接错误] {error:?}\r\n"));
+            }
+        }
+        UiAction::OpenSftp(host_id) => {
+            let app_state_sftp = app_state_clone.clone();
+            let path = state.sftp_current_path.clone();
+            state.set_sftp_loading(true);
+            let on_done = Rc::new(RefCell::new(
+                move |res: Result<Vec<redash_types::sftp::RemoteFileItem>, String>| {
+                    let mut sm = app_state_sftp.borrow_mut();
+                    match res {
+                        Ok(files) => sm.set_sftp_files(files),
+                        Err(err) => sm.set_sftp_error(Some(err)),
+                    }
+                },
+            ));
+            gateway::async_fetch_sftp_list(host_id, path, on_done);
+        }
+        UiAction::FetchSftpList { host_id, path } => {
+            let app_state_sftp = app_state_clone.clone();
+            let on_done = Rc::new(RefCell::new(
+                move |res: Result<Vec<redash_types::sftp::RemoteFileItem>, String>| {
+                    let mut sm = app_state_sftp.borrow_mut();
+                    match res {
+                        Ok(files) => sm.set_sftp_files(files),
+                        Err(err) => sm.set_sftp_error(Some(err)),
+                    }
+                },
+            ));
+            gateway::async_fetch_sftp_list(host_id, path, on_done);
+        }
+        UiAction::ReadSftpFile { host_id, path } => {
+            let app_state_sftp = app_state_clone.clone();
+            let read_path = path.clone();
+            let on_done = Rc::new(RefCell::new(move |res: Result<String, String>| {
+                let mut sm = app_state_sftp.borrow_mut();
+                match res {
+                    Ok(content) => sm.open_sftp_editor(read_path.clone(), content),
+                    Err(err) => sm.set_sftp_error(Some(err)),
+                }
+            }));
+            gateway::async_read_sftp_file(host_id, path, on_done);
+        }
+        UiAction::SaveSftpFile {
+            host_id,
+            path,
+            content,
+        } => {
+            let app_state_sftp = app_state_clone.clone();
+            let on_done = Rc::new(RefCell::new(move |res: Result<(), String>| {
+                let mut sm = app_state_sftp.borrow_mut();
+                match res {
+                    Ok(()) => {
+                        sm.sftp_editor_modified = false;
+                        sm.set_sftp_loading(false);
+                    }
+                    Err(err) => sm.set_sftp_error(Some(err)),
+                }
+            }));
+            gateway::async_write_sftp_file(host_id, path, content, on_done);
+        }
+        UiAction::SaveSettings => {
+            let app_state_save = app_state_clone.clone();
+            let settings = state.settings.clone();
+            let on_done = Rc::new(RefCell::new(move |res: Result<(), String>| {
+                let mut sm = app_state_save.borrow_mut();
+                match res {
+                    Ok(()) => {
+                        sm.settings_save_status =
+                            Some(("设置已成功保存到云端服务器".to_string(), true));
+                    }
+                    Err(err) => {
+                        sm.settings_save_status = Some((format!("设置保存失败: {}", err), false));
+                    }
+                }
+            }));
+            gateway::async_save_settings(settings, on_done);
+        }
+        UiAction::ExportSettingsJson => {
+            let json = serde_json::to_string_pretty(&state.settings).unwrap_or_default();
+            console::log_1(&format!("Exported Settings JSON:\n{}", json).into());
+            if let Some(window) = web_sys::window()
+                && let Some(document) = window.document()
+                && let Ok(element) = document.create_element("a")
+            {
+                let href = format!(
+                    "data:application/json;charset=utf-8,{}",
+                    js_sys::encode_uri_component(&json)
+                        .as_string()
+                        .unwrap_or_default()
+                );
+                let _ = element.set_attribute("href", &href);
+                let _ = element.set_attribute("download", "redash-settings.json");
+                let html_el: web_sys::HtmlElement = element.unchecked_into();
+                html_el.click();
+            }
+            state.settings_save_status = Some(("已成功导出设置 JSON 文件".to_string(), true));
+        }
+        UiAction::PromptPingTarget => {
+            if let Some(window) = web_sys::window() {
+                let current = &state.ping_target;
+                if let Ok(Some(val)) = window.prompt_with_message_and_default(
+                    "请输入网络探测 Ping 目标地址 (IP 或域名):",
+                    current,
+                ) {
+                    let trimmed = val.trim();
+                    if !trimmed.is_empty() {
+                        state.set_ping_target(trimmed.to_string());
+                        state.settings_save_status =
+                            Some((format!("探测节点已更新为 {}", trimmed), true));
+                    }
+                }
+            }
+        }
+        UiAction::PromptWebhookUrl => {
+            if let Some(window) = web_sys::window() {
+                let current = state.settings.alert_webhook_url.as_deref().unwrap_or("");
+                if let Ok(Some(val)) = window.prompt_with_message_and_default(
+                    "请输入 Webhook 机器人告警推送地址 (钉钉 / 企微 / 飞书):",
+                    current,
+                ) {
+                    let trimmed = val.trim();
+                    if trimmed.is_empty() {
+                        state.set_webhook_url(None);
+                        state.settings_save_status =
+                            Some(("已清除 Webhook 推送地址".to_string(), true));
+                    } else {
+                        state.set_webhook_url(Some(trimmed.to_string()));
+                        state.settings_save_status =
+                            Some(("已更新 Webhook 推送地址".to_string(), true));
+                    }
+                    let settings = state.settings.clone();
+                    let app_state_save = app_state_clone.clone();
+                    let on_done = Rc::new(RefCell::new(move |_| {
+                        app_state_save.borrow_mut().settings_save_status =
+                            Some(("Webhook 地址已成功保存".to_string(), true));
+                    }));
+                    gateway::async_save_settings(settings, on_done);
+                }
+            }
+        }
+        UiAction::TestWebhookAlert => {
+            let webhook_url = state.settings.alert_webhook_url.clone();
+            let app_state_test = app_state_clone.clone();
+            state.settings_save_status =
+                Some(("正在向 Webhook/飞书 发送测试消息...".to_string(), true));
+            let on_done = Rc::new(RefCell::new(move |res: Result<String, String>| match res {
+                Ok(msg) => {
+                    app_state_test.borrow_mut().settings_save_status = Some((msg, true));
+                }
+                Err(err) => {
+                    app_state_test.borrow_mut().settings_save_status =
+                        Some((format!("推送失败: {err}"), false));
+                }
+            }));
+            gateway::async_test_webhook(webhook_url, on_done);
+        }
+        UiAction::TestBrowserNotification => {
+            match notifications::show_browser_notification(
+                "ReDash 告警测试",
+                "这是一条来自 ReDash Web 运维工作台的自动化测试通知，指标监控系统运转正常。",
+            ) {
+                Ok(()) => {
+                    state.settings_save_status =
+                        Some(("已发送浏览器桌面测试通知！".to_string(), true));
+                }
+                Err(msg) => {
+                    state.settings_save_status = Some((msg, false));
+                }
+            }
+        }
+        UiAction::ImportSettingsJson => {
+            if let Some(window) = web_sys::window()
+                && let Some(document) = window.document()
+                && let Ok(element) = document.create_element("input")
+                && let Ok(input_el) = element.dyn_into::<web_sys::HtmlInputElement>()
+            {
+                input_el.set_type("file");
+                let _ = input_el.set_attribute("accept", ".json");
+                let app_state_import = app_state_clone.clone();
+                let input_clone = input_el.clone();
+                let on_change = Closure::<dyn FnMut()>::new(move || {
+                    if let Some(files) = input_clone.files()
+                        && let Some(file) = files.get(0)
+                        && let Ok(reader) = web_sys::FileReader::new()
+                    {
+                        let reader_clone = reader.clone();
+                        let app_state_reader = app_state_import.clone();
+                        let on_load = Closure::<dyn FnMut()>::new(move || {
+                            if let Ok(val) = reader_clone.result()
+                                && let Some(json_text) = val.as_string()
+                            {
+                                match serde_json::from_str::<redash_types::settings::AppSettings>(
+                                    &json_text,
+                                ) {
+                                    Ok(imported) => {
+                                        let mut sm = app_state_reader.borrow_mut();
+                                        sm.settings = imported.clone();
+                                        sm.settings_save_status =
+                                            Some(("已成功导入设置配置！".to_string(), true));
+                                        let on_done = Rc::new(RefCell::new(move |_| {}));
+                                        gateway::async_save_settings(imported, on_done);
+                                    }
+                                    Err(e) => {
+                                        app_state_reader.borrow_mut().settings_save_status =
+                                            Some((format!("JSON 格式解析失败: {}", e), false));
+                                    }
+                                }
+                            }
+                        });
+                        reader.set_onload(Some(on_load.as_ref().unchecked_ref()));
+                        on_load.forget();
+                        let _ = reader.read_as_text(&file);
+                    }
+                });
+                input_el.set_onchange(Some(on_change.as_ref().unchecked_ref()));
+                on_change.forget();
+                input_el.click();
+            }
+        }
+        UiAction::SaveNewHost => {
+            if let Some(new_host) = state.build_new_host() {
+                let saved_state = app_state_clone.clone();
+                let on_done = Rc::new(RefCell::new(
+                    move |res: Result<models::HostConfig, String>| {
+                        let mut sm = saved_state.borrow_mut();
+                        match res {
+                            Ok(saved) => {
+                                sm.hosts.push(saved);
+                                sm.close_add_modal();
+                                sm.gateway_error = None;
+                            }
+                            Err(error) => {
+                                sm.show_add_modal = true;
+                                sm.modal_test_status = Some((format!("保存失败: {error}"), false));
+                            }
+                        }
+                    },
+                ));
+                gateway::async_save_host(new_host, on_done);
+            } else {
+                state.modal_test_status = Some(("请填写名称和有效的主机地址、端口".into(), false));
+            }
+        }
+        UiAction::DeleteHost(host_id) => {
+            let saved_state = app_state_clone.clone();
+            let id = host_id.clone();
+            let on_done = Rc::new(RefCell::new(move |res: Result<(), String>| {
+                let mut sm = saved_state.borrow_mut();
+                match res {
+                    Ok(()) => {
+                        sm.hosts.retain(|h| h.id.0 != id);
+                        sm.metrics.remove(&id);
+                        sm.metrics_errors.remove(&id);
+                        if sm.selected_host_id.as_deref() == Some(&id) {
+                            sm.selected_host_id = None;
+                        }
+                        sm.gateway_error = None;
+                    }
+                    Err(error) => sm.gateway_error = Some(format!("删除失败: {error}")),
+                }
+            }));
+            gateway::async_delete_host(host_id, on_done);
+        }
+        UiAction::RunBatch { host_ids, command } => {
+            let app_state_batch = app_state_clone.clone();
+            let on_done = Rc::new(RefCell::new(
+                move |res: Result<redash_types::batch::BatchJobResult, String>| {
+                    let mut sm = app_state_batch.borrow_mut();
+                    sm.set_batch_running(false);
+                    match res {
+                        Ok(results) => {
+                            sm.set_batch_results(results);
+                        }
+                        Err(err) => {
+                            console::log_1(&format!("Batch execution error: {}", err).into());
+                        }
+                    }
+                },
+            ));
+            gateway::async_run_batch(host_ids, command, on_done);
+        }
+        UiAction::ApplyAgentSuggestion => {
+            gateway_clone.borrow().send_terminal_input("\r");
+            if let Some(ref mut agent) = state.agent {
+                agent.status = redash_types::agent::AgentStatus::Done;
+            }
+        }
+        UiAction::AbortAgentTask => {
+            gateway_clone.borrow().send_terminal_input("\x03");
+            state.agent = None;
+        }
+        UiAction::TestDraftHost => {
+            let hostname = state.modal_hostname.trim().to_string();
+            let port: u16 = state.modal_port.trim().parse().unwrap_or(22);
+            let user = if state.modal_user.trim().is_empty() {
+                "root".to_string()
+            } else {
+                state.modal_user.trim().to_string()
+            };
+
+            if hostname.is_empty() {
+                state.set_modal_test_status(Some(("主机名/IP不能为空".to_string(), false)));
+            } else {
+                state.set_modal_is_testing(true);
+                let app_state_clone2 = app_state_clone.clone();
+                let on_done = Rc::new(RefCell::new(move |res: Result<String, String>| {
+                    let mut sm = app_state_clone2.borrow_mut();
+                    sm.set_modal_is_testing(false);
+                    match res {
+                        Ok(msg) => {
+                            sm.set_modal_test_status(Some((msg, true)));
+                        }
+                        Err(err) => {
+                            sm.set_modal_test_status(Some((err, false)));
+                        }
+                    }
+                }));
+                gateway::async_test_draft_host(hostname, port, user, None, on_done);
+            }
+        }
+        UiAction::SendTerminalInput(data) => gateway_clone.borrow().send_terminal_input(&data),
+    }
 }
 
 fn request_animation_frame(f: &Closure<dyn FnMut()>, window: &Window) {

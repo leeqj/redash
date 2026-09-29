@@ -199,6 +199,9 @@ pub struct AppStateMachine {
     pub hosts: Vec<HostConfig>,
     pub selected_host_id: Option<String>,
     pub filter_query: String,
+    pub fleet_scroll: f64,
+    pub gateway_error: Option<String>,
+    pub metrics_errors: HashMap<String, String>,
     pub metrics: HashMap<String, NodeMetrics>,
     pub metrics_history: HashMap<String, Vec<f32>>,
     pub cpu_histories: HashMap<String, Vec<f32>>,
@@ -267,7 +270,7 @@ impl AppStateMachine {
         grid.write_stream(concat!(
             "ReDash Web Terminal [Version ",
             env!("CARGO_PKG_VERSION"),
-            "]\r\nConnected to ReDash Web Gateway over high-performance WebSocket PTY.\r\n\r\n"
+            "]\r\n选择主机以建立终端连接。\r\n\r\n"
         ));
 
         Self {
@@ -275,6 +278,9 @@ impl AppStateMachine {
             hosts: Vec::new(),
             selected_host_id: None,
             filter_query: String::new(),
+            fleet_scroll: 0.0,
+            gateway_error: None,
+            metrics_errors: HashMap::new(),
             metrics: HashMap::new(),
             metrics_history: HashMap::new(),
             cpu_histories: HashMap::new(),
@@ -290,7 +296,7 @@ impl AppStateMachine {
                     "]"
                 )
                 .to_string(),
-                "Connected to ReDash Web Gateway over high-performance WebSocket PTY.".to_string(),
+                "选择主机以建立终端连接。".to_string(),
                 "".to_string(),
             ],
             terminal_grid: grid,

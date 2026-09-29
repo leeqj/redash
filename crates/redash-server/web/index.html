@@ -21,6 +21,7 @@
       user-select: none;
       -webkit-user-select: none;
     }
+    textarea, input { user-select: text; -webkit-user-select: text; }
     #redash-gpui-canvas {
       display: block;
       width: 100vw;
@@ -46,6 +47,8 @@
       z-index: 9999;
       transition: opacity 0.25s ease;
     }
+    #login { display: grid; gap: 18px; padding: 32px; max-width: 480px; }
+    #login input, #login button { font: inherit; padding: 12px; border-radius: 6px; }
     .spinner {
       width: 38px;
       height: 38px;
@@ -70,8 +73,26 @@
   <script type="module">
     import init, { start_web_app } from '/pkg/redash_web.js';
 
+    async function authenticate() {
+      if ((await fetch('/auth/session', {cache: 'no-store'})).ok) return;
+      const overlay = document.getElementById('loading-overlay');
+      overlay.innerHTML = '<form id="login"><h2>ReDash Gateway</h2><p>Enter your management token to sign in.</p><input id="token" type="password" autocomplete="current-password" aria-label="Management token" required minlength="32"><button type="submit">Sign in</button><p id="login-error" role="alert"></p></form>';
+      await new Promise(resolve => {
+        document.getElementById('login').addEventListener('submit', async event => {
+          event.preventDefault();
+          const input = document.getElementById('token');
+          try {
+            const response = await fetch('/auth/login', {method: 'POST', headers: {Authorization: `Bearer ${input.value}`}});
+            input.value = '';
+            if (response.ok) { resolve(); return; }
+            document.getElementById('login-error').textContent = response.status === 503 ? 'Gateway authentication is not configured.' : 'Sign-in failed. Check the token and use HTTPS outside localhost.';
+          } catch (_) { document.getElementById('login-error').textContent = 'Gateway unavailable. Try again.'; }
+        });
+      });
+    }
     async function run() {
       try {
+        await authenticate();
         await init();
         start_web_app('redash-gpui-canvas');
         const overlay = document.getElementById('loading-overlay');

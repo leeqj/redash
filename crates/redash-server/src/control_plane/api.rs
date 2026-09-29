@@ -86,18 +86,15 @@ async fn handle_client_tty(mut socket: WebSocket, node_id: String, state: AppSta
     let sid = init.session_id.clone();
     let registry = state.control_plane;
     let (tx, mut rx) = tokio::sync::mpsc::channel(128);
-    if registry
-        .register_tty_subscriber(&node_id, sid.clone(), tx)
-        .is_err()
-    {
+    let Ok(binding) = registry.register_tty_subscriber(&node_id, sid.clone(), tx) else {
         return;
-    }
+    };
     let result: anyhow::Result<()> = async {
         registry.send_e2ee_init_to_node(&node_id, init).await.map_err(anyhow::Error::msg)?;
         // Do not route client commands until this connection's Agent acknowledges the same session.
         let Some(TtyDownstreamMsg::Text(text)) = tokio::time::timeout(Duration::from_secs(5), rx.recv()).await? else { anyhow::bail!("Agent disconnected"); };
         let ack: redash_types::E2eeHandshakeAck = serde_json::from_str(&text)?;
-        socket.send(WsMessage::Text(text.into())).await?;
+        tokio::time::timeout(Duration::from_secs(5), socket.send(WsMessage::Text(text.into()))).await??;
         anyhow::ensure!(ack.success, "Agent rejected terminal authentication");
         loop {
             tokio::select! {
@@ -107,11 +104,11 @@ async fn handle_client_tty(mut socket: WebSocket, node_id: String, state: AppSta
                         anyhow::ensure!(env.session_id == sid, "Cross-session input rejected");
                         registry.send_tty_encrypted_to_node(&node_id, env).await.map_err(anyhow::Error::msg)?;
                     }
-                    Some(Ok(WsMessage::Ping(data))) => { socket.send(WsMessage::Pong(data)).await?; }
+                    Some(Ok(WsMessage::Ping(data))) => { tokio::time::timeout(Duration::from_secs(5), socket.send(WsMessage::Pong(data))).await??; }
                     _ => break,
                 },
                 outgoing = rx.recv() => match outgoing {
-                    Some(TtyDownstreamMsg::Text(text)) => { socket.send(WsMessage::Text(text.into())).await?; }
+                    Some(TtyDownstreamMsg::Text(text)) => { tokio::time::timeout(Duration::from_secs(5), socket.send(WsMessage::Text(text.into()))).await??; }
                     _ => break,
                 }
             }
@@ -121,5 +118,5 @@ async fn handle_client_tty(mut socket: WebSocket, node_id: String, state: AppSta
     if let Err(err) = result {
         log::debug!("Terminal relay closed: {}", err);
     }
-    registry.close_node_tty(&node_id, &sid).await;
+    registry.close_node_tty(&sid, &binding).await;
 }

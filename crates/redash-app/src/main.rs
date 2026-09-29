@@ -1243,30 +1243,29 @@ impl ReDashApp {
         let http_base = self.session_mgr.hub_http_base();
         let url = format!("{}/v1/control/nodes", http_base.trim_end_matches('/'));
         cx.spawn(async move |this, cx| {
+            let mut snapshot = redash_ui_core::control_plane::GatewaySnapshot::default();
             loop {
-                smol::Timer::after(Duration::from_secs(2)).await;
-
-                let output = tokio::process::Command::new("curl")
-                    .arg("-s")
-                    .arg("--connect-timeout")
-                    .arg("1")
-                    .arg(&url)
-                    .output()
-                    .await;
-
-                if let Ok(out) = output
-                    && out.status.success()
-                    && let Ok(nodes) =
-                        serde_json::from_slice::<Vec<redash_types::ManagedNodeDetail>>(&out.stdout)
-                {
-                    let _ = this.update(cx, |app, cx| {
+                let result = redash_core::control_plane::fetch_nodes(&url)
+                    .await
+                    .map_err(|error| format!("{error:#}"));
+                let now = redash_ui_core::e2ee::now_secs();
+                snapshot.update(result, now);
+                let nodes = snapshot.nodes(now);
+                let error = snapshot.error(now);
+                if this
+                    .update(cx, |app, cx| {
                         app.control_plane_nodes = nodes.clone();
                         app.fleet_view.update(cx, |fleet, cx| {
+                            fleet.control_plane_error = error;
                             fleet.set_control_plane_nodes(nodes, cx);
                         });
                         cx.notify();
-                    });
+                    })
+                    .is_err()
+                {
+                    break;
                 }
+                smol::Timer::after(Duration::from_secs(2)).await;
             }
         })
         .detach();
@@ -1787,6 +1786,7 @@ fn main() {
         .build()
         .expect("Failed to initialize Tokio runtime");
     let _guard = rt.enter();
+    redash_core::discovery::LanDiscoveryClient::global();
 
     Application::new().run(|cx: &mut App| {
         // 1. Set macOS Dock Icon dynamically from embedded asset

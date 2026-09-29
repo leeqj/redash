@@ -115,10 +115,10 @@ impl PtyChannel {
         let identity = identity
             .context("Terminal requires a client identity and a pinned Agent public key")?;
         let (stream, session) = if let Some(direct) = direct_url {
-            let lan = connect_reverse_ws(direct, identity);
+            let lan = connect_reverse_ws(direct, identity, None);
             let hub = async {
                 tokio::time::sleep(std::time::Duration::from_millis(75)).await;
-                connect_reverse_ws(hub_url, identity).await
+                connect_reverse_ws(hub_url, identity, identity.gateway_token.as_deref()).await
             };
             tokio::pin!(lan, hub);
             tokio::select! {
@@ -126,8 +126,44 @@ impl PtyChannel {
                 res = &mut hub => match res { Ok(pair) => pair, Err(_) => lan.await? },
             }
         } else {
-            connect_reverse_ws(hub_url, identity).await?
+            connect_reverse_ws(hub_url, identity, identity.gateway_token.as_deref()).await?
         };
+        Self::open_authenticated_stream(stream, session, cols, rows, output_tx).await
+    }
+
+    pub async fn new_discovering_ws(
+        hub_url: &str,
+        cols: u32,
+        rows: u32,
+        output_tx: mpsc::Sender<Vec<u8>>,
+        identity: &TerminalIdentity,
+    ) -> Result<Self> {
+        let lan = async {
+            let endpoint = crate::discovery::LanDiscoveryClient::global()
+                .wait_for_endpoint(&identity.node_id, std::time::Duration::from_millis(3500))
+                .await
+                .context("No LAN Agent discovered")?;
+            connect_reverse_ws(&endpoint, identity, None).await
+        };
+        let hub = async {
+            tokio::time::sleep(std::time::Duration::from_millis(75)).await;
+            connect_reverse_ws(hub_url, identity, identity.gateway_token.as_deref()).await
+        };
+        tokio::pin!(lan, hub);
+        let (stream, session) = tokio::select! {
+            res = &mut lan => match res { Ok(pair) => pair, Err(_) => hub.await? },
+            res = &mut hub => match res { Ok(pair) => pair, Err(hub_error) => lan.await.with_context(|| format!("Hub connection failed: {hub_error:#}"))? },
+        };
+        Self::open_authenticated_stream(stream, session, cols, rows, output_tx).await
+    }
+
+    async fn open_authenticated_stream(
+        stream: ReverseWsStream,
+        session: redash_ui_core::e2ee::ClientE2eeSession,
+        cols: u32,
+        rows: u32,
+        output_tx: mpsc::Sender<Vec<u8>>,
+    ) -> Result<Self> {
         let channel = from_ws_stream(stream, session, output_tx);
         let open = redash_types::TtyClientFrame::Open {
             rows: rows.clamp(1, u16::MAX as u32) as u16,
@@ -199,17 +235,26 @@ pub struct TerminalIdentity {
     pub node_id: String,
     pub client_private_key: String,
     pub agent_public_key: String,
+    pub gateway_token: Option<String>,
 }
 
 async fn connect_reverse_ws(
     ws_url: &str,
     identity: &TerminalIdentity,
+    gateway_token: Option<&str>,
 ) -> Result<(ReverseWsStream, redash_ui_core::e2ee::ClientE2eeSession)> {
     use futures::{SinkExt, StreamExt};
     use tokio_tungstenite::tungstenite::Message;
     let _ = rustls::crypto::ring::default_provider().install_default();
     tokio::time::timeout(std::time::Duration::from_secs(5), async {
-        let (mut ws, _) = tokio_tungstenite::connect_async(ws_url).await?;
+        use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+        let mut request = ws_url.into_client_request()?;
+        if let Some(token) = gateway_token {
+            request
+                .headers_mut()
+                .insert("Authorization", format!("Bearer {token}").parse()?);
+        }
+        let (mut ws, _) = tokio_tungstenite::connect_async(request).await?;
         let sid = format!("tty-{}", uuid::Uuid::new_v4());
         let (mut session, init) = redash_ui_core::e2ee::ClientE2eeSession::initiate(
             &sid,

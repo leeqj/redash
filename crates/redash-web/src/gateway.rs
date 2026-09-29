@@ -1,58 +1,146 @@
-//! WebSocket and REST API Gateway Client for ReDash Web
-//! Connects from the browser WASM runtime to `redash-server`.
-
-use crate::models::{HostConfig, MetricsMessage, ServerTerminalMessage};
+//! WebSocket and REST API Gateway Client for ReDash Web.
+use crate::models::{HostConfig, MetricsMessage, NodeMetrics, ServerTerminalMessage};
 use redash_types::sftp::RemoteFileItem;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
-use web_sys::{MessageEvent, WebSocket, console};
+use web_sys::{CloseEvent, Event, MessageEvent, WebSocket};
 
-pub struct GatewayClient {
-    pub active_terminal_ws: Option<WebSocket>,
-    pub active_metrics_ws: Option<WebSocket>,
+/// Keep handlers alive exactly as long as their socket. Replacing a subscription
+/// closes the previous socket and detaches callbacks into obsolete UI state.
+struct LiveSocket {
+    ws: WebSocket,
+    last_activity: Rc<Cell<f64>>,
+    _message: Closure<dyn FnMut(MessageEvent)>,
+    _error: Closure<dyn FnMut(Event)>,
+    _close: Closure<dyn FnMut(CloseEvent)>,
 }
-
-impl GatewayClient {
-    pub fn new() -> Self {
-        Self {
-            active_terminal_ws: None,
-            active_metrics_ws: None,
-        }
-    }
-
-    pub fn connect_metrics(
-        &mut self,
-        host_id: &str,
-        on_metrics: Rc<dyn Fn(crate::models::NodeMetrics)>,
-    ) -> Result<(), JsValue> {
-        let location = web_sys::window().unwrap().location();
-        let host = location
-            .host()
-            .unwrap_or_else(|_| "127.0.0.1:8080".to_string());
-        let ws_url = format!("ws://{}/ws/metrics/{}", host, host_id);
-
-        console::log_1(&format!("Connecting to metrics stream: {}", ws_url).into());
-        let ws = WebSocket::new(&ws_url)?;
-
-        let onmessage_callback = Closure::<dyn FnMut(_)>::new(move |e: MessageEvent| {
-            let Some(text) = e.data().as_string() else {
-                return;
-            };
-            if let Ok(MetricsMessage::Metrics { data, .. }) =
-                serde_json::from_str::<MetricsMessage>(&text)
-            {
-                on_metrics(data);
+impl LiveSocket {
+    fn new(
+        url: &str,
+        on_message: Rc<dyn Fn(String)>,
+        on_error: Rc<dyn Fn(String)>,
+    ) -> Result<Self, JsValue> {
+        let ws = WebSocket::new(url)?;
+        let last_activity = Rc::new(Cell::new(js_sys::Date::now()));
+        let activity = last_activity.clone();
+        let message = Closure::new(move |e: MessageEvent| {
+            activity.set(js_sys::Date::now());
+            if let Some(text) = e.data().as_string() {
+                on_message(text);
             }
         });
-        ws.set_onmessage(Some(onmessage_callback.as_ref().unchecked_ref()));
-        onmessage_callback.forget();
-
-        self.active_metrics_ws = Some(ws);
-        Ok(())
+        let error_cb = on_error.clone();
+        let error = Closure::new(move |_: Event| {
+            error_cb("连接失败，请检查 Gateway、登录凭据和网络".into())
+        });
+        let close = Closure::new(move |_: CloseEvent| on_error("连接已断开".into()));
+        ws.set_onmessage(Some(message.as_ref().unchecked_ref()));
+        ws.set_onerror(Some(error.as_ref().unchecked_ref()));
+        ws.set_onclose(Some(close.as_ref().unchecked_ref()));
+        Ok(Self {
+            ws,
+            last_activity,
+            _message: message,
+            _error: error,
+            _close: close,
+        })
     }
+    fn healthy(&self) -> bool {
+        matches!(
+            self.ws.ready_state(),
+            WebSocket::CONNECTING | WebSocket::OPEN
+        ) && js_sys::Date::now() - self.last_activity.get() < 45_000.0
+    }
+}
+impl Drop for LiveSocket {
+    fn drop(&mut self) {
+        self.ws.set_onmessage(None);
+        self.ws.set_onerror(None);
+        self.ws.set_onclose(None);
+        let _ = self.ws.close();
+    }
+}
 
+pub fn websocket_url(protocol: &str, host: &str, path: &str) -> Result<String, String> {
+    let scheme = match protocol {
+        "https:" => "wss",
+        "http:" => "ws",
+        _ => return Err("Gateway 必须通过 HTTP 或 HTTPS 访问".into()),
+    };
+    Ok(format!("{scheme}://{host}{path}"))
+}
+fn current_ws_url(path: &str) -> Result<String, JsValue> {
+    let location = web_sys::window()
+        .ok_or_else(|| JsValue::from_str("Window not found"))?
+        .location();
+    websocket_url(&location.protocol()?, &location.host()?, path).map_err(|e| JsValue::from_str(&e))
+}
+fn path_id(id: &str) -> String {
+    js_sys::encode_uri_component(id)
+        .as_string()
+        .unwrap_or_default()
+}
+
+type MetricsCallback = Rc<dyn Fn(String, NodeMetrics)>;
+type ErrorCallback = Rc<dyn Fn(String, String)>;
+#[derive(Default)]
+pub struct GatewayClient {
+    terminal: Option<LiveSocket>,
+    metrics: HashMap<String, LiveSocket>,
+}
+impl GatewayClient {
+    pub fn new() -> Self {
+        Self::default()
+    }
+    pub fn sync_metrics(
+        &mut self,
+        host_ids: &[String],
+        on_metrics: MetricsCallback,
+        on_error: ErrorCallback,
+    ) {
+        let wanted: HashSet<_> = host_ids.iter().collect();
+        self.metrics.retain(|id, _| wanted.contains(id));
+        for host_id in host_ids {
+            if self.metrics.get(host_id).is_some_and(LiveSocket::healthy) {
+                continue;
+            }
+            if self.metrics.remove(host_id).is_some() {
+                on_error(host_id.clone(), "指标连接中断，正在重连".into());
+            }
+            let id = host_id.clone();
+            let metrics_cb = on_metrics.clone();
+            let errors = on_error.clone();
+            let parse_id = id.clone();
+            let messages =
+                Rc::new(
+                    move |text: String| match serde_json::from_str::<MetricsMessage>(&text) {
+                        Ok(MetricsMessage::Metrics { host_id, data }) if host_id == parse_id => {
+                            metrics_cb(host_id, data)
+                        }
+                        Ok(MetricsMessage::Error { message }) => errors(parse_id.clone(), message),
+                        _ => errors(parse_id.clone(), "指标响应无效".into()),
+                    },
+                );
+            let errors = on_error.clone();
+            let error_id = id.clone();
+            let result = current_ws_url(&format!("/ws/metrics/{}", path_id(&id))).and_then(|url| {
+                LiveSocket::new(
+                    &url,
+                    messages,
+                    Rc::new(move |e| errors(error_id.clone(), e)),
+                )
+            });
+            match result {
+                Ok(socket) => {
+                    self.metrics.insert(id, socket);
+                }
+                Err(e) => on_error(id, format!("无法打开指标连接: {e:?}")),
+            }
+        }
+    }
     pub fn connect_terminal(
         &mut self,
         host_id: &str,
@@ -61,129 +149,110 @@ impl GatewayClient {
         on_output: Rc<dyn Fn(String)>,
         on_agent: Rc<dyn Fn(crate::models::DetectedAgent)>,
     ) -> Result<(), JsValue> {
-        let location = web_sys::window().unwrap().location();
-        let host = location
-            .host()
-            .unwrap_or_else(|_| "127.0.0.1:8080".to_string());
-        let c = if cols == 0 { 120 } else { cols };
-        let r = if rows == 0 { 40 } else { rows };
-        let ws_url = format!(
-            "ws://{}/ws/terminal/{}?cols={}&rows={}",
-            host, host_id, c, r
-        );
-
-        console::log_1(&format!("Connecting to terminal stream: {}", ws_url).into());
-        let ws = WebSocket::new(&ws_url)?;
-
-        let onmessage_callback = Closure::<dyn FnMut(_)>::new(move |e: MessageEvent| {
-            let Some(text) = e.data().as_string() else {
-                return;
-            };
-            if let Ok(msg) = serde_json::from_str::<ServerTerminalMessage>(&text) {
-                match msg {
-                    ServerTerminalMessage::Output { data } => {
-                        on_output(data);
-                    }
-                    ServerTerminalMessage::Agent {
+        self.terminal = None;
+        let url = current_ws_url(&format!(
+            "/ws/terminal/{}?cols={}&rows={}",
+            path_id(host_id),
+            cols.max(1),
+            rows.max(1)
+        ))?;
+        let error_output = on_output.clone();
+        let messages = Rc::new(move |text: String| {
+            match serde_json::from_str::<ServerTerminalMessage>(&text) {
+                Ok(ServerTerminalMessage::Output { data }) => on_output(data),
+                Ok(ServerTerminalMessage::Error { message }) => {
+                    on_output(format!("\r\n[连接错误] {message}\r\n"))
+                }
+                Ok(ServerTerminalMessage::Agent {
+                    name,
+                    state,
+                    cost_usd,
+                    tokens,
+                }) => {
+                    let status = if state.contains("Thinking") || state.contains("思考") {
+                        redash_types::AgentStatus::Thinking
+                    } else if state.contains("NeedsInput") || state.contains("等待") {
+                        redash_types::AgentStatus::NeedsInput
+                    } else if state.contains("Done") || state.contains("完成") {
+                        redash_types::AgentStatus::Done
+                    } else {
+                        redash_types::AgentStatus::Idle
+                    };
+                    on_agent(crate::models::DetectedAgent {
+                        id: "active-agent".into(),
                         name,
-                        state,
+                        category: "AI".into(),
+                        status,
+                        detail: state,
                         cost_usd,
                         tokens,
-                    } => {
-                        let status = if state.contains("Thinking") || state.contains("思考") {
-                            redash_types::AgentStatus::Thinking
-                        } else if state.contains("NeedsInput") || state.contains("等待") {
-                            redash_types::AgentStatus::NeedsInput
-                        } else if state.contains("Done") || state.contains("完成") {
-                            redash_types::AgentStatus::Done
-                        } else {
-                            redash_types::AgentStatus::Idle
-                        };
-                        on_agent(crate::models::DetectedAgent {
-                            id: "active-agent".to_string(),
-                            name,
-                            category: "AI".to_string(),
-                            status,
-                            detail: state,
-                            cost_usd,
-                            tokens,
-                        });
-                    }
-                    _ => {}
+                    });
                 }
+                Ok(ServerTerminalMessage::Pong) => {}
+                Err(_) => on_output("\r\n[连接错误] 终端响应无效\r\n".into()),
             }
         });
-        ws.set_onmessage(Some(onmessage_callback.as_ref().unchecked_ref()));
-        onmessage_callback.forget();
-
-        self.active_terminal_ws = Some(ws);
+        self.terminal = Some(LiveSocket::new(
+            &url,
+            messages,
+            Rc::new(move |e| error_output(format!("\r\n[终端] {e}\r\n"))),
+        )?);
         Ok(())
     }
-
     pub fn send_terminal_input(&self, data: &str) {
-        if let Some(ws) = &self.active_terminal_ws {
-            let cmd = crate::models::ClientTerminalMessage::Input {
-                data: data.to_string(),
-            };
+        if let Some(socket) = &self.terminal {
+            let cmd = crate::models::ClientTerminalMessage::Input { data: data.into() };
             if let Ok(json) = serde_json::to_string(&cmd) {
-                let _ = ws.send_with_str(&json);
+                let _ = socket.ws.send_with_str(&json);
             }
         }
     }
-
     pub fn send_terminal_resize(&self, cols: u16, rows: u16) {
-        if let Some(ws) = &self.active_terminal_ws {
+        if let Some(socket) = &self.terminal {
             let cmd = crate::models::ClientTerminalMessage::Resize {
                 cols: cols as u32,
                 rows: rows as u32,
             };
             if let Ok(json) = serde_json::to_string(&cmd) {
-                let _ = ws.send_with_str(&json);
+                let _ = socket.ws.send_with_str(&json);
             }
         }
     }
 }
 
-impl Default for GatewayClient {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-pub fn async_load_hosts(on_loaded: Rc<RefCell<dyn FnMut(Vec<HostConfig>)>>) {
+type HostsCallback = Rc<RefCell<dyn FnMut(Result<Vec<HostConfig>, String>)>>;
+pub fn async_load_hosts(on_loaded: HostsCallback) {
     wasm_bindgen_futures::spawn_local(async move {
-        let Ok(resp_val) = wasm_bindgen_futures::JsFuture::from(
-            web_sys::window().unwrap().fetch_with_str("/api/hosts"),
-        )
-        .await
-        else {
-            return;
-        };
-        let resp: web_sys::Response = resp_val.unchecked_into();
-        let Ok(json_prom) = resp.json() else { return };
-        let Ok(json_val) = wasm_bindgen_futures::JsFuture::from(json_prom).await else {
-            return;
-        };
-        if let Ok(api_resp) = serde_wasm_bindgen_compat(&json_val) {
-            (on_loaded.borrow_mut())(api_resp);
+        let result = async {
+            let resp = wasm_bindgen_futures::JsFuture::from(
+                web_sys::window().unwrap().fetch_with_str("/api/hosts"),
+            )
+            .await
+            .map_err(|e| format!("主机列表请求失败: {e:?}"))?
+            .unchecked_into::<web_sys::Response>();
+            let status = resp.status();
+            let text =
+                wasm_bindgen_futures::JsFuture::from(resp.text().map_err(|e| format!("{e:?}"))?)
+                    .await
+                    .map_err(|e| format!("{e:?}"))?
+                    .as_string()
+                    .unwrap_or_default();
+            #[derive(serde::Deserialize)]
+            struct HostsResponse {
+                success: bool,
+                data: Option<Vec<HostConfig>>,
+                message: Option<String>,
+            }
+            let parsed: HostsResponse = serde_json::from_str(&text)
+                .map_err(|_| format!("主机列表响应无效 (HTTP {status})"))?;
+            if !resp.ok() || !parsed.success {
+                return Err(parsed.message.unwrap_or_else(|| format!("HTTP {status}")));
+            }
+            parsed.data.ok_or_else(|| "主机列表响应缺少数据".into())
         }
+        .await;
+        (on_loaded.borrow_mut())(result);
     });
-}
-
-fn serde_wasm_bindgen_compat(val: &JsValue) -> Result<Vec<HostConfig>, ()> {
-    if let Some(json_str) = js_sys::JSON::stringify(val)
-        .ok()
-        .and_then(|s| s.as_string())
-    {
-        #[derive(serde::Deserialize)]
-        struct Resp {
-            data: Option<Vec<HostConfig>>,
-        }
-        if let Ok(r) = serde_json::from_str::<Resp>(&json_str) {
-            return Ok(r.data.unwrap_or_default());
-        }
-    }
-    Err(())
 }
 
 #[allow(clippy::type_complexity)]
@@ -1065,4 +1134,21 @@ pub fn async_test_webhook(webhook_url: Option<String>, on_done: WebhookTestCallb
             (on_done.borrow_mut())(Err("Failed to stringify JSON response".to_string()));
         }
     });
+}
+
+#[cfg(test)]
+mod socket_url_tests {
+    use super::*;
+    #[test]
+    fn inherits_transport_security_and_port() {
+        assert_eq!(
+            websocket_url("https:", "gateway.test:8443", "/ws/metrics/a").unwrap(),
+            "wss://gateway.test:8443/ws/metrics/a"
+        );
+        assert_eq!(
+            websocket_url("http:", "localhost:8080", "/ws/terminal/a").unwrap(),
+            "ws://localhost:8080/ws/terminal/a"
+        );
+        assert!(websocket_url("file:", "", "/ws/metrics/a").is_err());
+    }
 }

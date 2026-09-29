@@ -14,7 +14,7 @@ use tower::ServiceExt;
 
 #[tokio::test]
 async fn test_control_plane_nodes_api() {
-    let mut state = AppState::new();
+    let mut state = test_state();
 
     state.control_plane = registry_for("node-vps-1", "abc123key");
     let app = build_router(state.clone());
@@ -23,6 +23,10 @@ async fn test_control_plane_nodes_api() {
         .clone()
         .oneshot(
             Request::builder()
+                .header(
+                    "Authorization",
+                    "Bearer test-management-token-at-least-32-characters",
+                )
                 .uri("/v1/control/nodes")
                 .body(Body::empty())
                 .unwrap(),
@@ -39,11 +43,12 @@ async fn test_control_plane_nodes_api() {
     let (cmd_tx, _cmd_rx) = mpsc::channel(16);
     let pending_actions = Arc::new(Mutex::new(HashMap::new()));
     let handshake = AgentHandshake {
+        telemetry_interval_secs: 3,
         node_id: "node-vps-1".to_string(),
         hostname: "vps-fra-1".to_string(),
         os: "linux".to_string(),
         arch: "x86_64".to_string(),
-        version: "0.2.0-beta".to_string(),
+        version: "0.2.1-beta".to_string(),
         auth_token: "test-secret-with-at-least-32-bytes!".to_string(),
         trusted_public_key: "abc123key".to_string(),
     };
@@ -93,6 +98,10 @@ async fn test_control_plane_nodes_api() {
         .clone()
         .oneshot(
             Request::builder()
+                .header(
+                    "Authorization",
+                    "Bearer test-management-token-at-least-32-characters",
+                )
                 .uri("/v1/control/nodes")
                 .body(Body::empty())
                 .unwrap(),
@@ -113,6 +122,10 @@ async fn test_control_plane_nodes_api() {
         .clone()
         .oneshot(
             Request::builder()
+                .header(
+                    "Authorization",
+                    "Bearer test-management-token-at-least-32-characters",
+                )
                 .uri("/v1/control/nodes/node-vps-1")
                 .body(Body::empty())
                 .unwrap(),
@@ -129,7 +142,7 @@ async fn test_control_plane_nodes_api() {
 
 #[tokio::test]
 async fn test_control_plane_action_dispatch_roundtrip() {
-    let mut state = AppState::new();
+    let mut state = test_state();
     state.control_plane = registry_for("node-homelab-1", "key-123");
 
     let (cmd_tx, mut cmd_rx) = mpsc::channel(16);
@@ -137,11 +150,12 @@ async fn test_control_plane_action_dispatch_roundtrip() {
         HashMap::<String, oneshot::Sender<ActionResult>>::new(),
     ));
     let handshake = AgentHandshake {
+        telemetry_interval_secs: 3,
         node_id: "node-homelab-1".to_string(),
         hostname: "nas-home".to_string(),
         os: "linux".to_string(),
         arch: "aarch64".to_string(),
-        version: "0.2.0-beta".to_string(),
+        version: "0.2.1-beta".to_string(),
         auth_token: "test-secret-with-at-least-32-bytes!".to_string(),
         trusted_public_key: "key-123".to_string(),
     };
@@ -203,18 +217,19 @@ async fn test_control_plane_action_dispatch_roundtrip() {
 
 #[tokio::test]
 async fn test_control_plane_tty_e2ee_blind_forwarding() {
-    let mut state = AppState::new();
+    let mut state = test_state();
     state.control_plane = registry_for("node-e2ee-box", "trusted-pub");
 
     // 1. Register agent
     let (cmd_tx, mut cmd_rx) = mpsc::channel(16);
     let pending_actions = Arc::new(Mutex::new(HashMap::new()));
     let handshake = AgentHandshake {
+        telemetry_interval_secs: 3,
         node_id: "node-e2ee-box".to_string(),
         hostname: "e2ee-host".to_string(),
         os: "linux".to_string(),
         arch: "arm64".to_string(),
-        version: "0.2.0-beta".to_string(),
+        version: "0.2.1-beta".to_string(),
         auth_token: "test-secret-with-at-least-32-bytes!".to_string(),
         trusted_public_key: "trusted-pub".to_string(),
     };
@@ -308,4 +323,14 @@ fn registry_for(
             trusted_public_key: public_key.into(),
         },
     )]))
+}
+
+fn test_state() -> AppState {
+    let mut state = AppState::new();
+    state.gateway_auth = redash_server::auth::GatewayAuth::new(
+        "test-management-token-at-least-32-characters",
+        vec![],
+    )
+    .unwrap();
+    state
 }

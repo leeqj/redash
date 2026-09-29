@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release Git Tag (e.g. v0.2.0-beta)'
+        description: 'Release Git Tag (e.g. v0.2.1-beta)'
         required: true
-        default: 'v0.2.0-beta'
+        default: 'v0.2.1-beta'
 
 permissions:
   contents: write
@@ -42,13 +42,21 @@ jobs:
 
   build-linux-server:
     name: Build Linux Server Gateway (x86_64)
+    needs: build-wasm-client
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Download Web resources built from this revision
+        uses: actions/download-artifact@v4
+        with:
+          name: wasm-resources
+          path: crates/redash-server/web/pkg
       - name: Install Rust 1.96.0
         run: rustup toolchain install 1.96.0 --profile minimal
       - name: Build redash-server
-        run: cargo build --release --bin redash-server
+        run: cargo build --locked --release --bin redash-server
+      - name: Verify embedded Web build
+        run: cargo test --locked -p redash-server embedded_web_manifest_matches_binary
       - name: Package Server Artifact
         run: |
           mkdir -p dist-server/web
@@ -113,12 +121,12 @@ jobs:
         with:
           version: '0.2.128'
       - name: Build WASM client
-        run: |
-          cargo build --target wasm32-unknown-unknown -p redash-web --release
-          wasm-bindgen target/wasm32-unknown-unknown/release/redash_web.wasm \
-            --out-dir crates/redash-server/web/pkg \
-            --target web \
-            --no-typescript
+        run: bash scripts/build_web.sh
+      - name: Upload resources for the Server build
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm-resources
+          path: crates/redash-server/web/pkg/
       - name: Archive WASM Bundle
         run: |
           cd crates/redash-server/web

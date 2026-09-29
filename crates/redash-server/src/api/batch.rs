@@ -13,14 +13,15 @@ pub async fn run_batch_job(
     State(state): State<AppState>,
     Json(req): Json<BatchRunRequest>,
 ) -> impl IntoResponse {
-    let store = state.host_store.read().await;
-    let hosts: Vec<HostConfig> = store
-        .hosts
-        .iter()
-        .filter(|h| req.host_ids.contains(&h.id.0))
-        .cloned()
-        .collect();
-    drop(store);
+    let hosts: Vec<HostConfig> = {
+        let store = state.host_store.read().unwrap();
+        store
+            .hosts
+            .iter()
+            .filter(|h| req.host_ids.contains(&h.id.0))
+            .cloned()
+            .collect()
+    };
 
     let result = BatchRunner::run_batch(
         hosts,
