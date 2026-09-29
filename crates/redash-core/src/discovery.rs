@@ -74,12 +74,21 @@ async fn run_listener(nodes: Arc<RwLock<HashMap<String, DiscoveredNode>>>) {
     let socket = match UdpSocket::bind("0.0.0.0:8765").await {
         Ok(s) => s,
         Err(e) => {
-            debug!("Unable to bind UDP 8765 for LAN discovery client (may be bound by another local process): {}", e);
+            debug!(
+                "Unable to bind UDP 8765 for LAN discovery client (may be bound by another local process): {}",
+                e
+            );
             return;
         }
     };
 
     let _ = socket.set_broadcast(true);
+    if let Err(err) = socket.join_multicast_v4(
+        std::net::Ipv4Addr::new(239, 255, 77, 88),
+        std::net::Ipv4Addr::UNSPECIFIED,
+    ) {
+        debug!("Unable to join LAN discovery multicast group: {}", err);
+    }
     let mut buf = [0u8; 2048];
 
     loop {
@@ -92,7 +101,14 @@ async fn run_listener(nodes: Arc<RwLock<HashMap<String, DiscoveredNode>>>) {
                         beacon.node_id, beacon.hostname, peer_ip, beacon.direct_port
                     );
 
+                    if beacon.node_id.len() > 128 || beacon.direct_port == 0 {
+                        continue;
+                    }
                     let mut map = nodes.write().unwrap();
+                    map.retain(|_, v| v.last_seen.elapsed() <= Duration::from_secs(15));
+                    if map.len() >= 1024 && !map.contains_key(&beacon.node_id) {
+                        continue;
+                    }
                     map.insert(
                         beacon.node_id.clone(),
                         DiscoveredNode {

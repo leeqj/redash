@@ -78,7 +78,10 @@ impl DockerClient {
                             .into_iter()
                             .map(|p| {
                                 if let Some(pub_p) = p.public_port {
-                                    format!("{}:{}->{}/{}", pub_p, p.private_port, p.private_port, p.port_type)
+                                    format!(
+                                        "{}:{}->{}/{}",
+                                        pub_p, p.private_port, p.private_port, p.port_type
+                                    )
                                 } else {
                                     format!("{}/{}", p.private_port, p.port_type)
                                 }
@@ -97,7 +100,10 @@ impl DockerClient {
                     })
                     .collect(),
                 Err(e) => {
-                    warn!("Failed to deserialize docker /containers/json response: {}", e);
+                    warn!(
+                        "Failed to deserialize docker /containers/json response: {}",
+                        e
+                    );
                     Vec::new()
                 }
             },
@@ -255,7 +261,10 @@ mod tests {
     fn test_decode_chunked_body() {
         let chunked_raw = b"4\r\nWiki\r\n5\r\npedia\r\nf\r\n in \r\n\r\nchunks.\r\n0\r\n\r\n";
         let decoded = decode_chunked_body(chunked_raw).unwrap();
-        assert_eq!(String::from_utf8(decoded).unwrap(), "Wikipedia in \r\n\r\nchunks.");
+        assert_eq!(
+            String::from_utf8(decoded).unwrap(),
+            "Wikipedia in \r\n\r\nchunks."
+        );
     }
 
     #[test]
@@ -267,7 +276,10 @@ mod tests {
             hex_len
         );
         let body = extract_http_body(http_response.as_bytes()).unwrap();
-        assert_eq!(String::from_utf8(body).unwrap(), "[{\"Id\":\"container-1\"}]");
+        assert_eq!(
+            String::from_utf8(body).unwrap(),
+            "[{\"Id\":\"container-1\"}]"
+        );
     }
 
     #[test]
@@ -277,4 +289,3 @@ mod tests {
         assert_eq!(String::from_utf8(body).unwrap(), "Hello, World!");
     }
 }
-

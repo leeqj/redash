@@ -6,34 +6,77 @@ pub struct ClientSigner;
 impl ClientSigner {
     /// Loads an ED25519 keypair from a JSON file, or generates a new one and persists it.
     /// Ensures consistent key identity across application launches.
-    pub fn load_or_generate_keypair(key_path: &std::path::Path) -> (String, String) {
+    pub fn load_or_generate_keypair(
+        key_path: &std::path::Path,
+    ) -> Result<(String, String), String> {
         #[derive(serde::Serialize, serde::Deserialize)]
-        struct KeyPairStore {
+        struct Store {
+            #[serde(default)]
+            version: u8,
             public_key: String,
             private_key: String,
         }
-
-        if let Ok(content) = std::fs::read_to_string(key_path)
-            && let Ok(store) = serde_json::from_str::<KeyPairStore>(&content)
-            && store.public_key.len() == 64
-            && store.private_key.len() == 64
-        {
-            return (store.public_key, store.private_key);
+        match std::fs::read_to_string(key_path) {
+            Ok(content) => {
+                let store: Store = serde_json::from_str(&content).map_err(|e| e.to_string())?;
+                if store.version != 2 {
+                    return Err(format!(
+                        "Legacy control-plane key at {} must be rotated: back it up, remove it, restart and re-enroll Agents with the new public key",
+                        key_path.display()
+                    ));
+                }
+                let seed: [u8; 32] = hex::decode(&store.private_key)
+                    .map_err(|e| e.to_string())?
+                    .try_into()
+                    .map_err(|_| "Invalid private key length")?;
+                if Self::keypair_from_seed(&seed).0 != store.public_key {
+                    return Err("Stored keypair does not match".into());
+                }
+                return Ok((store.public_key, store.private_key));
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => return Err(err.to_string()),
         }
-
-        let (pub_hex, priv_hex) = Self::generate_keypair();
+        let (public_key, private_key) = Self::generate_keypair();
         if let Some(parent) = key_path.parent() {
-            let _ = std::fs::create_dir_all(parent);
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
-        let store = KeyPairStore {
-            public_key: pub_hex.clone(),
-            private_key: priv_hex.clone(),
+        let store = Store {
+            version: 2,
+            public_key: public_key.clone(),
+            private_key: private_key.clone(),
         };
-        if let Ok(json) = serde_json::to_string_pretty(&store) {
-            let _ = std::fs::write(key_path, json);
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
         }
+        use std::io::Write;
+        let mut file = options.open(key_path).map_err(|e| e.to_string())?;
+        file.write_all(
+            serde_json::to_string_pretty(&store)
+                .map_err(|e| e.to_string())?
+                .as_bytes(),
+        )
+        .map_err(|e| e.to_string())?;
+        file.sync_all().map_err(|e| e.to_string())?;
+        Ok((public_key, private_key))
+    }
 
-        (pub_hex, priv_hex)
+    pub fn sign_fresh_action(
+        private_key: &str,
+        node_id: &str,
+        action: RemediationAction,
+    ) -> Result<SignedAction, String> {
+        Self::sign_action(
+            private_key,
+            node_id,
+            action,
+            crate::e2ee::now_secs(),
+            &crate::e2ee::random_hex(),
+        )
     }
 
     /// Generates an ED25519 keypair.
@@ -62,8 +105,8 @@ impl ClientSigner {
         timestamp: u64,
         nonce: &str,
     ) -> Result<SignedAction, String> {
-        let priv_bytes = hex::decode(private_key_hex)
-            .map_err(|e| format!("Invalid private key hex: {}", e))?;
+        let priv_bytes =
+            hex::decode(private_key_hex).map_err(|e| format!("Invalid private key hex: {}", e))?;
 
         let seed: [u8; 32] = priv_bytes
             .try_into()
@@ -73,16 +116,11 @@ impl ClientSigner {
         let verifying_key = signing_key.verifying_key();
         let pub_hex = hex::encode(verifying_key.as_bytes());
 
-        let action_id = format!("act-{}", crate::e2ee::random_hex());
+        let action_id = format!("act-{nonce}");
 
-        let signable_bytes = SignedAction::canonical_signable_bytes(
-            &action_id,
-            node_id,
-            &action,
-            timestamp,
-            nonce,
-        )
-        .map_err(|e| format!("Serialization error: {}", e))?;
+        let signable_bytes =
+            SignedAction::canonical_signable_bytes(&action_id, node_id, &action, timestamp, nonce)
+                .map_err(|e| format!("Serialization error: {}", e))?;
 
         let sig = signing_key.sign(&signable_bytes);
         let sig_hex = hex::encode(sig.to_bytes());
@@ -107,19 +145,19 @@ impl ClientSigner {
     ) -> String {
         let mut cmd = format!(
             "curl -fsSL https://raw.githubusercontent.com/reways/redash/main/scripts/install_agent.sh | sh -s -- --hub {}",
-            hub_url
+            shell_arg(hub_url)
         );
 
         if let Some(id) = node_id {
-            cmd.push_str(&format!(" --node-id {}", id));
+            cmd.push_str(&format!(" --node-id {}", shell_arg(id)));
         }
 
         if !auth_token.is_empty() && auth_token != "default-token" {
-            cmd.push_str(&format!(" --token {}", auth_token));
+            cmd.push_str(&format!(" --token {}", shell_arg(auth_token)));
         }
 
         if let Some(key) = public_key_hex {
-            cmd.push_str(&format!(" --key {}", key));
+            cmd.push_str(&format!(" --key {}", shell_arg(key)));
         }
 
         cmd
@@ -134,23 +172,35 @@ impl ClientSigner {
     ) -> String {
         let mut cmd = format!(
             "docker run -d --name redash-agent --restart always --net host --pid host -v /var/run/docker.sock:/var/run/docker.sock:ro -e REDASH_HUB_URL={}",
-            hub_url
+            shell_arg(hub_url)
         );
 
         if let Some(id) = node_id {
-            cmd.push_str(&format!(" -e REDASH_NODE_ID={}", id));
+            cmd.push_str(&format!(" -e REDASH_NODE_ID={}", shell_arg(id)));
         }
 
         if !auth_token.is_empty() && auth_token != "default-token" {
-            cmd.push_str(&format!(" -e REDASH_AUTH_TOKEN={}", auth_token));
+            cmd.push_str(&format!(" -e REDASH_AUTH_TOKEN={}", shell_arg(auth_token)));
         }
 
         if let Some(key) = public_key_hex {
-            cmd.push_str(&format!(" -e REDASH_TRUSTED_KEY={}", key));
+            cmd.push_str(&format!(" -e REDASH_TRUSTED_KEY={}", shell_arg(key)));
         }
 
         cmd.push_str(" ghcr.io/reways/redash-agent:latest");
         cmd
+    }
+}
+
+fn shell_arg(value: &str) -> String {
+    if !value.is_empty()
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"-_:/.".contains(&b))
+    {
+        value.to_string()
+    } else {
+        format!("'{}'", value.replace('\'', "'\"'\"'"))
     }
 }
 
@@ -195,5 +245,60 @@ mod tests {
         assert!(cmd.contains("wss://hub.reways.dev/v1/agent/ws"));
         assert!(cmd.contains("--node-id oracle-arm-1"));
         assert!(cmd.contains("--key pk-abcdef123456"));
+    }
+}
+
+#[cfg(test)]
+mod identity_storage_tests {
+    use super::*;
+    #[test]
+    fn legacy_identity_is_preserved_and_new_identity_is_private_and_stable() {
+        let path = std::env::temp_dir().join(format!(
+            "redash-identity-{}.json",
+            crate::e2ee::random_hex()
+        ));
+        let (public, private) = ClientSigner::generate_keypair();
+        let legacy = serde_json::json!({"public_key": public, "private_key": private}).to_string();
+        std::fs::write(&path, &legacy).unwrap();
+        assert!(
+            ClientSigner::load_or_generate_keypair(&path)
+                .unwrap_err()
+                .contains("must be rotated")
+        );
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), legacy);
+        std::fs::remove_file(&path).unwrap();
+        let fresh = ClientSigner::load_or_generate_keypair(&path).unwrap();
+        assert_eq!(
+            fresh,
+            ClientSigner::load_or_generate_keypair(&path).unwrap()
+        );
+        assert_ne!(fresh.0, public);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+        std::fs::remove_file(path).unwrap();
+    }
+    #[test]
+    fn same_second_actions_have_independent_nonces_and_ids() {
+        let (_, private) = ClientSigner::generate_keypair();
+        let first = ClientSigner::sign_fresh_action(
+            &private,
+            "node",
+            RemediationAction::DiagnosePort { port: 6379 },
+        )
+        .unwrap();
+        let second = ClientSigner::sign_fresh_action(
+            &private,
+            "node",
+            RemediationAction::DiagnosePort { port: 9090 },
+        )
+        .unwrap();
+        assert_ne!(first.nonce, second.nonce);
+        assert_ne!(first.action_id, second.action_id);
     }
 }

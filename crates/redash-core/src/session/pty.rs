@@ -6,6 +6,7 @@ use tokio::sync::mpsc;
 
 pub enum PtyCommand {
     Data(Vec<u8>),
+    Open(redash_types::TtyClientFrame),
     Resize { cols: u32, rows: u32 },
     Close,
 }
@@ -48,6 +49,7 @@ impl PtyChannel {
                     biased;
                     cmd = cmd_rx.recv() => {
                         match cmd {
+                            Some(PtyCommand::Open(_)) => break,
                             Some(PtyCommand::Data(data)) => {
                                 if channel.data(data.as_slice()).await.is_err() {
                                     break;
@@ -87,7 +89,10 @@ impl PtyChannel {
             let _ = channel.close().await;
         });
 
-        Ok(Self { cmd_tx, channel_id: Some(channel_id) })
+        Ok(Self {
+            cmd_tx,
+            channel_id: Some(channel_id),
+        })
     }
 
     pub async fn new_reverse_ws(
@@ -96,66 +101,44 @@ impl PtyChannel {
         rows: u32,
         output_tx: mpsc::Sender<Vec<u8>>,
     ) -> Result<Self> {
-        Self::new_reverse_ws_with_auth(ws_url, cols, rows, output_tx, None).await
+        Self::new_happy_eyeballs_ws(None, ws_url, cols, rows, output_tx, None).await
     }
 
     pub async fn new_happy_eyeballs_ws(
         direct_url: Option<&str>,
         hub_url: &str,
-        _cols: u32,
-        _rows: u32,
+        cols: u32,
+        rows: u32,
         output_tx: mpsc::Sender<Vec<u8>>,
-        client_signing_key_hex: Option<&str>,
+        identity: Option<&TerminalIdentity>,
     ) -> Result<Self> {
-        use std::time::Duration;
-
-        if let Some(lan_url) = direct_url {
-            log::info!("⚡ Happy Eyeballs: Racing LAN direct ({}) vs Hub relay ({})", lan_url, hub_url);
-
-            let lan_fut = connect_reverse_ws(lan_url, output_tx.clone(), client_signing_key_hex);
-            let hub_out_tx = output_tx.clone();
-            let hub_fut = async move {
-                tokio::time::sleep(Duration::from_millis(75)).await;
-                connect_reverse_ws(hub_url, hub_out_tx, client_signing_key_hex).await
+        let identity = identity
+            .context("Terminal requires a client identity and a pinned Agent public key")?;
+        let (stream, session) = if let Some(direct) = direct_url {
+            let lan = connect_reverse_ws(direct, identity);
+            let hub = async {
+                tokio::time::sleep(std::time::Duration::from_millis(75)).await;
+                connect_reverse_ws(hub_url, identity).await
             };
-
-            tokio::pin!(lan_fut);
-            tokio::pin!(hub_fut);
-
+            tokio::pin!(lan, hub);
             tokio::select! {
-                biased;
-                lan_res = &mut lan_fut => {
-                    match lan_res {
-                        Ok((stream, e2ee)) => {
-                            log::info!("⚡ Happy Eyeballs: Won by LAN direct path: {} (0 relay bandwidth, lowest latency)", lan_url);
-                            Ok(from_ws_stream(stream, e2ee, output_tx))
-                        }
-                        Err(e) => {
-                            log::debug!("LAN direct failed ({}); immediately falling back to Hub {}", e, hub_url);
-                            let (stream, e2ee) = connect_reverse_ws(hub_url, output_tx.clone(), client_signing_key_hex).await?;
-                            log::info!("☁️ Connected via Hub relay: {}", hub_url);
-                            Ok(from_ws_stream(stream, e2ee, output_tx))
-                        }
-                    }
-                }
-                hub_res = &mut hub_fut => {
-                    match hub_res {
-                        Ok((stream, e2ee)) => {
-                            log::info!("☁️ Happy Eyeballs: Won by Hub relay: {}", hub_url);
-                            Ok(from_ws_stream(stream, e2ee, output_tx))
-                        }
-                        Err(e) => {
-                            log::warn!("Hub relay failed in race ({}). Waiting for LAN...", e);
-                            let (stream, e2ee) = lan_fut.await?;
-                            Ok(from_ws_stream(stream, e2ee, output_tx))
-                        }
-                    }
-                }
+                res = &mut lan => match res { Ok(pair) => pair, Err(_) => hub.await? },
+                res = &mut hub => match res { Ok(pair) => pair, Err(_) => lan.await? },
             }
         } else {
-            let (stream, e2ee) = connect_reverse_ws(hub_url, output_tx.clone(), client_signing_key_hex).await?;
-            Ok(from_ws_stream(stream, e2ee, output_tx))
-        }
+            connect_reverse_ws(hub_url, identity).await?
+        };
+        let channel = from_ws_stream(stream, session, output_tx);
+        let open = redash_types::TtyClientFrame::Open {
+            rows: rows.clamp(1, u16::MAX as u32) as u16,
+            cols: cols.clamp(1, u16::MAX as u32) as u16,
+        };
+        channel
+            .cmd_tx
+            .send(PtyCommand::Open(open))
+            .await
+            .context("Failed to open terminal")?;
+        Ok(channel)
     }
 
     pub async fn new_reverse_ws_with_auth(
@@ -163,9 +146,9 @@ impl PtyChannel {
         cols: u32,
         rows: u32,
         output_tx: mpsc::Sender<Vec<u8>>,
-        client_signing_key_hex: Option<&str>,
+        identity: Option<&TerminalIdentity>,
     ) -> Result<Self> {
-        Self::new_happy_eyeballs_ws(None, ws_url, cols, rows, output_tx, client_signing_key_hex).await
+        Self::new_happy_eyeballs_ws(None, ws_url, cols, rows, output_tx, identity).await
     }
 
     pub fn is_closed(&self) -> bool {
@@ -183,6 +166,10 @@ impl PtyChannel {
     }
 
     pub async fn send_data(&self, data: &[u8]) -> Result<()> {
+        anyhow::ensure!(
+            data.len() <= 1024 * 1024,
+            "Input exceeds the 1 MiB paste limit"
+        );
         self.cmd_tx
             .send(PtyCommand::Data(data.to_vec()))
             .await
@@ -207,176 +194,103 @@ impl PtyChannel {
 type ReverseWsStream =
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
+#[derive(Clone)]
+pub struct TerminalIdentity {
+    pub node_id: String,
+    pub client_private_key: String,
+    pub agent_public_key: String,
+}
+
 async fn connect_reverse_ws(
     ws_url: &str,
-    output_tx: mpsc::Sender<Vec<u8>>,
-    client_signing_key_hex: Option<&str>,
-) -> Result<(ReverseWsStream, Option<redash_ui_core::e2ee::ClientE2eeSession>)> {
+    identity: &TerminalIdentity,
+) -> Result<(ReverseWsStream, redash_ui_core::e2ee::ClientE2eeSession)> {
     use futures::{SinkExt, StreamExt};
-    use tokio_tungstenite::connect_async;
     use tokio_tungstenite::tungstenite::Message;
-
-    let (mut ws_stream, _) = connect_async(ws_url)
-        .await
-        .with_context(|| format!("Failed to connect to WebSocket: {}", ws_url))?;
-
-    let e2ee_session = if let Some(priv_hex) = client_signing_key_hex {
-        let session_id = format!("e2ee-{}", uuid::Uuid::new_v4());
-        match redash_ui_core::e2ee::ClientE2eeSession::initiate(&session_id, priv_hex) {
-            Ok((mut session, init)) => {
-                if let Ok(init_json) = serde_json::to_string(&init) {
-                    ws_stream
-                        .send(Message::Text(init_json.into()))
-                        .await
-                        .context("Failed to send E2EE handshake init")?;
-                    let mut handshake_ok = false;
-                    while let Some(msg) = ws_stream.next().await {
-                        match msg {
-                            Ok(Message::Text(text)) => {
-                                if let Ok(ack) =
-                                    serde_json::from_str::<redash_types::E2eeHandshakeAck>(&text)
-                                {
-                                    if let Err(e) = session.complete_handshake(&ack) {
-                                        log::warn!("E2EE handshake rejected on {}: {}", ws_url, e);
-                                    } else {
-                                        log::info!(
-                                            "E2EE encryption established for session {} on {}",
-                                            session_id,
-                                            ws_url
-                                        );
-                                        handshake_ok = true;
-                                    }
-                                    break;
-                                }
-                            }
-                            Ok(Message::Binary(bin)) => {
-                                let _ = output_tx.send(bin.to_vec()).await;
-                            }
-                            _ => break,
-                        }
-                    }
-                    if handshake_ok {
-                        Some(session)
-                    } else {
-                        None
-                    }
-                } else {
-                    None
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        let (mut ws, _) = tokio_tungstenite::connect_async(ws_url).await?;
+        let sid = format!("tty-{}", uuid::Uuid::new_v4());
+        let (mut session, init) = redash_ui_core::e2ee::ClientE2eeSession::initiate(
+            &sid,
+            &identity.node_id,
+            &identity.client_private_key,
+            &identity.agent_public_key,
+        )
+        .map_err(anyhow::Error::msg)?;
+        ws.send(Message::Text(serde_json::to_string(&init)?.into()))
+            .await?;
+        loop {
+            match ws.next().await {
+                Some(Ok(Message::Text(text))) => {
+                    let ack = serde_json::from_str::<redash_types::E2eeHandshakeAck>(&text)?;
+                    session
+                        .complete_handshake(&ack)
+                        .map_err(anyhow::Error::msg)?;
+                    return Ok((ws, session));
                 }
-            }
-            Err(e) => {
-                log::warn!("Failed to initiate E2EE session for {}: {}", ws_url, e);
-                None
+                Some(Ok(Message::Ping(data))) => {
+                    ws.send(Message::Pong(data)).await?;
+                }
+                _ => anyhow::bail!("Invalid or closed E2EE handshake"),
             }
         }
-    } else {
-        None
-    };
-
-    Ok((ws_stream, e2ee_session))
+    })
+    .await
+    .context("Terminal authentication timed out")?
 }
 
 fn from_ws_stream(
-    ws_stream: ReverseWsStream,
-    mut e2ee_session: Option<redash_ui_core::e2ee::ClientE2eeSession>,
+    ws: ReverseWsStream,
+    mut session: redash_ui_core::e2ee::ClientE2eeSession,
     output_tx: mpsc::Sender<Vec<u8>>,
 ) -> PtyChannel {
     use futures::{SinkExt, StreamExt};
+    use redash_types::TtyClientFrame;
     use tokio_tungstenite::tungstenite::Message;
-
-    let (mut ws_sink, mut ws_reader) = ws_stream.split();
+    let (mut sink, mut reader) = ws.split();
     let (cmd_tx, mut cmd_rx) = mpsc::channel::<PtyCommand>(256);
-    let channel_id = None;
-
     tokio::spawn(async move {
-        loop {
-            tokio::select! {
-                cmd = cmd_rx.recv() => {
-                    match cmd {
-                        Some(PtyCommand::Data(data)) => {
-                            if let Some(session) = e2ee_session.as_mut() {
-                                let env = session.seal(&data);
-                                if let Ok(json) = serde_json::to_string(&env)
-                                    && ws_sink.send(Message::Text(json.into())).await.is_err()
-                                {
-                                    break;
-                                }
-                            } else if ws_sink.send(Message::Binary(data.into())).await.is_err() {
-                                break;
-                            }
-                        }
-                        Some(PtyCommand::Resize { cols, rows }) => {
-                            let payload = serde_json::json!({
-                                "type": "resize",
-                                "cols": cols,
-                                "rows": rows,
-                            });
-                            if ws_sink.send(Message::Text(payload.to_string().into())).await.is_err() {
-                                break;
-                            }
-                        }
-                        Some(PtyCommand::Close) | None => {
-                            let _ = ws_sink.close().await;
-                            break;
-                        }
+        let result: Result<()> = async {
+            loop {
+                tokio::select! {
+                    cmd = cmd_rx.recv() => {
+                        let frame = match cmd {
+                            Some(PtyCommand::Open(frame)) => frame,
+                            Some(PtyCommand::Data(data)) => TtyClientFrame::Input { data },
+                            Some(PtyCommand::Resize { cols, rows }) => TtyClientFrame::Resize { rows: rows.clamp(1, u16::MAX as u32) as u16, cols: cols.clamp(1, u16::MAX as u32) as u16 },
+                            Some(PtyCommand::Close) | None => TtyClientFrame::Close,
+                        };
+                        let env = session.seal(&serde_json::to_vec(&frame)?).map_err(anyhow::Error::msg)?;
+                        // Serialize the Envelope, never its Result wrapper.
+                        sink.send(Message::Text(serde_json::to_string(&env)?.into())).await?;
+                        if matches!(frame, TtyClientFrame::Close) { break; }
                     }
-                }
-                msg = ws_reader.next() => {
-                    match msg {
-                        Some(Ok(Message::Binary(data))) => {
-                            if let Some(session) = e2ee_session.as_mut()
-                                && let Ok(env) = serde_json::from_slice::<redash_types::EncryptedEnvelope>(&data)
-                            {
-                                match session.open(&env) {
-                                    Ok(plaintext) => {
-                                        if output_tx.send(plaintext).await.is_err() {
-                                            break;
-                                        }
-                                    }
-                                    Err(e) => {
-                                        log::warn!("E2EE decryption error: {}", e);
-                                    }
-                                }
-                                continue;
+                    msg = reader.next() => {
+                        match msg {
+                            Some(Ok(Message::Text(text))) => {
+                                let env = serde_json::from_str::<redash_types::EncryptedEnvelope>(&text)?;
+                                let data = session.open(&env).map_err(anyhow::Error::msg)?;
+                                if output_tx.send(data).await.is_err() { break; }
                             }
-                            if output_tx.send(data.to_vec()).await.is_err() {
-                                break;
-                            }
+                            Some(Ok(Message::Ping(data))) => { sink.send(Message::Pong(data)).await?; }
+                            Some(Ok(Message::Close(_))) | None => break,
+                            Some(Err(err)) => return Err(err.into()),
+                            _ => anyhow::bail!("Invalid terminal protocol frame"),
                         }
-                        Some(Ok(Message::Text(text))) => {
-                            if let Some(session) = e2ee_session.as_mut()
-                                && let Ok(env) = serde_json::from_str::<redash_types::EncryptedEnvelope>(&text)
-                            {
-                                match session.open(&env) {
-                                    Ok(plaintext) => {
-                                        if output_tx.send(plaintext).await.is_err() {
-                                            break;
-                                        }
-                                    }
-                                    Err(e) => {
-                                        log::warn!("E2EE decryption error: {}", e);
-                                    }
-                                }
-                                continue;
-                            }
-                            if output_tx.send(text.as_bytes().to_vec()).await.is_err() {
-                                break;
-                            }
-                        }
-                        Some(Ok(Message::Close(_))) | Some(Err(_)) | None => {
-                            break;
-                        }
-                        _ => {}
                     }
                 }
             }
+            Ok(())
+        }.await;
+        if let Err(err) = result {
+            log::warn!("Encrypted terminal closed: {}", err);
         }
-        let _ = ws_sink.close().await;
+        let _ = sink.close().await;
     });
-
     PtyChannel {
         cmd_tx,
-        channel_id,
+        channel_id: None,
     }
 }
 
@@ -402,4 +316,3 @@ mod tests {
         assert!(result.is_err());
     }
 }
-

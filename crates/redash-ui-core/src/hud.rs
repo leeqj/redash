@@ -1,5 +1,5 @@
-pub use redash_types::math::MeterLevel;
 use redash_types::NodeOnlineStatus;
+pub use redash_types::math::MeterLevel;
 
 /// Lightweight summary designed specifically for ambient menu bar items,
 /// system tray icons, and floating HUD micro-indicators.
@@ -63,21 +63,24 @@ where
         }
 
         if let Some(t) = &node.latest_telemetry {
-            if t.cpu_usage_pct > max_cpu {
+            if t.validity.cpu && t.cpu_usage_pct > max_cpu {
                 max_cpu = t.cpu_usage_pct;
                 if t.cpu_usage_pct >= 90.0 {
-                    worst_culprit = Some((node.hostname.clone(), format!("CPU {:.1}%", t.cpu_usage_pct)));
+                    worst_culprit = Some((
+                        node.hostname.clone(),
+                        format!("CPU {:.1}%", t.cpu_usage_pct),
+                    ));
                 }
             }
             let mem_pct = t.memory_usage_pct();
-            if mem_pct > max_mem {
+            if t.validity.memory && mem_pct > max_mem {
                 max_mem = mem_pct;
                 if mem_pct >= 90.0 {
                     worst_culprit = Some((node.hostname.clone(), format!("内存 {:.1}%", mem_pct)));
                 }
             }
             let disk_pct = t.disk_usage_pct();
-            if disk_pct > max_disk {
+            if t.validity.disk && disk_pct > max_disk {
                 max_disk = disk_pct;
                 if disk_pct >= 90.0 {
                     worst_culprit = Some((node.hostname.clone(), format!("磁盘 {:.1}%", disk_pct)));
@@ -100,18 +103,23 @@ where
             }
         }
         if m.cpu.usage_percent >= 90.0 || m.mem.usage_percent >= 90.0 {
-            let name = hosts.iter().find(|h| h.id.0 == host_id).map(|h| h.name.clone()).unwrap_or_else(|| host_id.to_string());
+            let name = hosts
+                .iter()
+                .find(|h| h.id.0 == host_id)
+                .map(|h| h.name.clone())
+                .unwrap_or_else(|| host_id.to_string());
             worst_culprit = Some((name, "负载严重超标".to_string()));
         }
     }
 
-    let overall_level = if offline_nodes > 0 || max_cpu >= 90.0 || max_mem >= 90.0 || max_disk >= 95.0 {
-        MeterLevel::Critical
-    } else if stale_nodes > 0 || max_cpu >= 75.0 || max_mem >= 80.0 || max_disk >= 85.0 {
-        MeterLevel::Warning
-    } else {
-        MeterLevel::Normal
-    };
+    let overall_level =
+        if offline_nodes > 0 || max_cpu >= 90.0 || max_mem >= 90.0 || max_disk >= 95.0 {
+            MeterLevel::Critical
+        } else if stale_nodes > 0 || max_cpu >= 75.0 || max_mem >= 80.0 || max_disk >= 85.0 {
+            MeterLevel::Warning
+        } else {
+            MeterLevel::Normal
+        };
 
     let led_color_hex = match overall_level {
         MeterLevel::Normal => "#10b981",   // Emerald green
@@ -126,16 +134,38 @@ where
             } else {
                 "无受控节点".to_string()
             };
-            let tip = format!("全网正常 (最高 CPU: {:.0}%, 内存: {:.0}%)", max_cpu, max_mem);
+            let tip = format!(
+                "全网正常 (最高 CPU: {:.0}%, 内存: {:.0}%)",
+                max_cpu, max_mem
+            );
             (label, tip)
         }
         MeterLevel::Warning => {
-            let culprit = worst_culprit.as_ref().map(|(n, r)| format!("{} ({})", n, r)).unwrap_or_else(|| "负载偏高".to_string());
-            (format!("⚠️ 警告: {}", culprit), format!("存在异常波动 - 最高 CPU: {:.0}%, 内存: {:.0}%", max_cpu, max_mem))
+            let culprit = worst_culprit
+                .as_ref()
+                .map(|(n, r)| format!("{} ({})", n, r))
+                .unwrap_or_else(|| "负载偏高".to_string());
+            (
+                format!("⚠️ 警告: {}", culprit),
+                format!(
+                    "存在异常波动 - 最高 CPU: {:.0}%, 内存: {:.0}%",
+                    max_cpu, max_mem
+                ),
+            )
         }
         MeterLevel::Critical => {
-            let culprit = worst_culprit.as_ref().map(|(n, r)| format!("{} [{}]", n, r)).unwrap_or_else(|| "离线或重度过载".to_string());
-            (format!("🚨 告警: {}", culprit), format!("严重告警: {} 台离线, 最高负载: {:.0}%", offline_nodes, max_cpu.max(max_mem)))
+            let culprit = worst_culprit
+                .as_ref()
+                .map(|(n, r)| format!("{} [{}]", n, r))
+                .unwrap_or_else(|| "离线或重度过载".to_string());
+            (
+                format!("🚨 告警: {}", culprit),
+                format!(
+                    "严重告警: {} 台离线, 最高负载: {:.0}%",
+                    offline_nodes,
+                    max_cpu.max(max_mem)
+                ),
+            )
         }
     };
 
@@ -175,6 +205,12 @@ mod tests {
     fn test_ambient_fleet_summary_healthy() {
         let mut state = crate::state::AppStateMachine::new();
         let telemetry = AgentTelemetry {
+            validity: redash_types::TelemetryValidity {
+                cpu: true,
+                memory: true,
+                disk: true,
+                network: true,
+            },
             node_id: "n-1".to_string(),
             hostname: "nas".to_string(),
             os: "linux".to_string(),
@@ -192,18 +228,20 @@ mod tests {
             containers: vec![],
         };
 
-        state.control_plane_nodes.push(redash_types::ManagedNodeDetail {
-            node_id: "n-1".to_string(),
-            hostname: "nas".to_string(),
-            os: "linux".to_string(),
-            arch: "x86_64".to_string(),
-            version: "0.1.1-beta".to_string(),
-            remote_ip: "192.168.1.1".to_string(),
-            status: NodeOnlineStatus::Online,
-            connected_at: 1710000000,
-            last_heartbeat_at: 1710000000,
-            latest_telemetry: Some(telemetry),
-        });
+        state
+            .control_plane_nodes
+            .push(redash_types::ManagedNodeDetail {
+                node_id: "n-1".to_string(),
+                hostname: "nas".to_string(),
+                os: "linux".to_string(),
+                arch: "x86_64".to_string(),
+                version: "0.2.0-beta".to_string(),
+                remote_ip: "192.168.1.1".to_string(),
+                status: NodeOnlineStatus::Online,
+                connected_at: 1710000000,
+                last_heartbeat_at: 1710000000,
+                latest_telemetry: Some(telemetry),
+            });
 
         let summary = state.evaluate_ambient_summary();
         assert!(summary.is_healthy());
@@ -215,18 +253,20 @@ mod tests {
     #[test]
     fn test_ambient_fleet_summary_offline_alert() {
         let mut state = crate::state::AppStateMachine::new();
-        state.control_plane_nodes.push(redash_types::ManagedNodeDetail {
-            node_id: "n-vps".to_string(),
-            hostname: "vps-frankfurt".to_string(),
-            os: "linux".to_string(),
-            arch: "x86_64".to_string(),
-            version: "0.1.1-beta".to_string(),
-            remote_ip: "1.2.3.4".to_string(),
-            status: NodeOnlineStatus::Offline,
-            connected_at: 1710000000,
-            last_heartbeat_at: 1710000000,
-            latest_telemetry: None,
-        });
+        state
+            .control_plane_nodes
+            .push(redash_types::ManagedNodeDetail {
+                node_id: "n-vps".to_string(),
+                hostname: "vps-frankfurt".to_string(),
+                os: "linux".to_string(),
+                arch: "x86_64".to_string(),
+                version: "0.2.0-beta".to_string(),
+                remote_ip: "1.2.3.4".to_string(),
+                status: NodeOnlineStatus::Offline,
+                connected_at: 1710000000,
+                last_heartbeat_at: 1710000000,
+                latest_telemetry: None,
+            });
 
         let summary = state.evaluate_ambient_summary();
         assert!(!summary.is_healthy());
@@ -234,6 +274,9 @@ mod tests {
         assert_eq!(summary.led_color_hex, "#ef4444");
         assert!(summary.summary_label.contains("告警"));
         assert!(summary.summary_label.contains("vps-frankfurt"));
-        assert_eq!(summary.worst_culprit_name, Some("vps-frankfurt".to_string()));
+        assert_eq!(
+            summary.worst_culprit_name,
+            Some("vps-frankfurt".to_string())
+        );
     }
 }

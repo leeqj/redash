@@ -1,18 +1,15 @@
 use crate::state::AppState;
+use axum::Json;
 use axum::extract::ws::{Message as WsMessage, WebSocket, WebSocketUpgrade};
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
-use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::IntoResponse;
-use axum::Json;
+use axum::response::sse::{Event, KeepAlive, Sse};
 use futures::stream::Stream;
-use futures::{SinkExt, StreamExt};
 use redash_types::{ManagedNodeDetail, SignedAction};
 use std::convert::Infallible;
 
-pub async fn list_nodes(
-    State(state): State<AppState>,
-) -> Json<Vec<ManagedNodeDetail>> {
+pub async fn list_nodes(State(state): State<AppState>) -> Json<Vec<ManagedNodeDetail>> {
     Json(state.control_plane.list_nodes())
 }
 
@@ -72,73 +69,57 @@ pub async fn client_tty_handler(
     ws.on_upgrade(move |socket| handle_client_tty(socket, node_id, state))
 }
 
-async fn handle_client_tty(
-    socket: WebSocket,
-    node_id: String,
-    state: AppState,
-) {
-    let session_id = format!("tty-{}", uuid::Uuid::new_v4());
-    let (tty_tx, mut tty_rx) = tokio::sync::mpsc::channel::<crate::control_plane::registry::TtyDownstreamMsg>(128);
-
-    state.control_plane.register_tty_subscriber(session_id.clone(), tty_tx);
-    state.control_plane.open_node_tty(&node_id, &session_id, 24, 80).await;
-
-    let (mut client_sink, mut client_stream) = socket.split();
-
-    // Task forwarding output from Agent -> Browser client (plain binary or encrypted JSON envelope)
-    let reader_task = tokio::spawn(async move {
-        while let Some(msg) = tty_rx.recv().await {
-            let frame = match msg {
-                crate::control_plane::registry::TtyDownstreamMsg::Binary(bytes) => {
-                    WsMessage::Binary(bytes.into())
-                }
-                crate::control_plane::registry::TtyDownstreamMsg::Text(text) => {
-                    WsMessage::Text(text.into())
-                }
-            };
-            if client_sink.send(frame).await.is_err() {
-                break;
-            }
-        }
-    });
-
-    // Inbound frames from Browser client -> Agent (blind forwarding of encrypted envelopes or plain keystrokes)
-    let reg_in = state.control_plane.clone();
-    let nid_in = node_id.clone();
-    let sid_in = session_id.clone();
-
-    while let Some(msg_res) = client_stream.next().await {
-        match msg_res {
-            Ok(WsMessage::Text(text)) => {
-                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
-                    if v.get("type").and_then(|t| t.as_str()) == Some("resize") {
-                        let cols = v.get("cols").and_then(|c| c.as_u64()).unwrap_or(80) as u16;
-                        let rows = v.get("rows").and_then(|r| r.as_u64()).unwrap_or(24) as u16;
-                        reg_in.resize_node_tty(&nid_in, &sid_in, rows, cols).await;
-                        continue;
-                    }
-                    if let Ok(init) = serde_json::from_value::<redash_types::E2eeHandshakeInit>(v.clone()) {
-                        reg_in.send_e2ee_init_to_node(&nid_in, init).await;
-                        continue;
-                    }
-                    if let Ok(env) = serde_json::from_value::<redash_types::EncryptedEnvelope>(v) {
-                        reg_in.send_tty_encrypted_to_node(&nid_in, env).await;
-                        continue;
-                    }
-                }
-                reg_in.send_tty_input_to_node(&nid_in, &sid_in, text.as_bytes().to_vec()).await;
-            }
-            Ok(WsMessage::Binary(bytes)) => {
-                if let Ok(env) = serde_json::from_slice::<redash_types::EncryptedEnvelope>(&bytes) {
-                    reg_in.send_tty_encrypted_to_node(&nid_in, env).await;
-                } else {
-                    reg_in.send_tty_input_to_node(&nid_in, &sid_in, bytes.to_vec()).await;
-                }
-            }
-            _ => break,
-        }
+async fn handle_client_tty(mut socket: WebSocket, node_id: String, state: AppState) {
+    use crate::control_plane::registry::TtyDownstreamMsg;
+    use std::time::Duration;
+    let Ok(Some(Ok(WsMessage::Text(first)))) =
+        tokio::time::timeout(Duration::from_secs(5), socket.recv()).await
+    else {
+        return;
+    };
+    let Ok(init) = serde_json::from_str::<redash_types::E2eeHandshakeInit>(&first) else {
+        return;
+    };
+    if init.node_id != node_id || init.session_id.is_empty() || init.session_id.len() > 128 {
+        return;
     }
-
-    reader_task.abort();
-    state.control_plane.close_node_tty(&node_id, &session_id).await;
+    let sid = init.session_id.clone();
+    let registry = state.control_plane;
+    let (tx, mut rx) = tokio::sync::mpsc::channel(128);
+    if registry
+        .register_tty_subscriber(&node_id, sid.clone(), tx)
+        .is_err()
+    {
+        return;
+    }
+    let result: anyhow::Result<()> = async {
+        registry.send_e2ee_init_to_node(&node_id, init).await.map_err(anyhow::Error::msg)?;
+        // Do not route client commands until this connection's Agent acknowledges the same session.
+        let Some(TtyDownstreamMsg::Text(text)) = tokio::time::timeout(Duration::from_secs(5), rx.recv()).await? else { anyhow::bail!("Agent disconnected"); };
+        let ack: redash_types::E2eeHandshakeAck = serde_json::from_str(&text)?;
+        socket.send(WsMessage::Text(text.into())).await?;
+        anyhow::ensure!(ack.success, "Agent rejected terminal authentication");
+        loop {
+            tokio::select! {
+                incoming = socket.recv() => match incoming {
+                    Some(Ok(WsMessage::Text(text))) => {
+                        let env: redash_types::EncryptedEnvelope = serde_json::from_str(&text)?;
+                        anyhow::ensure!(env.session_id == sid, "Cross-session input rejected");
+                        registry.send_tty_encrypted_to_node(&node_id, env).await.map_err(anyhow::Error::msg)?;
+                    }
+                    Some(Ok(WsMessage::Ping(data))) => { socket.send(WsMessage::Pong(data)).await?; }
+                    _ => break,
+                },
+                outgoing = rx.recv() => match outgoing {
+                    Some(TtyDownstreamMsg::Text(text)) => { socket.send(WsMessage::Text(text.into())).await?; }
+                    _ => break,
+                }
+            }
+        }
+        Ok(())
+    }.await;
+    if let Err(err) = result {
+        log::debug!("Terminal relay closed: {}", err);
+    }
+    registry.close_node_tty(&node_id, &sid).await;
 }

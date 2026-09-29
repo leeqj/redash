@@ -8,8 +8,9 @@ services:
     environment:
       - REDASH_HUB_URL=${REDASH_HUB_URL:-ws://127.0.0.1:8080/v1/agent/ws}
       - REDASH_NODE_ID=${REDASH_NODE_ID:-}
-      - REDASH_AUTH_TOKEN=${REDASH_AUTH_TOKEN:-default-token}
+      - REDASH_AUTH_TOKEN=${REDASH_AUTH_TOKEN:?Set the unique per-node token provisioned on the Hub}
       - REDASH_TRUSTED_KEY=${REDASH_TRUSTED_KEY:-}
+      - REDASH_IDENTITY_KEY=${REDASH_IDENTITY_KEY:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /proc:/host/proc:ro

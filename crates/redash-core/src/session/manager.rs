@@ -38,7 +38,7 @@ impl SessionManager {
             sessions: Arc::new(RwLock::new(HashMap::new())),
             connect_locks: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             host_resolver: Arc::new(std::sync::RwLock::new(None)),
-            hub_ws_base: Arc::new(std::sync::RwLock::new(None)),
+            hub_ws_base: Arc::new(std::sync::RwLock::new(std::env::var("REDASH_HUB_URL").ok())),
             client_keypair: Arc::new(std::sync::RwLock::new(None)),
         }
     }
@@ -403,11 +403,11 @@ impl SessionManager {
         output_tx: mpsc::Sender<Vec<u8>>,
     ) -> Result<PtyChannel> {
         if host.id.0.starts_with("agent_tty_") || host.hostname.starts_with("agent://") {
-            let node_id = host
-                .id
-                .0
-                .strip_prefix("agent_tty_")
-                .unwrap_or_else(|| host.hostname.strip_prefix("agent://").unwrap_or(&host.hostname));
+            let node_id = host.id.0.strip_prefix("agent_tty_").unwrap_or_else(|| {
+                host.hostname
+                    .strip_prefix("agent://")
+                    .unwrap_or(&host.hostname)
+            });
             let base = self
                 .hub_ws_base
                 .read()
@@ -416,20 +416,42 @@ impl SessionManager {
                 .unwrap_or_else(|| "ws://127.0.0.1:8080".to_string());
             let ws_base = redash_types::to_websocket_endpoint(&base);
             let ws_url = format!("{}/v1/control/tty/{}", ws_base, node_id);
-            let lan_endpoint = crate::discovery::LanDiscoveryClient::global().find_direct_endpoint(node_id);
+            let lan_endpoint =
+                crate::discovery::LanDiscoveryClient::global().find_direct_endpoint(node_id);
             let client_priv_hex = self
                 .client_keypair
                 .read()
                 .unwrap()
                 .as_ref()
                 .map(|(_, priv_k)| priv_k.clone());
+            let key_path = std::env::var_os("REDASH_AGENT_KEYS_FILE")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|| {
+                    crate::config::HostStore::default_path().with_file_name("agent_keys.json")
+                });
+            let pins: HashMap<String, String> =
+                serde_json::from_slice(&std::fs::read(&key_path).with_context(|| {
+                    format!(
+                        "Provision Agent public keys in {} before opening a terminal",
+                        key_path.display()
+                    )
+                })?)?;
+            let identity = super::pty::TerminalIdentity {
+                node_id: node_id.to_string(),
+                client_private_key: client_priv_hex
+                    .context("Client signing identity is missing")?,
+                agent_public_key: pins
+                    .get(node_id)
+                    .with_context(|| format!("No trusted Agent identity for {node_id}"))?
+                    .clone(),
+            };
             return PtyChannel::new_happy_eyeballs_ws(
                 lan_endpoint.as_deref(),
                 &ws_url,
                 cols,
                 rows,
                 output_tx,
-                client_priv_hex.as_deref(),
+                Some(&identity),
             )
             .await;
         }

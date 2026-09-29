@@ -2276,7 +2276,7 @@ impl SettingsView {
                                             .text_size(px(10.5))
                                             .font_family("Menlo")
                                             .text_color(DarkTechTheme::text_accent())
-                                            .child("v0.1.1-beta"),
+                                            .child(concat!("v", env!("CARGO_PKG_VERSION"))),
                                     )
                                     .child(
                                         div()

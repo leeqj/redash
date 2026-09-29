@@ -9,7 +9,7 @@ use redash_types::{AgentToHubMessage, HubToAgentMessage};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::sync::{mpsc, oneshot, Mutex};
+use tokio::sync::{Mutex, mpsc, oneshot};
 
 pub async fn agent_ws_handler(
     ws: WebSocketUpgrade,
@@ -28,45 +28,65 @@ async fn handle_agent_socket(
     info!("Incoming agent connection attempt from {}", addr);
 
     // 1. Await Handshake
-    let handshake = match socket.recv().await {
-        Some(Ok(Message::Text(text))) => {
-            match serde_json::from_str::<AgentToHubMessage>(&text) {
-                Ok(AgentToHubMessage::Handshake(hs)) => hs,
-                other => {
-                    warn!("Expected handshake frame from {}, got: {:?}", addr, other);
-                    return;
+    let handshake =
+        match tokio::time::timeout(std::time::Duration::from_secs(5), socket.recv()).await {
+            Ok(Some(Ok(Message::Text(text)))) => {
+                match serde_json::from_str::<AgentToHubMessage>(&text) {
+                    Ok(AgentToHubMessage::Handshake(hs)) => hs,
+                    other => {
+                        warn!("Expected handshake frame from {}, got: {:?}", addr, other);
+                        return;
+                    }
                 }
             }
-        }
-        other => {
-            warn!("Failed to read initial handshake from {}: {:?}", addr, other);
-            return;
-        }
-    };
+            other => {
+                warn!(
+                    "Failed to read initial handshake from {}: {:?}",
+                    addr, other
+                );
+                return;
+            }
+        };
 
     let node_id = handshake.node_id.clone();
     let (cmd_tx, mut cmd_rx) = mpsc::channel::<HubToAgentMessage>(64);
-    let pending_actions = Arc::new(Mutex::new(HashMap::<String, oneshot::Sender<redash_types::ActionResult>>::new()));
+    let pending_actions = Arc::new(Mutex::new(HashMap::<
+        String,
+        oneshot::Sender<redash_types::ActionResult>,
+    >::new()));
 
     // 2. Register with Registry
-    registry.register_agent(
-        handshake.clone(),
-        addr.to_string(),
-        cmd_tx,
-        pending_actions.clone(),
-    );
+    let connection_id =
+        match registry.register_agent(handshake, addr.to_string(), cmd_tx, pending_actions.clone())
+        {
+            Ok(id) => id,
+            Err(err) => {
+                let ack = HubToAgentMessage::HandshakeAck {
+                    success: false,
+                    message: err,
+                    heartbeat_interval_secs: 5,
+                };
+                if let Ok(json) = serde_json::to_string(&ack) {
+                    let _ = socket.send(Message::Text(json.into())).await;
+                }
+                return;
+            }
+        };
 
     // 3. Send HandshakeAck
     let ack = HubToAgentMessage::HandshakeAck {
         success: true,
-        message: format!("Node '{}' authenticated and bound to control plane", node_id),
+        message: format!(
+            "Node '{}' authenticated and bound to control plane",
+            node_id
+        ),
         heartbeat_interval_secs: 5,
     };
     if let Ok(ack_json) = serde_json::to_string(&ack)
         && let Err(e) = socket.send(Message::Text(ack_json.into())).await
     {
         warn!("Failed to send HandshakeAck to {}: {}", node_id, e);
-        registry.unregister_agent(&node_id);
+        registry.unregister_agent(&node_id, &connection_id);
         return;
     }
 
@@ -90,42 +110,48 @@ async fn handle_agent_socket(
     let reg_in = registry.clone();
     let actions_in = pending_actions.clone();
 
-    while let Some(msg_res) = ws_stream.next().await {
+    while let Ok(Some(msg_res)) =
+        tokio::time::timeout(std::time::Duration::from_secs(35), ws_stream.next()).await
+    {
         match msg_res {
-            Ok(Message::Text(text)) => {
-                match serde_json::from_str::<AgentToHubMessage>(&text) {
-                    Ok(AgentToHubMessage::Telemetry(telemetry)) => {
-                        reg_in.record_telemetry(telemetry);
-                    }
-                    Ok(AgentToHubMessage::ActionResult(result)) => {
-                        info!(
-                            "Received action result for {} from node {}: success={}, code={:?}",
-                            result.action_id, result.node_id, result.success, result.exit_code
-                        );
-                        let mut pending = actions_in.lock().await;
-                        if let Some(sender) = pending.remove(&result.action_id) {
-                            let _ = sender.send(result);
-                        }
-                    }
-                    Ok(AgentToHubMessage::Heartbeat) => {
-                        reg_in.update_heartbeat(&nid_in);
-                    }
-                    Ok(AgentToHubMessage::TtyOutput { session_id, data }) => {
-                        reg_in.forward_tty_output(&session_id, data);
-                    }
-                    Ok(AgentToHubMessage::TtyEncrypted(envelope)) => {
-                        reg_in.forward_tty_encrypted(envelope);
-                    }
-                    Ok(AgentToHubMessage::E2eeHandshakeAck(ack)) => {
-                        reg_in.forward_e2ee_ack(ack);
-                    }
-                    other => {
-                        debug!("Unhandled agent message from {}: {:?}", nid_in, other);
+            Ok(Message::Text(text)) => match serde_json::from_str::<AgentToHubMessage>(&text) {
+                Ok(AgentToHubMessage::Telemetry(telemetry)) => {
+                    if !reg_in.record_telemetry(&nid_in, &connection_id, telemetry) {
+                        break;
                     }
                 }
-            }
+                Ok(AgentToHubMessage::ActionResult(result)) => {
+                    if result.node_id != nid_in {
+                        break;
+                    }
+                    info!(
+                        "Received action result for {} from node {}: success={}, code={:?}",
+                        result.action_id, result.node_id, result.success, result.exit_code
+                    );
+                    let mut pending = actions_in.lock().await;
+                    if let Some(sender) = pending.remove(&result.action_id) {
+                        let _ = sender.send(result);
+                    }
+                }
+                Ok(AgentToHubMessage::Heartbeat) => {
+                    reg_in.update_heartbeat(&nid_in, &connection_id);
+                }
+                Ok(AgentToHubMessage::TtyOutput { .. }) => break,
+                Ok(AgentToHubMessage::TtyClosed { session_id }) => {
+                    reg_in.forward_tty_closed(&nid_in, &connection_id, &session_id);
+                }
+                Ok(AgentToHubMessage::TtyEncrypted(envelope)) => {
+                    reg_in.forward_tty_encrypted(&nid_in, &connection_id, envelope);
+                }
+                Ok(AgentToHubMessage::E2eeHandshakeAck(ack)) => {
+                    reg_in.forward_e2ee_ack(&nid_in, &connection_id, ack);
+                }
+                other => {
+                    debug!("Unhandled agent message from {}: {:?}", nid_in, other);
+                }
+            },
             Ok(Message::Ping(_)) => {
-                reg_in.update_heartbeat(&nid_in);
+                reg_in.update_heartbeat(&nid_in, &connection_id);
             }
             Ok(Message::Close(_)) => {
                 info!("Agent {} closed connection", nid_in);
@@ -140,6 +166,6 @@ async fn handle_agent_socket(
     }
 
     writer_task.abort();
-    registry.unregister_agent(&node_id);
+    registry.unregister_agent(&node_id, &connection_id);
     info!("Cleaned up agent session for '{}'", node_id);
 }

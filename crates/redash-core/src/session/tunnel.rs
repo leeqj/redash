@@ -520,10 +520,6 @@ mod tests {
     async fn test_socks5_handshake_ipv4_and_domain() {
         let listener = match TcpListener::bind("127.0.0.1:0").await {
             Ok(l) => l,
-            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
-                eprintln!("Skipping socks5 mock test due to sandbox restriction: {}", e);
-                return;
-            }
             Err(e) => panic!("failed to bind mock server: {}", e),
         };
         let port = listener.local_addr().unwrap().port();

@@ -31,7 +31,12 @@ impl LanDiscoveryAgent {
         identity_private_key: String,
         tty_mgr: Arc<TtyManager>,
     ) -> anyhow::Result<(u16, tokio::task::JoinHandle<()>)> {
-        anyhow::ensure!(trusted_public_key.as_deref().is_some_and(|key| !key.is_empty()), "LAN terminal requires a trusted client key");
+        anyhow::ensure!(
+            trusted_public_key
+                .as_deref()
+                .is_some_and(|key| !key.is_empty()),
+            "LAN terminal requires a trusted client key"
+        );
         let nid_server = node_id.clone();
         // 1. Bind Direct TCP/WebSocket listener on an OS-assigned dynamic port
         let listener = TcpListener::bind("0.0.0.0:0").await?;
@@ -45,32 +50,42 @@ impl LanDiscoveryAgent {
         let pub_key_for_server = trusted_public_key.clone();
 
         // 2. Direct connection server task
-        tokio::spawn(async move {
-            while let Ok((stream, peer_addr)) = listener.accept().await {
+        let server_task = tokio::spawn(async move {
+            let beacon = run_beacon_broadcaster(node_id, hostname, direct_port, version);
+            tokio::pin!(beacon);
+            let permits = Arc::new(tokio::sync::Semaphore::new(128));
+            let mut connections = tokio::task::JoinSet::new();
+            loop {
+                let accepted = tokio::select! {
+                    result = listener.accept() => result,
+                    _ = &mut beacon => break,
+                    _ = connections.join_next(), if !connections.is_empty() => continue,
+                };
+                let Ok((stream, peer_addr)) = accepted else {
+                    break;
+                };
+                let Ok(permit) = permits.clone().try_acquire_owned() else {
+                    continue;
+                };
                 info!("Incoming direct LAN P2P connection from {}", peer_addr);
                 let tty = tty_for_server.clone();
                 let trusted_pk = pub_key_for_server.clone().unwrap();
                 let identity = identity_private_key.clone();
                 let nid = nid_server.clone();
 
-                tokio::spawn(async move {
-                    if let Err(e) = handle_direct_connection(stream, peer_addr, tty, trusted_pk, identity, nid).await {
+                connections.spawn(async move {
+                    let _permit = permit;
+                    if let Err(e) =
+                        handle_direct_connection(stream, peer_addr, tty, trusted_pk, identity, nid)
+                            .await
+                    {
                         warn!("Direct connection with {} terminated: {}", peer_addr, e);
                     }
                 });
             }
         });
 
-        // 3. UDP Multicast / Broadcast Beacon task
-        let nid = node_id.clone();
-        let hname = hostname.clone();
-        let ver = version.clone();
-
-        let beacon_task = tokio::spawn(async move {
-            run_beacon_broadcaster(nid, hname, direct_port, ver).await;
-        });
-
-        Ok((direct_port, beacon_task))
+        Ok((direct_port, server_task))
     }
 }
 
@@ -123,13 +138,27 @@ pub async fn handle_direct_connection(
     node_id: String,
 ) -> anyhow::Result<()> {
     let mut ws = tokio::time::timeout(Duration::from_secs(5), accept_async(stream)).await??;
-    let first = tokio::time::timeout(Duration::from_secs(5), ws.next()).await?
+    let first = tokio::time::timeout(Duration::from_secs(5), ws.next())
+        .await?
         .ok_or_else(|| anyhow::anyhow!("Missing handshake"))??;
-    let Message::Text(text) = first else { anyhow::bail!("Expected authenticated handshake"); };
+    let Message::Text(text) = first else {
+        anyhow::bail!("Expected authenticated handshake");
+    };
     let init: redash_types::E2eeHandshakeInit = serde_json::from_str(&text)?;
     let route = format!("lan-{}", uuid::Uuid::new_v4());
+    let _lease = crate::tty::RouteLease::new(tty_mgr.clone(), route.clone());
     let (tx, mut rx) = mpsc::channel(128);
-    let ack = tty_mgr.accept_handshake(&init, &trusted_public_key, &identity_private_key, &node_id, &route, tx).await.map_err(anyhow::Error::msg)?;
+    let ack = tty_mgr
+        .accept_handshake(
+            &init,
+            &trusted_public_key,
+            &identity_private_key,
+            &node_id,
+            &route,
+            tx,
+        )
+        .await
+        .map_err(anyhow::Error::msg)?;
     let result = async {
         ws.send(Message::Text(serde_json::to_string(&ack)?.into())).await?;
         loop {

@@ -4,7 +4,7 @@ pub mod discovery;
 pub mod remediation;
 pub mod tty;
 
-pub use client::{calculate_adaptive_cadence, AgentClient, AgentConfig};
+pub use client::{AgentClient, AgentConfig, calculate_adaptive_cadence};
 pub use collector::TelemetryCollector;
 pub use discovery::LanDiscoveryAgent;
 pub use remediation::RemediationEngine;
@@ -83,9 +83,14 @@ mod tests {
             .as_secs();
         let action = RemediationAction::VacuumLogs { max_size_mb: 50 };
 
-        let signable_bytes =
-            SignedAction::canonical_signable_bytes("act-9", "node-9", &action, now, "unique-nonce-1")
-                .unwrap();
+        let signable_bytes = SignedAction::canonical_signable_bytes(
+            "act-9",
+            "node-9",
+            &action,
+            now,
+            "unique-nonce-1",
+        )
+        .unwrap();
 
         let sig = signing_key.sign(&signable_bytes);
         let sig_hex = hex::encode(sig.to_bytes());
@@ -123,6 +128,12 @@ mod tests {
         use std::time::Duration;
 
         let base_telemetry = AgentTelemetry {
+            validity: redash_types::TelemetryValidity {
+                cpu: true,
+                memory: true,
+                disk: true,
+                network: true,
+            },
             node_id: "node-1".to_string(),
             hostname: "homelab".to_string(),
             os: "linux".to_string(),
@@ -137,17 +148,15 @@ mod tests {
             disk_total_bytes: 500 * 1024 * 1024 * 1024,
             net_rx_rate: 1024,
             net_tx_rate: 2048,
-            containers: vec![
-                ContainerSummary {
-                    id: "c1".to_string(),
-                    name: "redis".to_string(),
-                    image: "redis:alpine".to_string(),
-                    state: "running".to_string(),
-                    status: "Up 2 hours".to_string(),
-                    created: 1709990000,
-                    ports: vec![],
-                }
-            ],
+            containers: vec![ContainerSummary {
+                id: "c1".to_string(),
+                name: "redis".to_string(),
+                image: "redis:alpine".to_string(),
+                state: "running".to_string(),
+                status: "Up 2 hours".to_string(),
+                created: 1709990000,
+                ports: vec![],
+            }],
         };
 
         let container_snapshot = vec![("c1".to_string(), "running".to_string())];

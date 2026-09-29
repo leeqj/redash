@@ -1,5 +1,5 @@
-use gpui::*;
 use crate::theme::DarkTechTheme;
+use gpui::*;
 
 #[derive(Debug, Clone)]
 pub enum PortRemediationModalAction {
@@ -12,6 +12,9 @@ pub struct PortRemediationModal {
     pub node_id: String,
     pub port_input: String,
     pub error_msg: Option<String>,
+    focus_handle: Option<FocusHandle>,
+    cursor: usize,
+    select_all: bool,
 }
 
 impl PortRemediationModal {
@@ -20,7 +23,73 @@ impl PortRemediationModal {
             node_id,
             port_input: "8080".to_string(),
             error_msg: None,
+            focus_handle: None,
+            cursor: 4,
+            select_all: true,
         }
+    }
+
+    fn insert_text(&mut self, text: &str) {
+        if self.select_all {
+            self.port_input.clear();
+            self.cursor = 0;
+            self.select_all = false;
+        }
+        let text: String = text.chars().filter(char::is_ascii_digit).collect();
+        let remaining = 5usize.saturating_sub(self.port_input.len());
+        let text = &text[..text.len().min(remaining)];
+        self.cursor = self.cursor.min(self.port_input.len());
+        self.port_input.insert_str(self.cursor, text);
+        self.cursor += text.len();
+        self.error_msg = None;
+    }
+
+    fn handle_key(&mut self, event: &KeyDownEvent, cx: &App) {
+        let key = event.keystroke.key.as_str();
+        let modifier = event.keystroke.modifiers.platform || event.keystroke.modifiers.control;
+        if modifier && key.eq_ignore_ascii_case("a") {
+            self.select_all = true;
+            return;
+        }
+        if modifier && key.eq_ignore_ascii_case("v") {
+            if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
+                self.insert_text(&text);
+            }
+            return;
+        }
+        match key {
+            "backspace" | "delete" if self.select_all => {
+                self.port_input.clear();
+                self.cursor = 0;
+                self.select_all = false;
+            }
+            "backspace" if self.cursor > 0 => {
+                self.cursor -= 1;
+                self.port_input.remove(self.cursor);
+            }
+            "delete" if self.cursor < self.port_input.len() => {
+                self.port_input.remove(self.cursor);
+            }
+            "left" => {
+                self.cursor = self.cursor.saturating_sub(1);
+                self.select_all = false;
+            }
+            "right" => {
+                self.cursor = (self.cursor + 1).min(self.port_input.len());
+                self.select_all = false;
+            }
+            "home" => {
+                self.cursor = 0;
+                self.select_all = false;
+            }
+            "end" => {
+                self.cursor = self.port_input.len();
+                self.select_all = false;
+            }
+            _ if !modifier => self.insert_text(event.keystroke.key_char.as_deref().unwrap_or(key)),
+            _ => {}
+        }
+        self.error_msg = None;
     }
 
     pub fn parse_port(&self) -> Result<u16, String> {
@@ -42,14 +111,32 @@ impl PortRemediationModal {
 }
 
 impl Render for PortRemediationModal {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let node_id = self.node_id.clone();
         let node_id_for_diagnose = self.node_id.clone();
         let node_id_for_kill = self.node_id.clone();
-        let port_text = self.port_input.clone();
+        if self.focus_handle.is_none() {
+            let handle = cx.focus_handle();
+            window.focus(&handle);
+            self.focus_handle = Some(handle);
+        }
+        let focus = self.focus_handle.as_ref().unwrap().clone();
+        let mut port_text = self.port_input.clone();
+        if focus.is_focused(window) && !self.select_all {
+            port_text.insert(self.cursor.min(port_text.len()), '|');
+        }
+
         let error_msg = self.error_msg.clone();
 
         div()
+            .id("port-remediation-modal")
+            .track_focus(&focus)
+            .on_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
+                if event.keystroke.key == "escape" { cx.emit(PortRemediationModalAction::Close); }
+                else { this.handle_key(event, cx); }
+                cx.notify();
+                cx.stop_propagation();
+            }))
             .absolute()
             .inset_0()
             .bg(rgba(0x000000bb))
@@ -131,6 +218,13 @@ impl Render for PortRemediationModal {
                                             .gap_2()
                                             .child(
                                                 div()
+                                                    .id("port-number-input")
+                                                    .cursor_text()
+                                                    .on_click(cx.listener(|this, _, window, cx| {
+                                                        if let Some(fh) = &this.focus_handle { window.focus(fh); }
+                                                        this.select_all = true;
+                                                        cx.notify();
+                                                    }))
                                                     .flex_1()
                                                     .h(px(34.0))
                                                     .px_3()
@@ -174,6 +268,8 @@ impl Render for PortRemediationModal {
                                                     .child(p)
                                                     .on_click(cx.listener(move |this, _, _window, cx| {
                                                         this.port_input = p_str.clone();
+                                                        this.cursor = this.port_input.len();
+                                                        this.select_all = true;
                                                         this.error_msg = None;
                                                         cx.notify();
                                                     }))

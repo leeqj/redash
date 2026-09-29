@@ -1,8 +1,19 @@
 use serde::{Deserialize, Serialize};
 
+/// Unsupported or failed samples must never masquerade as healthy readings.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TelemetryValidity {
+    pub cpu: bool,
+    pub memory: bool,
+    pub disk: bool,
+    pub network: bool,
+}
+
 /// High-frequency telemetry snapshot emitted by the `redash-agent`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct AgentTelemetry {
+    #[serde(default)]
+    pub validity: TelemetryValidity,
     pub node_id: String,
     pub hostname: String,
     pub os: String,
@@ -241,9 +252,15 @@ pub struct E2eeHandshakeInit {
 impl E2eeHandshakeInit {
     pub fn signable_bytes(&self) -> Vec<u8> {
         serde_json::to_vec(&(
-            "redash-tty-v2-client", self.version, &self.node_id, &self.session_id,
-            &self.client_ephemeral_pubkey_hex, self.timestamp, &self.nonce,
-        )).expect("fixed handshake schema")
+            "redash-tty-v2-client",
+            self.version,
+            &self.node_id,
+            &self.session_id,
+            &self.client_ephemeral_pubkey_hex,
+            self.timestamp,
+            &self.nonce,
+        ))
+        .expect("fixed handshake schema")
     }
 }
 
@@ -260,9 +277,14 @@ pub struct E2eeHandshakeAck {
 impl E2eeHandshakeAck {
     pub fn signable_bytes(&self, init: &E2eeHandshakeInit) -> Vec<u8> {
         serde_json::to_vec(&(
-            "redash-tty-v2-agent", init, &self.session_id,
-            &self.agent_ephemeral_pubkey_hex, self.success, &self.error_msg,
-        )).expect("fixed handshake schema")
+            "redash-tty-v2-agent",
+            init,
+            &self.session_id,
+            &self.agent_ephemeral_pubkey_hex,
+            self.success,
+            &self.error_msg,
+        ))
+        .expect("fixed handshake schema")
     }
 }
 
@@ -284,6 +306,7 @@ pub enum AgentToHubMessage {
     Telemetry(AgentTelemetry),
     ActionResult(ActionResult),
     TtyOutput { session_id: String, data: Vec<u8> },
+    TtyClosed { session_id: String },
     TtyEncrypted(EncryptedEnvelope),
     E2eeHandshakeAck(E2eeHandshakeAck),
     Heartbeat,
@@ -414,16 +437,20 @@ impl DevicePairingPayload {
     /// Formats the payload into a standard QR code URL string: `redash://pair?data=<hex>`
     pub fn to_uri(&self) -> String {
         let json = serde_json::to_string(self).unwrap_or_default();
-        let hex: String = json.as_bytes().iter().map(|b| format!("{:02x}", b)).collect();
+        let hex: String = json
+            .as_bytes()
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect();
         format!("redash://pair?data={}", hex)
     }
 
     /// Parses a `redash://pair?data=<hex>` URI.
     pub fn from_uri(uri: &str) -> Result<Self, String> {
         let data_prefix = "redash://pair?data=";
-        let hex_str = uri
-            .strip_prefix(data_prefix)
-            .ok_or_else(|| "Invalid pairing URI prefix; expected redash://pair?data=".to_string())?;
+        let hex_str = uri.strip_prefix(data_prefix).ok_or_else(|| {
+            "Invalid pairing URI prefix; expected redash://pair?data=".to_string()
+        })?;
 
         if hex_str.len() % 2 != 0 {
             return Err("Odd length hex data in pairing URI".to_string());
@@ -438,4 +465,3 @@ impl DevicePairingPayload {
         serde_json::from_slice::<Self>(&bytes).map_err(|e| format!("Invalid JSON payload: {}", e))
     }
 }
-

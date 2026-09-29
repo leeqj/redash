@@ -182,7 +182,7 @@ After=network.target docker.service
 Type=simple
 User=root
 EnvironmentFile=/etc/redash-agent.env
-ExecStart=/usr/local/bin/redash-agent --hub \${REDASH_HUB_URL} --node-id \${REDASH_NODE_ID} --token \${REDASH_AUTH_TOKEN}
+ExecStart=/usr/local/bin/redash-agent
 Restart=always
 RestartSec=3s
 LimitNOFILE=65535
@@ -196,6 +196,8 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now redash-agent
 ```
 
+注册及终端身份必须按 [协议 v2 迁移说明](CONTROL_PLANE_SECURITY.md) 配置：Hub 的 `agent_enrollments.json`、Agent 的 `REDASH_TRUSTED_KEY`/`REDASH_IDENTITY_KEY` 以及桌面的 `agent_keys.json`。旧示例里的固定 token 不再有效，环境文件应设置权限 600。
+
 ### 3. Agent 核心命令行参数
 ```bash
 redash-agent [OPTIONS]
@@ -203,8 +205,8 @@ redash-agent [OPTIONS]
 选项：
   -h, --hub <URL>        Hub WebSocket 连接地址 (默认: ws://127.0.0.1:8080/v1/agent/ws)
   -n, --node-id <ID>     节点唯一标识 (默认: 主机名)
-  -t, --token <TOKEN>    接入预共享凭证 (默认: default-token)
-  -k, --key <PUBKEY>     受信任的桌面端 ED25519 签名公钥 (Hex 格式)
+  -t, --token <TOKEN>    按节点预置的随机注册凭证 (必填，至少 32 字符)
+  -k, --trusted-key <PUBKEY>     受信任的桌面端 ED25519 签名公钥 (Hex 格式)
 ```
 
 ---

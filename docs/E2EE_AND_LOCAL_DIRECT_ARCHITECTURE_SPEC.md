@@ -1,5 +1,8 @@
 # ReDash 下一代架构演进方案：端到端加密 (E2EE) 与局域网直通 (Local-First Direct)
 
+> 历史设计草案，不代表当前实现或验收结果。实际协议已改为双向身份认证的 X25519 / HKDF-SHA256 / AES-256-GCM；UDP beacon 不是 mDNS，自动会话恢复和移动端授权尚未交付。以 [当前架构](FINAL_ARCHITECTURE_PROPOSAL.md) 和 [协议 v2 迁移](CONTROL_PLANE_SECURITY.md) 为准。
+
+
 > **目标**：彻底终结“中心化明文代理”的安全缺陷与流量瓶颈，将 ReDash 打造为与 **Orca / Tailscale** 齐平的**零信任盲中继 (Zero-Trust Blind Relay) + 局域网无缝直通 (Local Direct-Path)** 现代分布式架构。
 
 ---

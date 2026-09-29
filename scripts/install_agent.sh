@@ -7,9 +7,10 @@ set -e
 
 HUB_URL="ws://127.0.0.1:8080/v1/agent/ws"
 NODE_ID="$(hostname)"
-AUTH_TOKEN="default-token"
+AUTH_TOKEN=""
+IDENTITY_KEY=""
 TRUSTED_KEY=""
-VERSION="v0.1.1-beta"
+VERSION="v0.2.0-beta"
 REPO="reways/redash"
 
 while [ $# -gt 0 ]; do
@@ -30,6 +31,10 @@ while [ $# -gt 0 ]; do
       TRUSTED_KEY="$2"
       shift 2
       ;;
+    --identity-key)
+      IDENTITY_KEY="$2"
+      shift 2
+      ;;
     --version|-v)
       VERSION="$2"
       shift 2
@@ -40,6 +45,19 @@ while [ $# -gt 0 ]; do
       ;;
   esac
 done
+
+# Fail before downloading or installing on missing/unsafe configuration.
+[ -n "$NODE_ID" ] || NODE_ID="$(hostname)"
+case "$NODE_ID" in *[!a-zA-Z0-9_.-]*|'') echo "Invalid node ID" >&2; exit 1;; esac
+[ "${#AUTH_TOKEN}" -ge 32 ] || { echo "A unique per-node enrollment token (32+ characters) is required" >&2; exit 1; }
+case "$AUTH_TOKEN" in *[!a-zA-Z0-9_-]*) echo "Invalid token characters" >&2; exit 1;; esac
+for key in "$TRUSTED_KEY" "$IDENTITY_KEY"; do
+  if [ -n "$key" ]; then
+    [ "${#key}" -eq 64 ] || { echo "Keys must have 64 hexadecimal characters" >&2; exit 1; }
+    case "$key" in *[!a-fA-F0-9]*) echo "Invalid key encoding" >&2; exit 1;; esac
+  fi
+done
+case "$HUB_URL" in *[!a-zA-Z0-9:/._?=\&%+-]*) echo "Invalid Hub URL" >&2; exit 1;; esac
 
 echo ""
 echo "  ⚡ ReDash Next-Gen Agent Automated Installer"
@@ -124,10 +142,15 @@ fi
 if [ "$OS" = "Linux" ] && [ -d /etc/systemd/system ]; then
   echo "⚙️  Configuring Systemd unit /etc/systemd/system/redash-agent.service ..."
 
-  KEY_ARG=""
-  if [ -n "$TRUSTED_KEY" ]; then
-    KEY_ARG="--trusted-key $TRUSTED_KEY"
-  fi
+  umask 077
+  cat > "$TMP_DIR/redash-agent.env" << ENV_EOF
+REDASH_HUB_URL=$HUB_URL
+REDASH_NODE_ID=$NODE_ID
+REDASH_AUTH_TOKEN=$AUTH_TOKEN
+REDASH_TRUSTED_KEY=$TRUSTED_KEY
+REDASH_IDENTITY_KEY=$IDENTITY_KEY
+ENV_EOF
+  sudo install -m 600 "$TMP_DIR/redash-agent.env" /etc/redash-agent.env
 
   cat << SERVICE_EOF | sudo tee /etc/systemd/system/redash-agent.service > /dev/null
 [Unit]
@@ -138,7 +161,8 @@ Wants=docker.service
 [Service]
 Type=simple
 User=root
-ExecStart=$BIN_DEST --hub $HUB_URL --node-id $NODE_ID --token $AUTH_TOKEN $KEY_ARG
+EnvironmentFile=/etc/redash-agent.env
+ExecStart=$BIN_DEST
 Restart=always
 RestartSec=5s
 LimitNOFILE=65535
@@ -154,5 +178,9 @@ SERVICE_EOF
 fi
 
 echo ""
-echo "🎉 ReDash Agent enrollment complete! Connected node '$NODE_ID' to $HUB_URL"
+if [ "$OS" = "Linux" ] && [ -d /etc/systemd/system ]; then
+  echo "Agent service configured. Verify enrollment and telemetry in the Hub."
+else
+  echo "Binary installed. macOS service setup is manual: run redash-agent with the provisioned environment variables."
+fi
 echo ""

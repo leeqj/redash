@@ -284,6 +284,54 @@ impl AlertDispatcher {
         desktop.and(webhook)
     }
 
+    pub fn evaluate_agent_telemetry(
+        rule: &AlertRule,
+        telemetry: &redash_types::AgentTelemetry,
+    ) -> Vec<AlertEvent> {
+        let mut rule = rule.clone();
+        if !telemetry.validity.cpu
+            || !telemetry.cpu_usage_pct.is_finite()
+            || !(0.0..=100.0).contains(&telemetry.cpu_usage_pct)
+        {
+            rule.cpu_threshold_percent = None;
+        }
+        if !telemetry.validity.memory
+            || telemetry.mem_total_bytes == 0
+            || telemetry.mem_used_bytes > telemetry.mem_total_bytes
+        {
+            rule.mem_threshold_percent = None;
+        }
+        if !telemetry.validity.disk
+            || telemetry.disk_total_bytes == 0
+            || telemetry.disk_used_bytes > telemetry.disk_total_bytes
+        {
+            rule.disk_threshold_percent = None;
+        }
+        let metrics = NodeMetrics {
+            timestamp: telemetry.timestamp,
+            cpu: crate::probe::CpuMetrics {
+                usage_percent: telemetry.cpu_usage_pct,
+                ..Default::default()
+            },
+            mem: crate::probe::MemMetrics {
+                usage_percent: telemetry.memory_usage_pct(),
+                ..Default::default()
+            },
+            disks: vec![crate::probe::DiskMetrics {
+                mount_point: "/".into(),
+                usage_percent: telemetry.disk_usage_pct(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        Self::evaluate_metrics(
+            &rule,
+            &format!("agent:{}", telemetry.node_id),
+            &telemetry.hostname,
+            &metrics,
+        )
+    }
+
     pub fn evaluate_metrics(
         rule: &AlertRule,
         host_id: &str,
@@ -437,10 +485,6 @@ mod tests {
     async fn test_send_webhook_via_mock_server() {
         let listener = match TcpListener::bind("127.0.0.1:0").await {
             Ok(l) => l,
-            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
-                eprintln!("Skipping webhook mock test due to sandbox restriction: {}", e);
-                return;
-            }
             Err(e) => panic!("failed to bind mock server: {}", e),
         };
         let port = listener.local_addr().unwrap().port();
@@ -478,10 +522,6 @@ mod tests {
     async fn webhook_http_failure_is_not_success() {
         let listener = match TcpListener::bind("127.0.0.1:0").await {
             Ok(l) => l,
-            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
-                eprintln!("Skipping webhook mock test due to sandbox restriction: {}", e);
-                return;
-            }
             Err(e) => panic!("failed to bind mock server: {}", e),
         };
         let url = format!("http://{}/", listener.local_addr().unwrap());

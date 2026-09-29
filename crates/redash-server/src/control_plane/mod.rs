@@ -4,8 +4,8 @@ pub mod registry;
 pub mod ws_agent;
 
 use crate::state::AppState;
-use axum::routing::{get, post};
 use axum::Router;
+use axum::routing::{get, post};
 
 pub fn control_plane_router() -> Router<AppState> {
     Router::new()

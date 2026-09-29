@@ -57,9 +57,7 @@ use crate::remediation::RemediationEngine;
 use crate::tty::TtyManager;
 use futures::{SinkExt, StreamExt};
 use log::{info, warn};
-use redash_types::{
-    AgentHandshake, AgentToHubMessage, HubToAgentMessage,
-};
+use redash_types::{AgentHandshake, AgentToHubMessage, HubToAgentMessage};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -84,13 +82,28 @@ pub struct AgentClient {
 
 impl AgentClient {
     pub fn new(mut config: AgentConfig) -> anyhow::Result<Self> {
+        let _ = rustls::crypto::ring::default_provider().install_default();
         config.node_id = config.node_id.trim().to_string();
-        anyhow::ensure!(!config.node_id.is_empty() && config.node_id.len() <= 128 && config.node_id.bytes().all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b)), "Node ID must be nonempty ASCII letters, digits, '-', '_' or '.'");
-        anyhow::ensure!(!config.auth_token.trim().is_empty() && config.auth_token != "default-token", "A provisioned per-node enrollment token is required");
+        anyhow::ensure!(
+            !config.node_id.is_empty()
+                && config.node_id.len() <= 128
+                && config
+                    .node_id
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b)),
+            "Node ID must be nonempty ASCII letters, digits, '-', '_' or '.'"
+        );
+        anyhow::ensure!(
+            config.auth_token.trim().len() >= 32 && config.auth_token != "default-token",
+            "A provisioned per-node enrollment token is required"
+        );
         config.trusted_public_key = config.trusted_public_key.filter(|s| !s.trim().is_empty());
         config.identity_private_key = config.identity_private_key.filter(|s| !s.trim().is_empty());
         if let Some(identity) = &config.identity_private_key {
-            anyhow::ensure!(hex::decode(identity)?.len() == 32, "Agent identity private key must be 32 bytes");
+            anyhow::ensure!(
+                hex::decode(identity)?.len() == 32,
+                "Agent identity private key must be 32 bytes"
+            );
         }
         let remediation = Arc::new(RemediationEngine::new(
             config.trusted_public_key.as_deref(),
@@ -108,20 +121,32 @@ impl AgentClient {
     pub async fn run_forever(&self) {
         let mut backoff_secs = 1u64;
 
-        let hostname = gethostname::gethostname()
-            .to_string_lossy()
-            .into_owned();
+        let hostname = gethostname::gethostname().to_string_lossy().into_owned();
 
-        if let (Some(trusted), Some(identity)) = (&self.config.trusted_public_key, &self.config.identity_private_key) {
-            crate::discovery::LanDiscoveryAgent::start(
-                self.config.node_id.clone(), hostname, env!("CARGO_PKG_VERSION").to_string(),
-                Some(trusted.clone()), identity.clone(), self.tty_mgr.clone(),
-            ).await.unwrap_or_else(|err| { warn!("LAN listener failed: {}", err); (0, tokio::spawn(async {})) });
+        let mut background_tasks = Vec::new();
+        if let (Some(trusted), Some(identity)) = (
+            &self.config.trusted_public_key,
+            &self.config.identity_private_key,
+        ) && let Ok((_, task)) = crate::discovery::LanDiscoveryAgent::start(
+            self.config.node_id.clone(),
+            hostname,
+            env!("CARGO_PKG_VERSION").to_string(),
+            Some(trusted.clone()),
+            identity.clone(),
+            self.tty_mgr.clone(),
+        )
+        .await
+        {
+            background_tasks.push(task);
         }
         let mgr = self.tty_mgr.clone();
-        tokio::spawn(async move {
-            loop { sleep(Duration::from_secs(5)).await; mgr.expire_sessions().await; }
-        });
+        background_tasks.push(tokio::spawn(async move {
+            loop {
+                sleep(Duration::from_secs(5)).await;
+                mgr.expire_sessions().await;
+            }
+        }));
+        let _background = AbortTasks(background_tasks);
 
         loop {
             info!("Dialing ReDash Control Hub at {}", self.config.hub_url);
@@ -149,9 +174,7 @@ impl AgentClient {
         let (outbound_tx, mut outbound_rx) = mpsc::channel::<AgentToHubMessage>(128);
 
         // 1. Initial Handshake
-        let hostname = gethostname::gethostname()
-            .to_string_lossy()
-            .into_owned();
+        let hostname = gethostname::gethostname().to_string_lossy().into_owned();
 
         let handshake = AgentHandshake {
             node_id: self.config.node_id.clone(),
@@ -164,12 +187,23 @@ impl AgentClient {
         };
 
         let handshake_json = serde_json::to_string(&AgentToHubMessage::Handshake(handshake))?;
-        write_half.send(Message::Text(handshake_json.into())).await?;
+        write_half
+            .send(Message::Text(handshake_json.into()))
+            .await?;
 
-        let reply = tokio::time::timeout(Duration::from_secs(5), read_half.next()).await?
+        let reply = tokio::time::timeout(Duration::from_secs(5), read_half.next())
+            .await?
             .ok_or_else(|| anyhow::anyhow!("Hub closed during authentication"))??;
-        let Message::Text(reply) = reply else { anyhow::bail!("Expected Hub authentication acknowledgement"); };
-        anyhow::ensure!(matches!(serde_json::from_str::<HubToAgentMessage>(&reply)?, HubToAgentMessage::HandshakeAck { success: true, .. }), "Hub rejected enrollment credentials");
+        let Message::Text(reply) = reply else {
+            anyhow::bail!("Expected Hub authentication acknowledgement");
+        };
+        anyhow::ensure!(
+            matches!(
+                serde_json::from_str::<HubToAgentMessage>(&reply)?,
+                HubToAgentMessage::HandshakeAck { success: true, .. }
+            ),
+            "Hub rejected enrollment credentials"
+        );
 
         // 2. Outbound message sink task
         let write_task = tokio::spawn(async move {
@@ -226,12 +260,16 @@ impl AgentClient {
             }
         });
 
+        let _tasks = AbortTasks(vec![write_task, telemetry_task]);
         let route = format!("hub-{}", uuid::Uuid::new_v4());
+        let _lease = crate::tty::RouteLease::new(self.tty_mgr.clone(), route.clone());
         while let Some(msg_res) = read_half.next().await {
             match msg_res {
                 Ok(Message::Text(text)) => match serde_json::from_str::<HubToAgentMessage>(&text) {
                     Ok(HubToAgentMessage::ExecuteAction(action)) => {
-                        if action.node_id != self.config.node_id { continue; }
+                        if action.node_id != self.config.node_id {
+                            continue;
+                        }
                         // Legacy TTY actions are rejected by RemediationEngine; they cannot bypass E2EE.
                         let rem = self.remediation.clone();
                         let tx = outbound_tx.clone();
@@ -241,14 +279,37 @@ impl AgentClient {
                         });
                     }
                     Ok(HubToAgentMessage::E2eeHandshakeInit(init)) => {
-                        let result = match (&self.config.trusted_public_key, &self.config.identity_private_key) {
-                            (Some(trusted), Some(identity)) => self.tty_mgr.accept_handshake(&init, trusted, identity, &self.config.node_id, &route, outbound_tx.clone()).await,
-                            _ => Err("Terminal identity and client trust key must be provisioned".into()),
+                        let result = match (
+                            &self.config.trusted_public_key,
+                            &self.config.identity_private_key,
+                        ) {
+                            (Some(trusted), Some(identity)) => {
+                                self.tty_mgr
+                                    .accept_handshake(
+                                        &init,
+                                        trusted,
+                                        identity,
+                                        &self.config.node_id,
+                                        &route,
+                                        outbound_tx.clone(),
+                                    )
+                                    .await
+                            }
+                            _ => {
+                                Err("Terminal identity and client trust key must be provisioned"
+                                    .into())
+                            }
                         };
                         let ack = result.unwrap_or_else(|err| redash_types::E2eeHandshakeAck {
-                            session_id: init.session_id, agent_ephemeral_pubkey_hex: String::new(), signature_hex: String::new(), success: false, error_msg: Some(err),
+                            session_id: init.session_id,
+                            agent_ephemeral_pubkey_hex: String::new(),
+                            signature_hex: String::new(),
+                            success: false,
+                            error_msg: Some(err),
                         });
-                        let _ = outbound_tx.send(AgentToHubMessage::E2eeHandshakeAck(ack)).await;
+                        let _ = outbound_tx
+                            .send(AgentToHubMessage::E2eeHandshakeAck(ack))
+                            .await;
                     }
                     Ok(HubToAgentMessage::TtyEncrypted(env)) => {
                         if let Err(err) = self.tty_mgr.receive(&env, &route).await {
@@ -257,8 +318,12 @@ impl AgentClient {
                         }
                     }
                     // Relay disconnect is allowed to release resources, never to open or resize a shell.
-                    Ok(HubToAgentMessage::TtyClose { session_id }) => self.tty_mgr.close_session(&session_id, &route).await,
-                    Ok(HubToAgentMessage::Ping) => { let _ = outbound_tx.send(AgentToHubMessage::Heartbeat).await; }
+                    Ok(HubToAgentMessage::TtyClose { session_id }) => {
+                        self.tty_mgr.close_session(&session_id, &route).await
+                    }
+                    Ok(HubToAgentMessage::Ping) => {
+                        let _ = outbound_tx.send(AgentToHubMessage::Heartbeat).await;
+                    }
                     _ => {} // Plaintext input/resize and legacy open are never executed.
                 },
                 Ok(Message::Close(_)) | Err(_) => break,
@@ -267,10 +332,17 @@ impl AgentClient {
         }
 
         // Abort background loops on disconnect
-        write_task.abort();
-        telemetry_task.abort();
         self.tty_mgr.close_route(&route).await;
 
         Ok(())
+    }
+}
+
+struct AbortTasks(Vec<tokio::task::JoinHandle<()>>);
+impl Drop for AbortTasks {
+    fn drop(&mut self) {
+        for task in &self.0 {
+            task.abort();
+        }
     }
 }

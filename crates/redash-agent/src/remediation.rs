@@ -47,7 +47,10 @@ impl RemediationEngine {
         }
 
         // 3. Cryptographic signature check if trusted key is configured
-        let trusted_key = self.trusted_public_key.as_ref().ok_or("Remote commands disabled: no trusted client key configured")?;
+        let trusted_key = self
+            .trusted_public_key
+            .as_ref()
+            .ok_or("Remote commands disabled: no trusted client key configured")?;
         {
             let canonical_bytes = SignedAction::canonical_signable_bytes(
                 &action.action_id,
@@ -72,7 +75,9 @@ impl RemediationEngine {
                 .map_err(|e| format!("Cryptographic signature verification failed: {}", e))?;
         }
 
-        if action.nonce.is_empty() || action.nonce.len() > 128 { return Err("Invalid nonce".into()); }
+        if action.nonce.is_empty() || action.nonce.len() > 128 {
+            return Err("Invalid nonce".into());
+        }
         // 2. Sliding window Nonce replay attack defense
         {
             let mut nonces = self
@@ -226,7 +231,12 @@ impl RemediationEngine {
             RemediationAction::KillPortConflict { port } => {
                 info!("Releasing port conflict on port {}", port);
                 if port == 0 {
-                    (false, Some(400), String::new(), "Invalid port 0".to_string())
+                    (
+                        false,
+                        Some(400),
+                        String::new(),
+                        "Invalid port 0".to_string(),
+                    )
                 } else if port == 22 {
                     (
                         false,
@@ -308,57 +318,57 @@ async fn run_shell_cmd(cmd: &str) -> (bool, Option<i32>, String, String) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
+    use redash_ui_core::control_plane::ClientSigner;
     #[tokio::test]
-    async fn test_self_preservation_safeguards() {
-        let engine = RemediationEngine::new(None).unwrap();
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-
-        // 1. Test killing PID 1 is blocked
-        let res_pid1 = engine.execute(SignedAction {
-            action_id: "test-pid-1".to_string(),
-            node_id: "node-1".to_string(),
-            action: RemediationAction::KillProcess { pid: 1, signal: 9 },
-            timestamp: now,
-            nonce: "nonce-pid-1".to_string(),
-            public_key_hex: String::new(),
-            signature_hex: String::new(),
-        }).await;
-        assert_eq!(res_pid1.exit_code, Some(403));
-        assert!(!res_pid1.success);
-        assert!(res_pid1.stderr.contains("Refusing to kill protected PID"));
-
-        // 2. Test killing self PID is blocked
-        let my_pid = std::process::id();
-        let res_self = engine.execute(SignedAction {
-            action_id: "test-self-pid".to_string(),
-            node_id: "node-1".to_string(),
-            action: RemediationAction::KillProcess { pid: my_pid, signal: 9 },
-            timestamp: now,
-            nonce: "nonce-self-pid".to_string(),
-            public_key_hex: String::new(),
-            signature_hex: String::new(),
-        }).await;
-        assert_eq!(res_self.exit_code, Some(403));
-        assert!(!res_self.success);
-        assert!(res_self.stderr.contains("Refusing to kill protected PID"));
-
-        // 3. Test killing port 22 is blocked
-        let res_port22 = engine.execute(SignedAction {
-            action_id: "test-port-22".to_string(),
-            node_id: "node-1".to_string(),
-            action: RemediationAction::KillPortConflict { port: 22 },
-            timestamp: now,
-            nonce: "nonce-port-22".to_string(),
-            public_key_hex: String::new(),
-            signature_hex: String::new(),
-        }).await;
-        assert_eq!(res_port22.exit_code, Some(403));
-        assert!(!res_port22.success);
-        assert!(res_port22.stderr.contains("Port 22 is reserved for SSH"));
+    async fn authentication_replay_and_self_preservation() {
+        let (public, private) = ClientSigner::generate_keypair();
+        let engine = RemediationEngine::new(Some(&public)).unwrap();
+        for (action, expected) in [
+            (
+                RemediationAction::KillProcess { pid: 1, signal: 9 },
+                "Refusing to kill protected PID",
+            ),
+            (
+                RemediationAction::KillProcess {
+                    pid: std::process::id(),
+                    signal: 9,
+                },
+                "Refusing to kill protected PID",
+            ),
+            (
+                RemediationAction::KillPortConflict { port: 22 },
+                "Port 22 is reserved",
+            ),
+        ] {
+            let signed = ClientSigner::sign_fresh_action(&private, "node", action).unwrap();
+            let mut forged = signed.clone();
+            forged.signature_hex = "00".repeat(64);
+            assert!(engine.verify_signature(&forged).is_err());
+            let result = engine.execute(signed.clone()).await;
+            assert!(!result.success && result.stderr.contains(expected));
+            assert!(
+                engine
+                    .verify_signature(&signed)
+                    .unwrap_err()
+                    .contains("duplicate nonce")
+            );
+        }
+        let action = ClientSigner::sign_fresh_action(
+            &private,
+            "node",
+            RemediationAction::TtyOpen {
+                session_id: "legacy".into(),
+                rows: 24,
+                cols: 80,
+            },
+        )
+        .unwrap();
+        assert!(!engine.execute(action.clone()).await.success);
+        assert!(
+            RemediationEngine::new(None)
+                .unwrap()
+                .verify_signature(&action)
+                .is_err()
+        );
     }
 }
-

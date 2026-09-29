@@ -1,6 +1,6 @@
+use crate::theme::DarkTechTheme;
 use gpui::*;
 use redash_ui_core::control_plane::ClientSigner;
-use crate::theme::DarkTechTheme;
 
 #[derive(Debug, Clone)]
 pub enum AgentEnrollModalAction {
@@ -13,6 +13,7 @@ pub struct AgentEnrollModal {
     pub node_id_input: String,
     pub auth_token_input: String,
     pub public_key_hex: Option<String>,
+    pub agent_identity: (String, String),
     pub active_tab: usize, // 0 = Bash, 1 = Docker
     pub copied: bool,
 }
@@ -21,8 +22,9 @@ impl AgentEnrollModal {
     pub fn new(hub_url: String, public_key_hex: Option<String>) -> Self {
         Self {
             hub_url,
-            node_id_input: String::new(),
-            auth_token_input: "default-token".to_string(),
+            node_id_input: format!("node-{}", &redash_ui_core::e2ee::random_hex()[..12]),
+            auth_token_input: redash_ui_core::e2ee::random_hex(),
+            agent_identity: ClientSigner::generate_keypair(),
             public_key_hex,
             active_tab: 0,
             copied: false,
@@ -37,56 +39,31 @@ impl AgentEnrollModal {
         };
 
         if self.active_tab == 0 {
-            ClientSigner::format_onboarding_command(
+            let command = ClientSigner::format_onboarding_command(
                 &self.hub_url,
                 node_id,
                 &self.auth_token_input,
                 self.public_key_hex.as_deref(),
-            )
+            );
+            format!("{} --identity-key {}", command, self.agent_identity.1)
         } else if self.active_tab == 1 {
-            ClientSigner::format_docker_command(
+            let command = ClientSigner::format_docker_command(
                 &self.hub_url,
                 node_id,
                 &self.auth_token_input,
                 self.public_key_hex.as_deref(),
+            );
+            command.replace(
+                " ghcr.io/",
+                &format!(" -e REDASH_IDENTITY_KEY={} ghcr.io/", self.agent_identity.1),
             )
         } else {
-            let payload = redash_types::DevicePairingPayload {
-                hub_url: self.hub_url.clone(),
-                client_public_key: self.public_key_hex.clone().unwrap_or_default(),
-                device_name: format!("{} Desktop", std::env::consts::OS),
-                auth_token: Some(self.auth_token_input.clone()),
-                node_id: node_id.map(|s| s.to_string()),
-                created_at: std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs(),
-            };
-            payload.to_uri()
+            serde_json::to_string_pretty(&serde_json::json!({ self.node_id_input.clone(): {
+                "auth_token": self.auth_token_input,
+                "trusted_public_key": self.public_key_hex.clone().unwrap_or_default()
+            }}))
+            .unwrap()
         }
-    }
-
-    pub fn current_qr_ascii(&self) -> Option<String> {
-        if self.active_tab != 2 {
-            return None;
-        }
-        let node_id = if self.node_id_input.trim().is_empty() {
-            None
-        } else {
-            Some(self.node_id_input.trim())
-        };
-        let payload = redash_types::DevicePairingPayload {
-            hub_url: self.hub_url.clone(),
-            client_public_key: self.public_key_hex.clone().unwrap_or_default(),
-            device_name: format!("{} Desktop", std::env::consts::OS),
-            auth_token: Some(self.auth_token_input.clone()),
-            node_id: node_id.map(|s| s.to_string()),
-            created_at: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs(),
-        };
-        redash_ui_core::generate_pairing_qr_ascii(&payload).ok()
     }
 }
 
@@ -94,7 +71,7 @@ impl Render for AgentEnrollModal {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let cmd = self.current_command();
         let cmd_clone = cmd.clone();
-        let qr_ascii = self.current_qr_ascii();
+        let qr_ascii: Option<String> = None;
         let active_tab = self.active_tab;
         let copied = self.copied;
 
@@ -216,7 +193,7 @@ impl Render for AgentEnrollModal {
                                     .font_weight(FontWeight::MEDIUM)
                                     .bg(if active_tab == 2 { DarkTechTheme::accent_cyan() } else { DarkTechTheme::bg_input() })
                                     .text_color(if active_tab == 2 { DarkTechTheme::bg_root() } else { DarkTechTheme::text_secondary() })
-                                    .child("📱 移动端扫码配对")
+                                    .child("Hub 注册配置")
                                     .on_click(cx.listener(|this, _, _, _| {
                                         this.active_tab = 2;
                                         this.copied = false;
@@ -259,6 +236,9 @@ impl Render for AgentEnrollModal {
                                     .child(cmd)
                             }),
                     )
+                    .child(div().text_xs().text_color(DarkTechTheme::text_secondary()).child(
+                        format!("先将“Hub 注册配置”合并到 Hub 的 agent_enrollments.json（权限 600）并重启 Hub，再执行安装命令。节点 {} 的 Agent 公钥会在复制安装命令时固定到本机；请勿公开安装命令中的凭据。", self.node_id_input)
+                    ))
                     .child(
                         // Footer with action buttons
                         div()

@@ -9,8 +9,8 @@ use crate::components::theme::DarkTechTheme;
 use crate::{t, t_fmt};
 use redash_core::config::{HostConfig, HostId, MissingCredential, TargetOs};
 use redash_core::probe::NodeMetrics;
-use redash_types::{format_bytes_rate, ManagedNodeDetail, NodeOnlineStatus, RemediationAction};
-use redash_ui_core::hud::{evaluate_fleet_ambient_summary, AmbientFleetSummary, MeterLevel};
+use redash_types::{ManagedNodeDetail, NodeOnlineStatus, RemediationAction, format_bytes_rate};
+use redash_ui_core::hud::{AmbientFleetSummary, MeterLevel, evaluate_fleet_ambient_summary};
 
 fn format_agent_uptime(secs: u64) -> String {
     let days = secs / 86400;
@@ -227,14 +227,23 @@ impl FleetView {
         };
 
         let telemetry = node.latest_telemetry.as_ref();
+        let valid = telemetry.map(|t| t.validity).unwrap_or_default();
         let (cpu_pct, mem_pct, disk_pct, net_rx, net_tx, uptime_str, containers) =
             if let Some(t) = telemetry {
                 (
                     t.cpu_usage_pct,
                     t.memory_usage_pct(),
                     t.disk_usage_pct(),
-                    format_bytes_rate(t.net_rx_rate),
-                    format_bytes_rate(t.net_tx_rate),
+                    if t.validity.network {
+                        format_bytes_rate(t.net_rx_rate)
+                    } else {
+                        "--".into()
+                    },
+                    if t.validity.network {
+                        format_bytes_rate(t.net_tx_rate)
+                    } else {
+                        "--".into()
+                    },
                     format_agent_uptime(t.uptime_secs),
                     t.containers.clone(),
                 )
@@ -372,7 +381,7 @@ impl FleetView {
                                             } else {
                                                 DarkTechTheme::accent_cyan()
                                             })
-                                            .child(format!("{:.1}%", cpu_pct)),
+                                            .child(if valid.cpu { format!("{:.1}%", cpu_pct) } else { "--".into() }),
                                     ),
                             )
                             .child(
@@ -401,7 +410,7 @@ impl FleetView {
                                             } else {
                                                 DarkTechTheme::status_online()
                                             })
-                                            .child(format!("{:.1}%", mem_pct)),
+                                            .child(if valid.memory { format!("{:.1}%", mem_pct) } else { "--".into() }),
                                     ),
                             )
                             .child(
@@ -430,7 +439,7 @@ impl FleetView {
                                             } else {
                                                 DarkTechTheme::status_warn()
                                             })
-                                            .child(format!("{:.1}%", disk_pct)),
+                                            .child(if valid.disk { format!("{:.1}%", disk_pct) } else { "--".into() }),
                                     ),
                             ),
                     )

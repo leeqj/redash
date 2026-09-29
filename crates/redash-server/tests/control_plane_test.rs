@@ -14,9 +14,10 @@ use tower::ServiceExt;
 
 #[tokio::test]
 async fn test_control_plane_nodes_api() {
-    let state = AppState::new();
-    let app = build_router(state.clone());
+    let mut state = AppState::new();
 
+    state.control_plane = registry_for("node-vps-1", "abc123key");
+    let app = build_router(state.clone());
     // 1. Initially empty
     let res = app
         .clone()
@@ -42,25 +43,34 @@ async fn test_control_plane_nodes_api() {
         hostname: "vps-fra-1".to_string(),
         os: "linux".to_string(),
         arch: "x86_64".to_string(),
-        version: "0.1.1-beta".to_string(),
-        auth_token: "secret".to_string(),
+        version: "0.2.0-beta".to_string(),
+        auth_token: "test-secret-with-at-least-32-bytes!".to_string(),
         trusted_public_key: "abc123key".to_string(),
     };
 
-    state.control_plane.register_agent(
-        handshake,
-        "192.168.1.50:44300".to_string(),
-        cmd_tx,
-        pending_actions,
-    );
+    let connection_id = state
+        .control_plane
+        .register_agent(
+            handshake,
+            "192.168.1.50:44300".to_string(),
+            cmd_tx,
+            pending_actions,
+        )
+        .unwrap();
 
     // 3. Record telemetry
     let telemetry = AgentTelemetry {
+        validity: redash_types::TelemetryValidity {
+            cpu: true,
+            memory: true,
+            disk: true,
+            network: true,
+        },
         node_id: "node-vps-1".to_string(),
         hostname: "vps-fra-1".to_string(),
         os: "linux".to_string(),
         arch: "x86_64".to_string(),
-        timestamp: 1700000000,
+        timestamp: redash_ui_core::e2ee::now_secs(),
         uptime_secs: 3600,
         cpu_usage_pct: 12.5,
         cpu_cores: 4,
@@ -72,7 +82,11 @@ async fn test_control_plane_nodes_api() {
         net_tx_rate: 256,
         containers: vec![],
     };
-    state.control_plane.record_telemetry(telemetry);
+    assert!(
+        state
+            .control_plane
+            .record_telemetry("node-vps-1", &connection_id, telemetry)
+    );
 
     // 4. Query GET /v1/control/nodes
     let res = app
@@ -115,7 +129,8 @@ async fn test_control_plane_nodes_api() {
 
 #[tokio::test]
 async fn test_control_plane_action_dispatch_roundtrip() {
-    let state = AppState::new();
+    let mut state = AppState::new();
+    state.control_plane = registry_for("node-homelab-1", "key-123");
 
     let (cmd_tx, mut cmd_rx) = mpsc::channel(16);
     let pending_actions = Arc::new(Mutex::new(
@@ -126,17 +141,20 @@ async fn test_control_plane_action_dispatch_roundtrip() {
         hostname: "nas-home".to_string(),
         os: "linux".to_string(),
         arch: "aarch64".to_string(),
-        version: "0.1.1-beta".to_string(),
-        auth_token: "secret".to_string(),
+        version: "0.2.0-beta".to_string(),
+        auth_token: "test-secret-with-at-least-32-bytes!".to_string(),
         trusted_public_key: "key-123".to_string(),
     };
 
-    state.control_plane.register_agent(
-        handshake,
-        "10.0.0.12:55432".to_string(),
-        cmd_tx,
-        pending_actions.clone(),
-    );
+    let _connection_id = state
+        .control_plane
+        .register_agent(
+            handshake,
+            "10.0.0.12:55432".to_string(),
+            cmd_tx,
+            pending_actions.clone(),
+        )
+        .unwrap();
 
     // Mock agent loop that listens for commands and replies
     let pending_clone = pending_actions.clone();
@@ -166,7 +184,7 @@ async fn test_control_plane_action_dispatch_roundtrip() {
         action: RemediationAction::RestartContainer {
             container_id: "c-plex".to_string(),
         },
-        timestamp: 1700000000,
+        timestamp: redash_ui_core::e2ee::now_secs(),
         nonce: "nonce-999".to_string(),
         public_key_hex: "pk-hex".to_string(),
         signature_hex: "sig-hex".to_string(),
@@ -185,7 +203,8 @@ async fn test_control_plane_action_dispatch_roundtrip() {
 
 #[tokio::test]
 async fn test_control_plane_tty_e2ee_blind_forwarding() {
-    let state = AppState::new();
+    let mut state = AppState::new();
+    state.control_plane = registry_for("node-e2ee-box", "trusted-pub");
 
     // 1. Register agent
     let (cmd_tx, mut cmd_rx) = mpsc::channel(16);
@@ -195,22 +214,28 @@ async fn test_control_plane_tty_e2ee_blind_forwarding() {
         hostname: "e2ee-host".to_string(),
         os: "linux".to_string(),
         arch: "arm64".to_string(),
-        version: "0.1.1-beta".to_string(),
-        auth_token: "secret".to_string(),
+        version: "0.2.0-beta".to_string(),
+        auth_token: "test-secret-with-at-least-32-bytes!".to_string(),
         trusted_public_key: "trusted-pub".to_string(),
     };
 
-    state.control_plane.register_agent(
-        handshake,
-        "10.0.0.99:50000".to_string(),
-        cmd_tx,
-        pending_actions,
-    );
+    let connection_id = state
+        .control_plane
+        .register_agent(
+            handshake,
+            "10.0.0.99:50000".to_string(),
+            cmd_tx,
+            pending_actions,
+        )
+        .unwrap();
 
     // 2. Client registers TTY subscriber
     let session_id = "session-e2ee-999".to_string();
     let (downstream_tx, mut downstream_rx) = mpsc::channel(16);
-    state.control_plane.register_tty_subscriber(session_id.clone(), downstream_tx);
+    state
+        .control_plane
+        .register_tty_subscriber("node-e2ee-box", session_id.clone(), downstream_tx)
+        .unwrap();
 
     // 3. Agent sends EncryptedEnvelope to Hub
     let agent_env = redash_types::EncryptedEnvelope::new(
@@ -220,13 +245,19 @@ async fn test_control_plane_tty_e2ee_blind_forwarding() {
         "deadbeefcafebabe",
         "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899",
     );
-    state.control_plane.forward_tty_encrypted(agent_env.clone());
+    state
+        .control_plane
+        .forward_tty_encrypted("node-e2ee-box", &connection_id, agent_env.clone());
 
     // 4. Client receives downstream Text frame with unaltered ciphertext
-    let received = downstream_rx.recv().await.expect("Must receive downstream message");
+    let received = downstream_rx
+        .recv()
+        .await
+        .expect("Must receive downstream message");
     match received {
         redash_server::control_plane::registry::TtyDownstreamMsg::Text(json) => {
-            let received_env: redash_types::EncryptedEnvelope = serde_json::from_str(&json).unwrap();
+            let received_env: redash_types::EncryptedEnvelope =
+                serde_json::from_str(&json).unwrap();
             assert_eq!(received_env.session_id, session_id);
             assert_eq!(received_env.seq_num, 1);
             assert_eq!(received_env.ciphertext_hex, agent_env.ciphertext_hex);
@@ -243,10 +274,17 @@ async fn test_control_plane_tty_e2ee_blind_forwarding() {
         "1234567890abcdef",
         "99887766554433221100ffeeddccbbaa99887766554433221100ffeeddccbbaa",
     );
-    state.control_plane.send_tty_encrypted_to_node("node-e2ee-box", client_env.clone()).await;
+    state
+        .control_plane
+        .send_tty_encrypted_to_node("node-e2ee-box", client_env.clone())
+        .await
+        .unwrap();
 
     // 6. Agent receives HubToAgentMessage::TtyEncrypted with exact envelope
-    let hub_msg = cmd_rx.recv().await.expect("Agent must receive forwarded frame");
+    let hub_msg = cmd_rx
+        .recv()
+        .await
+        .expect("Agent must receive forwarded frame");
     match hub_msg {
         HubToAgentMessage::TtyEncrypted(received_from_hub) => {
             assert_eq!(received_from_hub.session_id, session_id);
@@ -256,4 +294,18 @@ async fn test_control_plane_tty_e2ee_blind_forwarding() {
         }
         other => panic!("Expected TtyEncrypted, got {:?}", other),
     }
+}
+
+fn registry_for(
+    node_id: &str,
+    public_key: &str,
+) -> redash_server::control_plane::registry::ControlPlaneRegistry {
+    use redash_server::control_plane::registry::{ControlPlaneRegistry, Enrollment};
+    ControlPlaneRegistry::with_enrollments(HashMap::from([(
+        node_id.into(),
+        Enrollment {
+            auth_token: "test-secret-with-at-least-32-bytes!".into(),
+            trusted_public_key: public_key.into(),
+        },
+    )]))
 }

@@ -103,6 +103,8 @@ mod tests {
         assert_eq!(de, env);
 
         let init = E2eeHandshakeInit {
+            version: 2,
+            node_id: "test-node".into(),
             session_id: "sess-1".to_string(),
             client_ephemeral_pubkey_hex: "010203".to_string(),
             timestamp: 1700000000,
@@ -114,6 +116,7 @@ mod tests {
         assert_eq!(de_init, init);
 
         let ack = E2eeHandshakeAck {
+            signature_hex: "sig".into(),
             session_id: "sess-1".to_string(),
             agent_ephemeral_pubkey_hex: "040506".to_string(),
             success: true,
@@ -128,7 +131,7 @@ mod tests {
             node_id: "node-lan-1".to_string(),
             hostname: "mac-studio.local".to_string(),
             direct_port: 43210,
-            version: "0.1.1-beta".to_string(),
+            version: "0.2.0-beta".to_string(),
             timestamp: 1700000000,
         };
         let beacon_json = serde_json::to_string(&beacon).unwrap();
@@ -138,7 +141,8 @@ mod tests {
         // Test DevicePairingPayload URI roundtrip
         let payload = DevicePairingPayload {
             hub_url: "ws://192.168.1.10:8080".to_string(),
-            client_public_key: "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890".to_string(),
+            client_public_key: "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+                .to_string(),
             device_name: "MacBook Pro M3".to_string(),
             auth_token: Some("secret-token-xyz".to_string()),
             node_id: Some("node-prod-01".to_string()),
@@ -150,14 +154,21 @@ mod tests {
         assert_eq!(decoded, payload);
 
         // Test to_websocket_endpoint
-        assert_eq!(to_websocket_endpoint("http://127.0.0.1:8080/"), "ws://127.0.0.1:8080");
-        assert_eq!(to_websocket_endpoint("https://hub.example.com"), "wss://hub.example.com");
-        assert_eq!(to_websocket_endpoint("ws://custom:9000"), "ws://custom:9000");
+        assert_eq!(
+            to_websocket_endpoint("http://127.0.0.1:8080/"),
+            "ws://127.0.0.1:8080"
+        );
+        assert_eq!(
+            to_websocket_endpoint("https://hub.example.com"),
+            "wss://hub.example.com"
+        );
+        assert_eq!(
+            to_websocket_endpoint("ws://custom:9000"),
+            "ws://custom:9000"
+        );
 
         // Test shell helpers
         assert!(!default_system_shell().is_empty());
         assert!(format_pty_resize_command(24, 80).contains("COLUMNS=80 LINES=24"));
     }
 }
-
-

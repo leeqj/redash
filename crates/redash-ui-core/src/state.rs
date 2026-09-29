@@ -142,6 +142,8 @@ pub enum UserAction {
         private_key: String,
     },
     TriggerRemediation {
+        timestamp: u64,
+        nonce: String,
         node_id: String,
         action: redash_types::RemediationAction,
     },
@@ -262,7 +264,11 @@ impl Default for AppStateMachine {
 impl AppStateMachine {
     pub fn new() -> Self {
         let mut grid = TerminalGrid::new(120, 40);
-        grid.write_stream("ReDash Web Terminal [Version 0.1.1-beta]\r\nConnected to ReDash Web Gateway over high-performance WebSocket PTY.\r\n\r\n");
+        grid.write_stream(concat!(
+            "ReDash Web Terminal [Version ",
+            env!("CARGO_PKG_VERSION"),
+            "]\r\nConnected to ReDash Web Gateway over high-performance WebSocket PTY.\r\n\r\n"
+        ));
 
         Self {
             active_view: ActiveView::Fleet,
@@ -278,7 +284,12 @@ impl AppStateMachine {
             active_time_ranges: HashMap::new(),
             hovered_chart_points: HashMap::new(),
             terminal_lines: vec![
-                "ReDash Web Terminal [Version 0.1.1-beta]".to_string(),
+                concat!(
+                    "ReDash Web Terminal [Version ",
+                    env!("CARGO_PKG_VERSION"),
+                    "]"
+                )
+                .to_string(),
                 "Connected to ReDash Web Gateway over high-performance WebSocket PTY.".to_string(),
                 "".to_string(),
             ],
@@ -701,34 +712,49 @@ impl AppStateMachine {
             UserAction::ReceiveAgentTelemetry(telemetry) => {
                 let node_id = telemetry.node_id.clone();
                 let cpu_pct = telemetry.cpu_usage_pct;
-                let history = self.cpu_histories.entry(format!("cp-{}", node_id)).or_default();
+                let history = self
+                    .cpu_histories
+                    .entry(format!("cp-{}", node_id))
+                    .or_default();
                 history.push(cpu_pct);
                 if history.len() > 60 {
                     history.remove(0);
                 }
-                if let Some(node) = self.control_plane_nodes.iter_mut().find(|n| n.node_id == node_id) {
+                if let Some(node) = self
+                    .control_plane_nodes
+                    .iter_mut()
+                    .find(|n| n.node_id == node_id)
+                {
                     node.status = redash_types::NodeOnlineStatus::Online;
                     node.latest_telemetry = Some(telemetry.clone());
                 }
                 self.control_plane_telemetries.insert(node_id, telemetry);
             }
-            UserAction::SetClientKeypair { public_key, private_key } => {
+            UserAction::SetClientKeypair {
+                public_key,
+                private_key,
+            } => {
                 self.client_keypair = Some((public_key, private_key));
             }
-            UserAction::TriggerRemediation { node_id, action } => {
-                if let Some((_, ref priv_key)) = self.client_keypair {
-                    let now = 1710000000;
-                    let nonce = format!("{:x}", now);
-                    if let Ok(signed) = crate::control_plane::ClientSigner::sign_action(
+            UserAction::TriggerRemediation {
+                node_id,
+                action,
+                timestamp,
+                nonce,
+            } => {
+                if let Some((_, ref priv_key)) = self.client_keypair
+                    && let Ok(signed) = crate::control_plane::ClientSigner::sign_action(
                         priv_key,
                         &node_id,
                         action.clone(),
-                        now,
+                        timestamp,
                         &nonce,
-                    ) {
-                        self.pending_action = Some((node_id, action));
-                        effects.push(UiEffect::DispatchControlPlaneAction { signed_action: signed });
-                    }
+                    )
+                {
+                    self.pending_action = Some((node_id, action));
+                    effects.push(UiEffect::DispatchControlPlaneAction {
+                        signed_action: signed,
+                    });
                 }
             }
             UserAction::ActionExecutionCompleted(result) => {
@@ -1714,6 +1740,12 @@ mod tests {
 
         // 2. Receive Agent Telemetry
         let telemetry = redash_types::AgentTelemetry {
+            validity: redash_types::TelemetryValidity {
+                cpu: true,
+                memory: true,
+                disk: true,
+                network: true,
+            },
             node_id: "node-vps-99".to_string(),
             hostname: "vps-lon".to_string(),
             os: "linux".to_string(),
@@ -1739,6 +1771,8 @@ mod tests {
             container_id: "docker-app-1".to_string(),
         };
         let effects = state.handle_action(UserAction::TriggerRemediation {
+            timestamp: crate::e2ee::now_secs(),
+            nonce: crate::e2ee::random_hex(),
             node_id: "node-vps-99".to_string(),
             action,
         });
@@ -1777,4 +1811,3 @@ mod tests {
         assert!(docker_cmd.contains("-e REDASH_AUTH_TOKEN=auth-token-xyz"));
     }
 }
-

@@ -24,14 +24,14 @@ use redash_core::probe::ProbeScheduler;
 use redash_core::session::SessionManager;
 
 use crate::components::agent_enroll_modal::{AgentEnrollModal, AgentEnrollModalAction};
-use crate::components::port_remediation_modal::{PortRemediationModal, PortRemediationModalAction};
 use crate::components::host_modal::{HostModal, HostModalAction};
-use redash_ui_core::control_plane::ClientSigner;
 use crate::components::icon::Icon;
+use crate::components::port_remediation_modal::{PortRemediationModal, PortRemediationModalAction};
 use crate::components::theme::DarkTechTheme;
 use crate::views::{
     BatchView, FleetAction, FleetView, SettingsAction, SettingsView, SftpView, WorkbenchView,
 };
+use redash_ui_core::control_plane::ClientSigner;
 
 actions!(
     redash,
@@ -179,6 +179,14 @@ impl ReDashApp {
         I18n::set_locale_by_code(&app_settings_val.language);
         let app_settings = Arc::new(tokio::sync::RwLock::new(app_settings_val));
 
+        let key_path = HostStore::default_path().with_file_name("control_plane_key.json");
+        let client_keypair = match ClientSigner::load_or_generate_keypair(&key_path) {
+            Ok(pair) => Some(pair),
+            Err(err) => {
+                startup_error = Some(err);
+                None
+            }
+        };
         let mut app = Self {
             error_msg: startup_error,
             config_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
@@ -192,10 +200,7 @@ impl ReDashApp {
             active_modal: None,
             agent_enroll_modal: None,
             port_remediation_modal: None,
-            client_keypair: {
-                let key_path = HostStore::default_path().with_file_name("control_plane_key.json");
-                Some(ClientSigner::load_or_generate_keypair(&key_path))
-            },
+            client_keypair,
             control_plane_nodes: Vec::new(),
             tabs: vec![TabItem {
                 id: "fleet".to_string(),
@@ -392,6 +397,11 @@ impl ReDashApp {
 
     fn open_agent_enroll_modal(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         let pub_key = self.client_keypair.as_ref().map(|(pk, _)| pk.clone());
+        if pub_key.is_none() {
+            self.error_msg = Some("请先轮换或修复本机控制面签名密钥，再接入 Agent".into());
+            cx.notify();
+            return;
+        }
         let http_base = self.session_mgr.hub_http_base();
         let ws_base = redash_types::to_websocket_endpoint(&http_base);
         let hub_url = format!("{}/v1/agent/ws", ws_base);
@@ -399,16 +409,27 @@ impl ReDashApp {
 
         cx.subscribe(
             &modal,
-            move |this, _emitter, event: &AgentEnrollModalAction, cx| {
-                match event {
-                    AgentEnrollModalAction::Close => {
-                        this.agent_enroll_modal = None;
-                        cx.notify();
-                    }
-                    AgentEnrollModalAction::CopyCommand(_cmd) => {
-                        this.error_msg = Some("📋 接入安装命令已复制到剪贴板，请在受控节点终端执行".to_string());
-                        cx.notify();
-                    }
+            move |this, _emitter, event: &AgentEnrollModalAction, cx| match event {
+                AgentEnrollModalAction::Close => {
+                    this.agent_enroll_modal = None;
+                    cx.notify();
+                }
+                AgentEnrollModalAction::CopyCommand(_cmd) => {
+                    let modal = _emitter.read(cx);
+                    let pin_result = if modal.active_tab < 2 {
+                        redash_core::control_plane::pin_agent_identity(
+                            &redash_core::control_plane::agent_identity_path(),
+                            &modal.node_id_input,
+                            &modal.agent_identity.0,
+                        )
+                    } else {
+                        Ok(())
+                    };
+                    this.error_msg = Some(match pin_result {
+                        Ok(()) => "📋 已复制；请先配置 Hub 注册凭据，再执行 Agent 安装命令".into(),
+                        Err(err) => format!("Agent 公钥保存失败，终端将拒绝连接: {err:#}"),
+                    });
+                    cx.notify();
                 }
             },
         )
@@ -428,32 +449,30 @@ impl ReDashApp {
 
         cx.subscribe(
             &modal,
-            move |this, _emitter, event: &PortRemediationModalAction, cx| {
-                match event {
-                    PortRemediationModalAction::Close => {
-                        this.port_remediation_modal = None;
-                        cx.notify();
-                    }
-                    PortRemediationModalAction::Diagnose { node_id, port } => {
-                        this.port_remediation_modal = None;
-                        let nid = node_id.clone();
-                        let p = *port;
-                        this.trigger_agent_remediation(
-                            &nid,
-                            redash_types::RemediationAction::DiagnosePort { port: p },
-                            cx,
-                        );
-                    }
-                    PortRemediationModalAction::KillConflict { node_id, port } => {
-                        this.port_remediation_modal = None;
-                        let nid = node_id.clone();
-                        let p = *port;
-                        this.trigger_agent_remediation(
-                            &nid,
-                            redash_types::RemediationAction::KillPortConflict { port: p },
-                            cx,
-                        );
-                    }
+            move |this, _emitter, event: &PortRemediationModalAction, cx| match event {
+                PortRemediationModalAction::Close => {
+                    this.port_remediation_modal = None;
+                    cx.notify();
+                }
+                PortRemediationModalAction::Diagnose { node_id, port } => {
+                    this.port_remediation_modal = None;
+                    let nid = node_id.clone();
+                    let p = *port;
+                    this.trigger_agent_remediation(
+                        &nid,
+                        redash_types::RemediationAction::DiagnosePort { port: p },
+                        cx,
+                    );
+                }
+                PortRemediationModalAction::KillConflict { node_id, port } => {
+                    this.port_remediation_modal = None;
+                    let nid = node_id.clone();
+                    let p = *port;
+                    this.trigger_agent_remediation(
+                        &nid,
+                        redash_types::RemediationAction::KillPortConflict { port: p },
+                        cx,
+                    );
                 }
             },
         )
@@ -469,86 +488,66 @@ impl ReDashApp {
         action: redash_types::RemediationAction,
         cx: &mut Context<Self>,
     ) {
-        if let Some((_, ref priv_key)) = self.client_keypair {
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs();
-            let nonce = format!("{:x}", now);
-            if let Ok(signed_action) = ClientSigner::sign_action(
-                priv_key,
-                node_id,
-                action,
-                now,
-                &nonce,
-            ) {
-                let action_summary = match &signed_action.action {
-                    redash_types::RemediationAction::PruneContainers => "清理废弃容器 (docker prune)".to_string(),
-                    redash_types::RemediationAction::RestartContainer { container_id } => format!("重启容器 {}", container_id),
-                    redash_types::RemediationAction::StopContainer { container_id } => format!("停止容器 {}", container_id),
-                    redash_types::RemediationAction::VacuumLogs { max_size_mb } => format!("清理日志 (限额 {}MB)", max_size_mb),
-                    redash_types::RemediationAction::KillPortConflict { port } => format!("释放冲突端口 :{}", port),
-                    redash_types::RemediationAction::KillProcess { pid, .. } => format!("终止进程 PID {}", pid),
-                    redash_types::RemediationAction::RestartService { service_name } => format!("重启服务 {}", service_name),
-                    _ => "执行自动化运维".to_string(),
-                };
-
-                self.error_msg = Some(format!("⚡ 正在下发治理指令 [{}]: {}...", signed_action.node_id, action_summary));
-                cx.notify();
-
-                let http_base = self.session_mgr.hub_http_base();
-                let url = format!("{}/v1/control/actions", http_base.trim_end_matches('/'));
-                if let Ok(payload) = serde_json::to_string(&signed_action) {
-                    cx.spawn(async move |this, cx| {
-                        let res = tokio::process::Command::new("curl")
-                            .arg("-s")
-                            .arg("-X")
-                            .arg("POST")
-                            .arg("-H")
-                            .arg("Content-Type: application/json")
-                            .arg("-d")
-                            .arg(&payload)
-                            .arg(&url)
-                            .output()
-                            .await;
-
-                        match res {
-                            Ok(out) if out.status.success() => {
-                                let body = String::from_utf8_lossy(&out.stdout);
-                                let _ = this.update(cx, |app, cx| {
-                                    app.error_msg = Some(format!("✅ 治理指令成功响应: {}", body.trim()));
-                                    cx.notify();
-                                });
-                            }
-                            Ok(out) => {
-                                let err_body = String::from_utf8_lossy(&out.stderr);
-                                let out_body = String::from_utf8_lossy(&out.stdout);
-                                let detail = if !err_body.trim().is_empty() { err_body } else { out_body };
-                                let _ = this.update(cx, |app, cx| {
-                                    app.error_msg = Some(format!("⚠️ 治理指令执行异常: {}", detail.trim()));
-                                    cx.notify();
-                                });
-                            }
-                            Err(e) => {
-                                let _ = this.update(cx, |app, cx| {
-                                    app.error_msg = Some(format!("❌ 指令分发失败: {}", e));
-                                    cx.notify();
-                                });
-                            }
-                        }
-                    })
-                    .detach();
+        if let Some((_, ref priv_key)) = self.client_keypair
+            && let Ok(signed_action) = ClientSigner::sign_fresh_action(priv_key, node_id, action)
+        {
+            let action_summary = match &signed_action.action {
+                redash_types::RemediationAction::PruneContainers => {
+                    "清理废弃容器 (docker prune)".to_string()
                 }
-            }
+                redash_types::RemediationAction::RestartContainer { container_id } => {
+                    format!("重启容器 {}", container_id)
+                }
+                redash_types::RemediationAction::StopContainer { container_id } => {
+                    format!("停止容器 {}", container_id)
+                }
+                redash_types::RemediationAction::VacuumLogs { max_size_mb } => {
+                    format!("清理日志 (限额 {}MB)", max_size_mb)
+                }
+                redash_types::RemediationAction::KillPortConflict { port } => {
+                    format!("释放冲突端口 :{}", port)
+                }
+                redash_types::RemediationAction::KillProcess { pid, .. } => {
+                    format!("终止进程 PID {}", pid)
+                }
+                redash_types::RemediationAction::RestartService { service_name } => {
+                    format!("重启服务 {}", service_name)
+                }
+                _ => "执行自动化运维".to_string(),
+            };
+
+            self.error_msg = Some(format!(
+                "⚡ 正在下发治理指令 [{}]: {}...",
+                signed_action.node_id, action_summary
+            ));
+            cx.notify();
+
+            let http_base = self.session_mgr.hub_http_base();
+            let url = format!("{}/v1/control/actions", http_base.trim_end_matches('/'));
+            cx.spawn(async move |this, cx| {
+                let result =
+                    redash_core::control_plane::dispatch_action(&url, &signed_action).await;
+                let message = match result {
+                    Ok(result) => format!(
+                        "{} 治理执行{} (exit={:?}): {} {}",
+                        if result.success { "✅" } else { "❌" },
+                        if result.success { "成功" } else { "失败" },
+                        result.exit_code,
+                        result.stdout.trim(),
+                        result.stderr.trim()
+                    ),
+                    Err(err) => format!("❌ 指令分发失败: {err:#}"),
+                };
+                let _ = this.update(cx, |app, cx| {
+                    app.error_msg = Some(message);
+                    cx.notify();
+                });
+            })
+            .detach();
         }
     }
 
-    fn open_agent_tty_tab(
-        &mut self,
-        node_id: &str,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn open_agent_tty_tab(&mut self, node_id: &str, window: &mut Window, cx: &mut Context<Self>) {
         let tty_tab_id = format!("agent_tty_{}", node_id);
         if let Some(idx) = self.tabs.iter().position(|t| t.id == tty_tab_id) {
             self.active_tab_index = idx;
@@ -559,11 +558,7 @@ impl ReDashApp {
             return;
         }
 
-        let mut dummy_host = HostConfig::new(
-            format!("⚡ {}", node_id),
-            node_id,
-            "root",
-        );
+        let mut dummy_host = HostConfig::new(format!("⚡ {}", node_id), node_id, "root");
         dummy_host.id = HostId(tty_tab_id.clone());
         let session_mgr = Arc::clone(&self.session_mgr);
         let workbench_view = cx.new(|cx| WorkbenchView::new(dummy_host, session_mgr, cx));
@@ -1261,7 +1256,8 @@ impl ReDashApp {
 
                 if let Ok(out) = output
                     && out.status.success()
-                    && let Ok(nodes) = serde_json::from_slice::<Vec<redash_types::ManagedNodeDetail>>(&out.stdout)
+                    && let Ok(nodes) =
+                        serde_json::from_slice::<Vec<redash_types::ManagedNodeDetail>>(&out.stdout)
                 {
                     let _ = this.update(cx, |app, cx| {
                         app.control_plane_nodes = nodes.clone();

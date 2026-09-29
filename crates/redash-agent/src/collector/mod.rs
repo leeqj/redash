@@ -29,6 +29,7 @@ impl TelemetryCollector {
         let containers = self.docker_client.list_containers().await;
 
         AgentTelemetry {
+            validity: sys_snapshot.validity,
             node_id: self.node_id.clone(),
             hostname: self.hostname.clone(),
             os: std::env::consts::OS.to_string(),

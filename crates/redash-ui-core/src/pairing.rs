@@ -34,7 +34,9 @@ pub fn generate_pairing_qr_ascii(payload: &DevicePairingPayload) -> Result<Strin
 }
 
 /// Generates a 2D boolean matrix of modules (true = dark, false = light) for GPUI / Canvas rendering.
-pub fn generate_pairing_qr_matrix(payload: &DevicePairingPayload) -> Result<Vec<Vec<bool>>, String> {
+pub fn generate_pairing_qr_matrix(
+    payload: &DevicePairingPayload,
+) -> Result<Vec<Vec<bool>>, String> {
     let uri = payload.to_uri();
     let code = QrCode::with_error_correction_level(uri.as_bytes(), EcLevel::M)
         .map_err(|e| format!("Failed to generate QR code: {}", e))?;
@@ -68,7 +70,8 @@ mod tests {
     fn test_pairing_qr_svg_generation() {
         let payload = DevicePairingPayload {
             hub_url: "ws://192.168.1.10:8080".to_string(),
-            client_public_key: "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20".to_string(),
+            client_public_key: "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+                .to_string(),
             device_name: "MacBook Pro".to_string(),
             auth_token: Some("secret123".to_string()),
             node_id: None,

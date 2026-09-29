@@ -1,9 +1,9 @@
 pub mod agent_enroll_modal;
-pub mod port_remediation_modal;
 pub mod chart;
 pub mod host_modal;
 pub mod icon;
 pub mod micro_meter;
+pub mod port_remediation_modal;
 pub mod status_led;
 pub mod tooltip;
 
